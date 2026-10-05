@@ -29,6 +29,7 @@ export const leadFormSchema = z
     business_type: z.enum(BUSINESS_TYPES as [string, ...string[]]).default("Corporate"),
     policy_product: z.enum(POLICY_PRODUCTS as [string, ...string[]]).default("Health"),
     sub_product_name: text(200),
+    address: text(1000),
     renewal_date: z
       .string()
       .trim()
@@ -45,6 +46,8 @@ export const leadFormSchema = z
     notes: text(20000),
     status: z.enum(LEAD_STATUSES as [string, ...string[]]).default("Prospect"),
     assigned_agent_id: z.string().trim().default(""),
+    // Set by AI intake after a visiting card scan; checked on the server.
+    visiting_card_path: z.string().trim().max(200).default(""),
     confirm_duplicate: z.string().optional(),
   })
   .transform((v) => ({
@@ -53,6 +56,7 @@ export const leadFormSchema = z
     poc2_designation: v.poc2_designation || (v.poc2_name ? DEFAULT_POC_DESIGNATION : ""),
     renewal_date: v.renewal_date || null,
     assigned_agent_id: v.assigned_agent_id && v.assigned_agent_id !== "unassigned" ? v.assigned_agent_id : null,
+    visiting_card_path: v.visiting_card_path || null,
     confirm_duplicate: v.confirm_duplicate === "on" || v.confirm_duplicate === "true",
   }));
 
@@ -64,6 +68,7 @@ export const LEAD_FORM_FIELDS = [
   "business_type",
   "policy_product",
   "sub_product_name",
+  "address",
   "renewal_date",
   "poc_name",
   "poc_designation",
@@ -76,6 +81,7 @@ export const LEAD_FORM_FIELDS = [
   "notes",
   "status",
   "assigned_agent_id",
+  "visiting_card_path",
   "confirm_duplicate",
 ] as const;
 

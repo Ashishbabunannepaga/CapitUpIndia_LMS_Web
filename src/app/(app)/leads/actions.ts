@@ -10,6 +10,7 @@ import { isLeadStatus } from "@/lib/domain";
 import { findSimilarLeads } from "@/lib/leads";
 import { contactSchema, formDataToObject, leadFormSchema, type LeadFormValues } from "@/lib/lead-schema";
 import { createClient } from "@/lib/supabase/server";
+import { isOwnCardPath } from "@/lib/visiting-cards";
 
 export type SimilarLead = Awaited<ReturnType<typeof findSimilarLeads>>[number];
 
@@ -42,6 +43,7 @@ function toRow(v: LeadFormValues) {
     business_type: v.business_type as BusinessType,
     policy_product: v.policy_product as PolicyProduct,
     sub_product_name: v.sub_product_name,
+    address: v.address,
     renewal_date: v.renewal_date,
     poc_name: v.poc_name,
     poc_designation: v.poc_designation,
@@ -90,11 +92,16 @@ export async function createLead(_prev: LeadFormState, formData: FormData): Prom
     return { duplicates: similar, values: raw };
   }
 
+  // A scanned card is attached only if this user uploaded it.
+  const cardPath =
+    values.visiting_card_path && isOwnCardPath(values.visiting_card_path, profile.id) ? values.visiting_card_path : null;
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("leads")
     .insert({
       ...toRow(values),
+      visiting_card_path: cardPath,
       // Agents always own what they create; admins choose (or leave unassigned).
       assigned_agent_id: isAdmin(profile) ? values.assigned_agent_id : profile.id,
     })

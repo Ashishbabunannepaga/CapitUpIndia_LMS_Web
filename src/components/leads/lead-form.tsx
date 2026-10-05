@@ -30,6 +30,10 @@ type Props = {
   agents?: Agent[];
   currentUserId: string;
   isAdmin: boolean;
+  /** Values extracted by AI intake, used instead of blanks on a new lead. */
+  prefill?: Partial<Record<string, string>>;
+  /** A scanned visiting card to attach to the new lead. */
+  card?: { path: string; previewUrl: string };
 };
 
 const EMPTY: Record<string, string> = {
@@ -38,6 +42,7 @@ const EMPTY: Record<string, string> = {
   business_type: "Corporate",
   policy_product: "Health",
   sub_product_name: "",
+  address: "",
   renewal_date: "",
   poc_name: "",
   poc_designation: "",
@@ -50,10 +55,17 @@ const EMPTY: Record<string, string> = {
   notes: "",
   status: "Prospect",
   assigned_agent_id: "",
+  visiting_card_path: "",
 };
 
-function initialValues(lead?: Lead): Record<string, string> {
-  if (!lead) return EMPTY;
+function initialValues(lead?: Lead, prefill?: Partial<Record<string, string>>): Record<string, string> {
+  if (!lead) {
+    const values = { ...EMPTY };
+    for (const [key, value] of Object.entries(prefill ?? {})) {
+      if (key in values && typeof value === "string") values[key] = value;
+    }
+    return values;
+  }
   const values: Record<string, string> = {};
   for (const key of Object.keys(EMPTY)) {
     const value = lead[key as keyof Lead];
@@ -184,7 +196,7 @@ function DuplicatePanel({
   );
 }
 
-export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin }: Props) {
+export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, prefill, card }: Props) {
   // One action for the form: "Add my contacts to this lead" buttons carry
   // merge_into and go to the merge action; everything else saves.
   const [state, formAction, pending] = useActionState<LeadFormState, FormData>(async (prev, formData) => {
@@ -192,7 +204,7 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin }: Pr
     return mode === "edit" && lead ? updateLead(lead.id, prev, formData) : createLead(prev, formData);
   }, {});
 
-  const values = state.values ?? initialValues(lead);
+  const values = state.values ?? initialValues(lead, card ? { ...prefill, visiting_card_path: card.path } : prefill);
   const errors = state.fieldErrors ?? {};
   const error = state.error;
 
@@ -243,6 +255,16 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin }: Pr
       ) : null}
 
       <Section title="Company and policy">
+        {values.visiting_card_path ? (
+          <input type="hidden" name="visiting_card_path" value={values.visiting_card_path} />
+        ) : null}
+        {card && values.visiting_card_path === card.path ? (
+          <div className="mb-4 flex items-center gap-3 rounded-lg border bg-muted/40 p-3 text-sm">
+            {/* eslint-disable-next-line @next/next/no-img-element -- local object URL preview */}
+            <img src={card.previewUrl} alt="Scanned visiting card" className="h-16 w-28 rounded border object-cover" />
+            <p className="text-muted-foreground">This visiting card will be attached to the lead.</p>
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Field
             label="Client or company name"
@@ -315,6 +337,15 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin }: Pr
               maxLength={200}
               defaultValue={values.sub_product_name}
               placeholder="e.g. Group health, WC"
+            />
+          </Field>
+          <Field label="Address" name="address" error={errors.address} className="md:col-span-2">
+            <Input
+              id="address"
+              name="address"
+              maxLength={1000}
+              defaultValue={values.address}
+              placeholder="Office address (from the visiting card)"
             />
           </Field>
           <Field

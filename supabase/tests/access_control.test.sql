@@ -391,4 +391,110 @@ select tests.ok(
   'unread feed respects lead visibility');
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- AI and automation: reminder delivery, notifications, round-robin,
+-- visiting cards, analytics
+-- ---------------------------------------------------------------------------
+
+set role authenticated;
+select tests.login('00000000-0000-0000-0000-00000000000a');
+insert into public.leads (client_name, renewal_date, poc_name, poc_contact_number, assigned_agent_id)
+values ('Reminder Co', current_date + 20, 'Sunil', '9845011111', '00000000-0000-0000-0000-000000000002'),
+       ('Orphan Renewal Co', current_date + 20, '', '', null),
+       ('Closed Renewal Co', current_date + 20, '', '', '00000000-0000-0000-0000-000000000002');
+update public.leads set status = 'Closed Won' where client_name = 'Closed Renewal Co';
+reset role;
+
+-- Pretend T-10 and T-5 Days are already due for all three leads.
+update public.events e set event_timestamp = now() - case e.milestone when 'T-10 Days' then interval '2 minutes' else interval '1 minute' end
+  from public.leads l
+ where l.id = e.lead_id and l.client_name in ('Reminder Co', 'Orphan Renewal Co', 'Closed Renewal Co')
+   and e.milestone in ('T-10 Days', 'T-5 Days');
+
+set role authenticated;
+select tests.login('00000000-0000-0000-0000-000000000002');
+select tests.throws($$select public.deliver_due_reminders()$$, 'users cannot run the reminder job');
+reset role;
+
+set role service_role;
+select tests.ok(public.deliver_due_reminders() = 2, 'due reminders notify the agent and the admins of an unassigned lead');
+select tests.ok(public.deliver_due_reminders() = 0, 'reminders are delivered only once');
+reset role;
+
+select tests.ok(
+  (select count(*) = 6 from public.events e join public.leads l on l.id = e.lead_id
+    where l.client_name in ('Reminder Co', 'Orphan Renewal Co', 'Closed Renewal Co') and e.reminder_sent_at is not null),
+  'every due reminder is marked sent, including closed leads');
+select tests.ok(
+  (select count(*) = 0 from public.events e join public.leads l on l.id = e.lead_id
+    where l.client_name = 'Reminder Co' and e.milestone = 'T-3 Days' and e.reminder_sent_at is not null),
+  'future reminders stay pending');
+select tests.ok(
+  (select count(*) = 1 and bool_and(n.milestone = 'T-5 Days' and n.title like 'T-5 Days: Reminder Co renewal%'
+                                    and n.body like '%Sunil (9845011111)%')
+     from public.notifications n where n.user_id = '00000000-0000-0000-0000-000000000002'),
+  'one notification per lead, for the latest due milestone');
+select tests.ok(
+  (select count(*) = 1 from public.notifications n join public.leads l on l.id = n.lead_id
+    where l.client_name = 'Orphan Renewal Co' and n.user_id = '00000000-0000-0000-0000-00000000000a'),
+  'unassigned renewals notify admins');
+select tests.ok(
+  (select count(*) = 0 from public.notifications n join public.leads l on l.id = n.lead_id
+    where l.client_name = 'Closed Renewal Co'),
+  'closed leads are not announced');
+
+set role authenticated;
+select tests.login('00000000-0000-0000-0000-000000000001'); -- Amit
+select tests.ok((select count(*) = 0 from public.notifications), 'users only see their own notifications');
+update public.notifications set read_at = now();
+select tests.login('00000000-0000-0000-0000-000000000002'); -- Neha
+select tests.ok((select count(*) = 1 and bool_and(read_at is null) from public.notifications),
+  'another user cannot mark your notifications read');
+update public.notifications set read_at = now();
+select tests.ok((select bool_and(read_at is not null) from public.notifications), 'users can mark their notifications read');
+select tests.throws($$update public.notifications set title = 'x'$$, 'users cannot edit notification content');
+select tests.throws(
+  $$insert into public.notifications (user_id, kind, title) values ('00000000-0000-0000-0000-000000000002', 'other', 'x')$$,
+  'users cannot create notifications');
+
+-- Round-robin: active AGENTs only (Amit Kumar, Neha), continuing across imports.
+select tests.throws($$select public.next_round_robin_agents(2)$$, 'agents cannot run round-robin');
+select tests.login('00000000-0000-0000-0000-00000000000a');
+select tests.ok(
+  public.next_round_robin_agents(3) = array['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002',
+                                             '00000000-0000-0000-0000-000000000001']::uuid[],
+  'round-robin cycles through active agents in name order');
+select tests.ok(
+  public.next_round_robin_agents(1) = array['00000000-0000-0000-0000-000000000002']::uuid[],
+  'round-robin continues where the last import stopped');
+
+-- Visiting cards: users can only attach cards they uploaded.
+select tests.login('00000000-0000-0000-0000-000000000002');
+update public.leads set visiting_card_path = '00000000-0000-0000-0000-000000000002/card.jpg' where client_name = 'Reminder Co';
+select tests.ok(
+  (select visiting_card_path is not null from public.leads where client_name = 'Reminder Co'),
+  'agent can attach their own uploaded card');
+select tests.throws(
+  $$update public.leads set visiting_card_path = '00000000-0000-0000-0000-000000000001/card.jpg' where client_name = 'Reminder Co'$$,
+  'agent cannot attach someone else''s card');
+
+-- Analytics follow RLS.
+select tests.ok(
+  (select (public.pipeline_analytics() ->> 'total')::int = (select count(*) from public.leads)),
+  'agent analytics count only their leads');
+select tests.login('00000000-0000-0000-0000-00000000000a');
+select tests.ok(
+  (select (a ->> 'total')::int > 5 and (a -> 'renewals' ->> 'month')::int >= 2 and jsonb_array_length(a -> 'agents') >= 2
+     from public.pipeline_analytics() a),
+  'admin analytics cover every lead and agent');
+select tests.ok(
+  (select (s ->> 'calls')::int = 1 and (s -> 'by_feature' -> 0 ->> 'feature_name') = 'lead_intake'
+     from public.ai_usage_summary(now() - interval '1 day') s),
+  'AI usage summary totals calls by feature');
+select tests.login('00000000-0000-0000-0000-000000000001');
+select tests.ok(
+  (select (s ->> 'calls')::int = 0 from public.ai_usage_summary(now() - interval '1 day') s),
+  'agents only see their own AI usage in the summary');
+reset role;
+
 \echo 'All database tests passed.'
