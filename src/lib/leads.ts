@@ -153,6 +153,20 @@ export async function findSimilarLeads(clientName: string, excludeId?: number) {
   return data;
 }
 
+/** Recent renewal reminders for the bell, and how many are unread. */
+export const getRecentNotifications = cache(async () => {
+  const supabase = await createClient();
+  const [{ data }, { count }] = await Promise.all([
+    supabase
+      .from("notifications")
+      .select("id, title, body, lead_id, created_at, read_at")
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase.from("notifications").select("id", { count: "exact", head: true }).is("read_at", null),
+  ]);
+  return { items: data ?? [], unread: count ?? 0 };
+});
+
 export const getUnreadNoteCount = cache(async (): Promise<number> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("count_unread_lead_notes");

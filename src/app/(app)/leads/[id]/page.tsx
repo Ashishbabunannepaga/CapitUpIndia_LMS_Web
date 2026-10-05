@@ -12,6 +12,7 @@ import {
   MarkNotesReadOnView,
   ResolveDuplicateButton,
 } from "@/components/leads/lead-detail-actions";
+import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ import { CLOSED_STATUSES } from "@/lib/domain";
 import { findSimilarLeads, getLead, getLeadEvents, getLeadNotes, getTeam } from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { signedCardUrl } from "@/lib/visiting-cards";
 
 export const metadata: Metadata = { title: "Lead" };
 
@@ -142,6 +144,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
     findSimilarLeads(lead.client_name, id),
     supabase.rpc("unread_lead_notes", { p_limit: 200 }),
   ]);
+  const cardUrl = lead.visiting_card_path ? await signedCardUrl(lead.visiting_card_path) : null;
   const unreadIds = new Set((unread.data ?? []).filter((n) => n.lead_id === id).map((n) => n.id));
   const saved = (await searchParams).saved;
   const savedMessage = typeof saved === "string" ? SAVED_MESSAGES[saved] : undefined;
@@ -286,6 +289,11 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                   <AgentName name={lead.agent_name} />
                 )}
               </Fact>
+              {lead.address ? (
+                <Fact label="Address">
+                  <span className="whitespace-pre-wrap">{lead.address}</span>
+                </Fact>
+              ) : null}
               <Fact label="Added">{formatDateTime(lead.created_at)}</Fact>
               <Fact label="Last updated">{formatDateTime(lead.updated_at)}</Fact>
               {lead.assigned_at ? <Fact label="Assigned">{formatDateTime(lead.assigned_at)}</Fact> : null}
@@ -314,6 +322,16 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             </div>
           </Panel>
 
+          <Panel title="AI follow-up">
+            <FollowUpWriter
+              leadId={lead.id}
+              clientName={lead.client_name}
+              product={lead.policy_product}
+              phone={lead.poc_contact_number || lead.poc2_contact_number}
+              email={lead.poc_email_id || lead.poc2_email_id}
+            />
+          </Panel>
+
           <Panel title="Lead notes">
             {lead.notes ? (
               <p className="text-sm whitespace-pre-wrap">{lead.notes}</p>
@@ -321,6 +339,17 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               <p className="text-sm text-muted-foreground">No background notes. Add them with Edit.</p>
             )}
           </Panel>
+
+          {cardUrl ? (
+            <Panel title="Visiting card">
+              {/* eslint-disable-next-line @next/next/no-img-element -- signed, short-lived Supabase Storage URL */}
+              <img
+                src={cardUrl}
+                alt={`Visiting card for ${lead.client_name}`}
+                className="max-h-80 w-auto rounded-lg border"
+              />
+            </Panel>
+          ) : null}
         </div>
 
         <div className="min-w-0 space-y-6">

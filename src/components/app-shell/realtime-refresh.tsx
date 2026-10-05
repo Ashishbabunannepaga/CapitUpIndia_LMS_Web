@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 /**
- * Re-renders the current page when leads, notes or events change, so
+ * Re-renders the current page when leads, notes, events or notifications change, so
  * assignments, status changes and new notes from teammates show up without a
  * reload. Supabase Realtime applies RLS, so each user only hears about rows
  * they can see. Bursts of changes are collapsed into one refresh.
@@ -27,6 +27,7 @@ export function RealtimeRefresh() {
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "lead_notes" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refresh)
       .subscribe();
 
     return () => {
