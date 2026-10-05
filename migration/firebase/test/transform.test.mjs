@@ -56,3 +56,21 @@ test("only user names are read from /users", () => {
   assert.deepEqual(agents.map((a) => a.name), ["Neha"]);
   assert.equal(JSON.stringify(transform({ leads: [], userNames: ["Neha"] })).includes("password"), false);
 });
+
+test("spreadsheet header rows are skipped", () => {
+  const { imported, skipped } = transform({ leads: [lead({ clientName: "client_name", pocName: "business_type" })] });
+  assert.equal(imported.length, 0);
+  assert.match(skipped[0].reason, /header row/);
+});
+
+test("agent names use the spelling from leads, not the login", () => {
+  const { agents } = transform({
+    leads: [
+      lead({ assignedAgent: "sravani" }),
+      lead({ id: 2, clientName: "B", assignedAgent: "Sravani" }),
+      lead({ id: 3, clientName: "C", assignedAgent: "Sravani" }),
+    ],
+    userNames: ["sravani"],
+  });
+  assert.deepEqual(agents.map((a) => [a.name, a.leads]), [["Sravani", 3]]);
+});

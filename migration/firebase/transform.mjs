@@ -42,6 +42,9 @@ export function normalizeCompanyName(name) {
   return normalized || lowered.trim();
 }
 
+// Column headers that the old bulk import saved as if they were companies.
+const HEADER_NAMES = new Set(["client_name", "clientname", "client name", "company", "company name", "company_name", "name"]);
+
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
 const NOTE_LINE_RE = /^\[(.+?) - (.+?)\]: (.*)$/;
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
@@ -165,8 +168,14 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
   const seeAgent = (name, field) => {
     const key = agentKey(name);
     if (!key || key === "unassigned") return null;
-    if (!agentsSeen.has(key)) agentsSeen.set(key, { name: str(name), leads: 0, notes: 0, fromUsers: false });
-    if (field) agentsSeen.get(key)[field] += 1;
+    if (!agentsSeen.has(key)) agentsSeen.set(key, { name: str(name), leads: 0, notes: 0, fromUsers: false, spellings: new Map() });
+    const agent = agentsSeen.get(key);
+    if (field) {
+      agent[field] += 1;
+      // Show the spelling used most on leads and notes ("Sravani"), not the /users login ("sravani").
+      agent.spellings.set(str(name), (agent.spellings.get(str(name)) ?? 0) + 1);
+      agent.name = [...agent.spellings].sort((a, b) => b[1] - a[1])[0][0];
+    }
     return key;
   };
   for (const u of userNames) {
@@ -192,6 +201,10 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
 
     if (!clientName) {
       skipped.push({ legacyId, clientName: "", reason: "No client name" });
+      continue;
+    }
+    if (HEADER_NAMES.has(clientName.toLowerCase())) {
+      skipped.push({ legacyId, clientName, reason: "Spreadsheet header row saved by the old bulk import, not a lead" });
       continue;
     }
     if (seenLegacyIds.has(legacyId)) {
@@ -257,7 +270,6 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
     const rawAgent = str(l.assignedAgent);
     const agent = seeAgent(rawAgent, "leads");
     const agentEmail = agent ? emailByAgent.get(agent) ?? null : null;
-    if (agent && !agentEmail) flags.push(`Agent "${rawAgent}" has no web account mapped; imported as Unassigned`);
 
     // Notes: timestamped agent lines become lead_notes, the rest stays as text.
     const leadNotes = [];
@@ -383,7 +395,13 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
   }
 
   const agents = [...agentsSeen.values()]
-    .map((a) => ({ ...a, email: emailByAgent.get(agentKey(a.name)) ?? null }))
+    .map((a) => ({
+      name: a.name,
+      leads: a.leads,
+      notes: a.notes,
+      fromUsers: a.fromUsers,
+      email: emailByAgent.get(agentKey(a.name)) ?? null,
+    }))
     .sort((a, b) => b.leads - a.leads || a.name.localeCompare(b.name));
 
   return { imported, skipped, duplicateGroups, events: importedEvents, skippedEvents, agents, stats };
