@@ -1,0 +1,114 @@
+// Human-readable dry-run report. Contains company and contact names (the data
+// being migrated) but never anything from /users beyond the user names.
+
+const esc = (s) => String(s ?? "").replaceAll("|", "\\|").replace(/\s+/g, " ").trim();
+
+function countBy(items, key) {
+  const m = new Map();
+  for (const it of items) m.set(it[key], (m.get(it[key]) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+export function buildReport(result, { sourceLabel, generatedAt }) {
+  const { imported, skipped, duplicateGroups, events, skippedEvents, agents, stats } = result;
+  const flagged = imported.filter((l) => l.flags.length);
+  const notes = imported.reduce((n, l) => n + l.leadNotes.length, 0);
+  const withDates = imported.filter((l) => l.renewalDate).length;
+  const unmapped = agents.filter((a) => !a.email && (a.leads || a.notes));
+  const L = [];
+
+  L.push("# Firebase import dry run");
+  L.push("");
+  L.push(`Source: ${sourceLabel}. Generated ${generatedAt}. Nothing has been written to any database.`);
+  L.push("");
+  L.push("## Summary");
+  L.push("");
+  L.push("| | Count |");
+  L.push("| --- | ---: |");
+  L.push(`| Leads that would be imported | ${imported.length} |`);
+  L.push(`| of which flagged for a look | ${flagged.length} |`);
+  L.push(`| Leads skipped | ${skipped.length} |`);
+  L.push(`| Companies with more than one lead (flagged as duplicates by the database) | ${duplicateGroups.length} |`);
+  L.push(`| Agent notes split into the notes timeline | ${notes} |`);
+  L.push(`| Leads with a renewal date (reminders regenerated) | ${withDates} |`);
+  L.push(`| Hand-made calendar events imported | ${events.length} |`);
+  L.push(`| Old renewal reminders skipped (regenerated instead) | ${skippedEvents.systemGenerated} |`);
+  const otherEventSkips = skippedEvents.orphaned + skippedEvents.unreadableDate + skippedEvents.noTitle;
+  if (otherEventSkips) {
+    L.push(
+      `| Other events skipped (lead missing ${skippedEvents.orphaned}, unreadable date ${skippedEvents.unreadableDate}, no title ${skippedEvents.noTitle}) | ${otherEventSkips} |`,
+    );
+  }
+  L.push("");
+  if (stats.renewalTimesDropped) {
+    L.push(`${stats.renewalTimesDropped} renewal dates carried a time of day; the web app keeps the date and uses the configured due time (10:00 IST).`);
+    L.push("");
+  }
+  if (stats.missingCreatedAt) {
+    L.push(`${stats.missingCreatedAt} leads had no creation time; they get the import time.`);
+    L.push("");
+  }
+  if (stats.visitingCardImagesDropped) {
+    L.push(`${stats.visitingCardImagesDropped} leads carried a visiting card image; images are not imported (re-upload them in the web app).`);
+    L.push("");
+  }
+
+  L.push("## Status mapping");
+  L.push("");
+  L.push("| New status | Leads |");
+  L.push("| --- | ---: |");
+  for (const [status, n] of countBy(imported, "status")) L.push(`| ${status} | ${n} |`);
+  L.push("");
+  L.push("Pending and Contacted became Follow-up; Converted became Closed Won.");
+  L.push("");
+
+  L.push("## Agents");
+  L.push("");
+  L.push("Each agent needs a web account before the import runs. Map names to login emails in `agents.json`.");
+  L.push("");
+  L.push("| Agent in the old app | Leads | Notes written | Web account email |");
+  L.push("| --- | ---: | ---: | --- |");
+  for (const a of agents) {
+    L.push(`| ${esc(a.name)} | ${a.leads} | ${a.notes} | ${a.email ? esc(a.email) : "**not mapped**"} |`);
+  }
+  if (unmapped.length) {
+    L.push("");
+    L.push(`${unmapped.length} agent name(s) are not mapped; their leads would be imported as Unassigned.`);
+  }
+  L.push("");
+
+  if (duplicateGroups.length) {
+    L.push("## Duplicate companies");
+    L.push("");
+    L.push("These are imported, and the database marks every lead after the first as a duplicate so an admin can resolve them on the Duplicates page.");
+    L.push("");
+    L.push("| Company | Leads (old id, agent) |");
+    L.push("| --- | --- |");
+    for (const g of duplicateGroups) {
+      L.push(`| ${esc(g.company)} | ${g.leads.map((l) => `${esc(l.clientName)} (#${esc(l.legacyId)}, ${esc(l.agentName)})`).join("; ")} |`);
+    }
+    L.push("");
+  }
+
+  if (skipped.length) {
+    L.push("## Skipped leads");
+    L.push("");
+    L.push("| Old id | Client | Reason |");
+    L.push("| --- | --- | --- |");
+    for (const s of skipped) L.push(`| ${esc(s.legacyId)} | ${esc(s.clientName) || "(blank)"} | ${esc(s.reason)} |`);
+    L.push("");
+  }
+
+  if (flagged.length) {
+    L.push("## Flagged leads");
+    L.push("");
+    L.push("Imported, but something was adjusted. Original values are kept in the lead's notes where relevant.");
+    L.push("");
+    L.push("| Old id | Client | What changed |");
+    L.push("| --- | --- | --- |");
+    for (const l of flagged) L.push(`| ${esc(l.legacyId)} | ${esc(l.clientName)} | ${l.flags.map(esc).join("; ")} |`);
+    L.push("");
+  }
+
+  return L.join("\n");
+}

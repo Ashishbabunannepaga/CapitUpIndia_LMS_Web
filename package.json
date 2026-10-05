@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "db:test": "scripts/test-db.sh",
-    "db:types": "supabase gen types typescript --local --schema public > src/lib/database.types.ts"
+    "db:types": "supabase gen types typescript --local --schema public > src/lib/database.types.ts",
+    "migrate:firebase": "node migration/firebase/cli.mjs",
+    "migrate:firebase:test": "node --test migration/firebase/test/*.test.mjs && migration/firebase/test/sql-load.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

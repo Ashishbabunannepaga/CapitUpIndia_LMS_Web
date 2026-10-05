@@ -1,0 +1,52 @@
+{
+  "leads": [
+    null,
+    {
+      "id": 1, "clientName": "Renee Systems Pvt Ltd", "type": "Renewal", "businessType": "Corporate",
+      "policyProduct": "Health", "subProductName": "Group health insurance", "renewalDate": "2030-03-15 11:30",
+      "pocName": "Rajesh", "pocDesignation": "Director", "pocContactNumber": "9876543210", "pocEmailId": "Rajesh@Renee.example",
+      "poc2Name": "", "poc2Designation": "", "poc2ContactNumber": "", "poc2EmailId": "",
+      "isDuplicate": false, "duplicateLabel": "",
+      "notes": "Met at the expo.\n[Amit Kumar - 02 Oct 2026, 14:05]: Called Rajesh, asked for quote\n[Admin - 03 Oct 2026, 09:00]: Please prioritise",
+      "status": "Contacted", "assignedAgent": "Amit Kumar", "createdAt": 1790000000000
+    },
+    {
+      "id": 2, "clientName": "renee systems", "type": "New", "businessType": "Corporate",
+      "policyProduct": "Fire", "subProductName": "", "renewalDate": "",
+      "pocName": "Sita", "pocDesignation": "", "pocContactNumber": "9000000001, 9000000002, 9000000003, 9000000004",
+      "pocEmailId": "sita at renee", "notes": "", "status": "Pending", "assignedAgent": "Neha", "createdAt": 1790000100000
+    },
+    {
+      "id": 3, "clientName": "Kaveri Textiles", "type": "Meeting", "businessType": "retail",
+      "policyProduct": "Workmen Comp", "subProductName": "", "renewalDate": "31/12/2029",
+      "pocName": "O'Brien", "pocContactNumber": "", "pocEmailId": "", "notes": "Free text only",
+      "status": "Converted", "assignedAgent": "Unassigned", "createdAt": 1790000200000
+    },
+    {
+      "id": 4, "clientName": "   ", "status": "Prospect", "createdAt": 1790000300000
+    },
+    {
+      "id": 5, "clientName": "Kaveri Textiles", "type": "Meeting", "businessType": "retail",
+      "policyProduct": "Workmen Comp", "subProductName": "", "renewalDate": "31/12/2029",
+      "pocName": "O'Brien", "pocContactNumber": "", "pocEmailId": "", "notes": "Free text only",
+      "status": "Converted", "assignedAgent": "Unassigned", "createdAt": 1790000400000
+    },
+    {
+      "id": 6, "clientName": "Ganga Motors", "type": "Renewal", "policyProduct": "motor",
+      "renewalDate": "2026-02-30", "status": "Whatever", "assignedAgent": "Old Agent", "createdAt": 1790000500000
+    }
+  ],
+  "events": {
+    "10": { "id": 10, "leadId": 1, "title": "Renewal due: Renee Systems (Health)", "date": "2030-03-15", "isSystemGenerated": true, "assignedAgent": "Amit Kumar" },
+    "11": { "id": 11, "leadId": 1, "title": "T-10 Days Alert", "date": "2030-03-05", "isSystemGenerated": true, "isBackgroundReminder": true },
+    "12": { "id": 12, "leadId": 1, "title": "Site visit", "date": "2026-10-20 15:00", "notes": "Bring brochure", "isCompleted": false, "isSystemGenerated": false, "assignedAgent": "Amit Kumar", "createdAt": 1790000600000 },
+    "13": { "id": 13, "leadId": 99, "title": "Call back", "date": "2026-10-21", "isSystemGenerated": false },
+    "14": { "id": 14, "leadId": 0, "title": "Team meeting", "date": "2026-10-22", "isCompleted": true, "isSystemGenerated": false, "assignedAgent": "Neha" }
+  },
+  "users": {
+    "admin": "FIXTURE-SECRET-1",
+    "Amit Kumar": "FIXTURE-SECRET-2",
+    "Neha": "FIXTURE-SECRET-3",
+    "Priya": "FIXTURE-SECRET-4"
+  }
+}
