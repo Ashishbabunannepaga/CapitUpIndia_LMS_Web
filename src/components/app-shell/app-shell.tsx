@@ -66,28 +66,39 @@ function UserPanel({ user }: { user: ShellUser }) {
   );
 }
 
-function SidebarContents({ user, onNavigate }: { user: ShellUser; onNavigate?: () => void }) {
+type NavBadges = Record<string, number>;
+
+function SidebarContents({ user, badges, onNavigate }: { user: ShellUser; badges?: NavBadges; onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className="flex h-16 shrink-0 items-center">
         <Brand />
       </div>
       <div className="flex-1 overflow-y-auto">
-        <SidebarNav role={user.role} onNavigate={onNavigate} />
+        <SidebarNav role={user.role} badges={badges} onNavigate={onNavigate} />
       </div>
       <UserPanel user={user} />
     </div>
   );
 }
 
-export function AppShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
+export function AppShell({
+  user,
+  badges,
+  children,
+}: {
+  user: ShellUser;
+  /** Counts shown next to sidebar items, keyed by href (e.g. unread notes on My Day). */
+  badges?: NavBadges;
+  children: React.ReactNode;
+}) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="min-h-svh">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block">
-        <SidebarContents user={user} />
+        <SidebarContents user={user} badges={badges} />
       </aside>
 
       {/* Mobile header + drawer */}
@@ -111,7 +122,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
       >
         <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
         <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw]">
-          <SidebarContents user={user} onNavigate={() => setMobileOpen(false)} />
+          <SidebarContents user={user} badges={badges} onNavigate={() => setMobileOpen(false)} />
           <Button
             variant="ghost"
             size="icon"
