@@ -73,6 +73,8 @@ export type Database = {
           notes: string;
           status: LeadStatus;
           assigned_agent_id: string | null;
+          // Maintained by the database whenever assigned_agent_id changes.
+          assigned_at: string | null;
           is_duplicate: boolean;
           duplicate_label: string;
           duplicate_resolved_at: string | null;
@@ -282,6 +284,30 @@ export type Database = {
           is_exact: boolean;
         }[];
       };
+      add_lead_contact: {
+        Args: {
+          p_lead_id: number;
+          p_name: string;
+          p_designation?: string;
+          p_phone?: string;
+          p_email?: string;
+        };
+        Returns: "poc1" | "poc2" | "notes" | "existing";
+      };
+      unread_lead_notes: {
+        Args: { p_limit?: number };
+        Returns: {
+          id: number;
+          lead_id: number;
+          client_name: string;
+          agent_id: string | null;
+          agent_name: string;
+          content: string;
+          created_at: string;
+        }[];
+      };
+      count_unread_lead_notes: { Args: Record<string, never>; Returns: number };
+      mark_lead_notes_read: { Args: { p_lead_id?: number | null }; Returns: number };
     };
     Enums: {
       user_role: UserRole;

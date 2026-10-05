@@ -306,4 +306,89 @@ select tests.login('00000000-0000-0000-0000-000000000001');
 select tests.ok((select count(*) = 0 from public.audit_logs), 'agents cannot read the audit log');
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- Agent workspace: assignment time, POC merging, unread notes
+-- ---------------------------------------------------------------------------
+
+set role authenticated;
+select tests.login('00000000-0000-0000-0000-00000000000a');
+insert into public.leads (client_name, assigned_agent_id, poc_name, poc_designation, poc_contact_number)
+values ('Merge Test Co', '00000000-0000-0000-0000-000000000002', '', '', '');
+select tests.ok(
+  (select assigned_at is not null from public.leads where client_name = 'Merge Test Co'),
+  'assigned_at is set when a lead is created with an owner');
+insert into public.leads (client_name) values ('Unowned Co');
+select tests.ok(
+  (select assigned_at is null from public.leads where client_name = 'Unowned Co'),
+  'unassigned leads have no assigned_at');
+update public.leads set assigned_at = '2000-01-01' where client_name = 'Merge Test Co';
+select tests.ok(
+  (select assigned_at > '2000-01-02' from public.leads where client_name = 'Merge Test Co'),
+  'assigned_at cannot be written directly');
+update public.leads set assigned_agent_id = '00000000-0000-0000-0000-000000000002' where client_name = 'Unowned Co';
+select tests.ok(
+  (select assigned_at is not null from public.leads where client_name = 'Unowned Co'),
+  'assigning a lead sets assigned_at');
+
+select tests.login('00000000-0000-0000-0000-000000000002'); -- Neha owns Merge Test Co
+select tests.ok(
+  (select public.add_lead_contact(id, 'Rajesh', 'Director', '98450 12345', 'Rajesh@Acme.in') = 'poc1'
+     from public.leads where client_name = 'Merge Test Co'),
+  'first contact fills an empty POC 1');
+select tests.ok(
+  (select poc_name = 'Rajesh' and poc_designation = 'Director' and poc_email_id = 'rajesh@acme.in'
+     from public.leads where client_name = 'Merge Test Co'),
+  'explicit designation is kept');
+select tests.ok(
+  (select public.add_lead_contact(id, 'Priya', '', '', 'priya@acme.in') = 'poc2'
+     from public.leads where client_name = 'Merge Test Co'),
+  'second contact fills POC 2');
+select tests.ok(
+  (select poc2_designation = 'poc' from public.leads where client_name = 'Merge Test Co'),
+  'designation defaults to poc for merged contacts');
+select tests.ok(
+  (select public.add_lead_contact(id, 'Someone', '', '+91 98450-12345', '') = 'existing'
+     from public.leads where client_name = 'Merge Test Co'),
+  'a contact already on the lead (same phone) is not added twice');
+select tests.ok(
+  (select public.add_lead_contact(id, 'Vikram', 'CFO', '9000000000', '') = 'notes'
+     from public.leads where client_name = 'Merge Test Co'),
+  'third contact goes to notes');
+select tests.ok(
+  (select poc_name = 'Rajesh' and poc2_name = 'Priya'
+      and notes like '%[Additional Contact: Vikram (CFO) - 9000000000]%'
+     from public.leads where client_name = 'Merge Test Co'),
+  'existing POCs are never overwritten');
+
+select tests.login('00000000-0000-0000-0000-000000000001'); -- Amit
+select tests.throws(
+  $$select public.add_lead_contact((select id from public.leads where client_name = 'Merge Test Co'), 'X')$$,
+  'agent cannot add contacts to another agent''s lead');
+
+-- Notes: Neha writes on her lead, the admin sees it unread.
+select tests.login('00000000-0000-0000-0000-000000000002');
+insert into public.lead_notes (lead_id, content)
+select id, 'Met Rajesh, quote by Friday' from public.leads where client_name = 'Merge Test Co';
+select tests.ok(public.count_unread_lead_notes() = 0, 'your own notes are never unread');
+
+select tests.login('00000000-0000-0000-0000-00000000000a');
+select tests.ok(public.count_unread_lead_notes() >= 2, 'admin sees agents'' notes as unread');
+select tests.ok(
+  (select count(*) = 1 from public.unread_lead_notes(10) where client_name = 'Merge Test Co'),
+  'unread feed carries the lead name');
+select tests.ok(
+  (select public.mark_lead_notes_read((select id from public.leads where client_name = 'Merge Test Co')) = 1),
+  'marking one lead read marks its notes');
+select tests.ok(
+  (select count(*) = 0 from public.unread_lead_notes(10) where client_name = 'Merge Test Co'),
+  'read notes leave the feed');
+select public.mark_lead_notes_read(null);
+select tests.ok(public.count_unread_lead_notes() = 0, 'mark all read clears the badge');
+
+select tests.login('00000000-0000-0000-0000-000000000001'); -- Amit cannot see Neha's notes
+select tests.ok(
+  (select count(*) = 0 from public.unread_lead_notes(10) where client_name = 'Merge Test Co'),
+  'unread feed respects lead visibility');
+reset role;
+
 \echo 'All database tests passed.'

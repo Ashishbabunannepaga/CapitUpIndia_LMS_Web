@@ -61,3 +61,24 @@ export function formatNoteLine(agentName: string, createdAt: string | Date, cont
       .find((p) => p.type === type)?.value ?? "";
   return `[${agentName} - ${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}]: ${content}`;
 }
+
+/** Statuses that end the pipeline; their renewals and follow-ups are no longer chased. */
+export const CLOSED_STATUSES: readonly LeadStatus[] = ["Closed Won", "Closed Lost"];
+
+/** Tailwind classes per status, shared by badges, Kanban columns and charts. */
+export const STATUS_STYLES: Record<LeadStatus, { badge: string; dot: string }> = {
+  Prospect: { badge: "border-slate-200 bg-slate-100 text-slate-700", dot: "bg-slate-400" },
+  Quoted: { badge: "border-indigo-200 bg-indigo-50 text-indigo-700", dot: "bg-indigo-500" },
+  "Active Client": { badge: "border-emerald-200 bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
+  "Follow-up": { badge: "border-amber-200 bg-amber-50 text-amber-800", dot: "bg-amber-500" },
+  "Closed Won": { badge: "border-green-300 bg-green-100 text-green-800", dot: "bg-green-600" },
+  "Closed Lost": { badge: "border-rose-200 bg-rose-50 text-rose-700", dot: "bg-rose-500" },
+};
+
+export function isLeadStatus(value: unknown): value is LeadStatus {
+  return typeof value === "string" && (LEAD_STATUSES as readonly string[]).includes(value);
+}
+
+export function isPolicyProduct(value: unknown): value is PolicyProduct {
+  return typeof value === "string" && (POLICY_PRODUCTS as readonly string[]).includes(value);
+}
