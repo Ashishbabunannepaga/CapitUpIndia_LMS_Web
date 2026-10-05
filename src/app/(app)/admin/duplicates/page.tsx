@@ -59,7 +59,7 @@ export default async function DuplicatesPage() {
       ) : (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            {groups.size} compan{groups.size === 1 ? "y" : "ies"} need review.
+            {groups.size === 1 ? "1 company needs review." : `${groups.size} companies need review.`}
           </p>
           {[...groups.entries()].map(([key, records]) => {
             const owners = new Set(records.map((r) => r.agent_name ?? "Unassigned"));

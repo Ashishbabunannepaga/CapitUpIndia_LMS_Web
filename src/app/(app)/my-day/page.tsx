@@ -27,6 +27,7 @@ import {
   daysBetween,
   formatDate,
   formatDateTime,
+  formatNoteTimestamp,
   formatTime,
   nowMs,
   startOfBusinessDay,
@@ -81,7 +82,7 @@ function Kpi({
       </div>
       <div className="min-w-0">
         <p className="text-2xl leading-none font-semibold tabular-nums">{value}</p>
-        <p className="mt-1 truncate text-xs text-muted-foreground">{label}</p>
+        <p className="mt-1 text-xs leading-tight text-muted-foreground">{label}</p>
       </div>
     </Link>
   );
@@ -278,21 +279,20 @@ export default async function MyDayPage() {
   const doneToday = (doneTodayResult.data ?? []).map((e) => toTask(e, today));
 
   const firstName = profile.full_name.split(/\s+/)[0];
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const todaysWork = renewalsToday.length + overdueTasks.length + todayTasks.length;
 
   return (
     <>
       <PageHeader
         title={`${greeting()}, ${firstName}`}
-        description={
+        description={`${
           todaysWork === 0
-            ? `Nothing due today. You have ${followUps.count ?? 0} follow-ups and ${quoted.count ?? 0} open quotes in the pipeline.`
-            : `Today: ${renewalsToday.length} renewal${renewalsToday.length === 1 ? "" : "s"} due, ${
-                todayTasks.length
-              } task${todayTasks.length === 1 ? "" : "s"}${
+            ? "Nothing due today."
+            : `Today: ${plural(renewalsToday.length, "renewal")} due, ${plural(todayTasks.length, "task")}${
                 overdueTasks.length ? `, ${overdueTasks.length} overdue` : ""
-              }. ${followUps.count ?? 0} follow-ups and ${quoted.count ?? 0} quotes are open.`
-        }
+              }.`
+        } ${plural(followUps.count ?? 0, "follow-up")} and ${plural(quoted.count ?? 0, "quote")} open in the pipeline.`}
         actions={
           <Button asChild>
             <Link href="/leads/new">
@@ -305,14 +305,14 @@ export default async function MyDayPage() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Kpi
-          label="Renewals due this week"
+          label="Renewals this week"
           value={renewalsToday.length + renewalsWeek.length}
           href={leadsHref({ renewal: "7", sort: "renewal_asc" })}
           icon={CalendarClock}
           tone="warning"
         />
         <Kpi
-          label="Overdue renewals (30 days)"
+          label="Overdue renewals"
           value={overdueRenewalsResult.count ?? 0}
           href={leadsHref({ renewal: "overdue", sort: "renewal_desc" })}
           icon={AlarmClock}
@@ -320,7 +320,7 @@ export default async function MyDayPage() {
         />
         <Kpi label="Overdue tasks" value={overdueTasks.length} href="#tasks" icon={AlarmClock} tone="urgent" />
         <Kpi
-          label="Pending follow-ups"
+          label="Follow-ups"
           value={followUps.count ?? 0}
           href={leadsHref({ status: "Follow-up" })}
           icon={PhoneCall}
@@ -336,8 +336,8 @@ export default async function MyDayPage() {
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-5">
-        <div className="space-y-6 xl:col-span-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <div className="min-w-0 space-y-6 xl:col-span-3">
           <Panel
             title="Renewals"
             count={renewals.length + overdueRenewals.length}
@@ -447,7 +447,7 @@ export default async function MyDayPage() {
           </Panel>
         </div>
 
-        <div className="space-y-6 xl:col-span-2">
+        <div className="min-w-0 space-y-6 xl:col-span-2">
           <Panel title="Today's checklist" count={overdueTasks.length + todayTasks.length} className="scroll-mt-6">
             <div id="tasks" className="space-y-4">
               <QuickTaskForm
@@ -492,7 +492,7 @@ export default async function MyDayPage() {
                         <span className="truncate font-medium text-foreground group-hover:text-primary group-hover:underline">
                           {note.client_name}
                         </span>
-                        <span className="ml-auto shrink-0">{formatDateTime(note.created_at)}</span>
+                        <span className="ml-auto shrink-0">{formatNoteTimestamp(note.created_at)}</span>
                       </p>
                       <p className="mt-1 line-clamp-2 text-sm">{note.content}</p>
                     </Link>

@@ -50,11 +50,11 @@ export function RenewalDate({
   const today = todayInBusinessTz();
   const urgency = renewalUrgency(date, today);
   return (
-    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap", !closed && URGENCY_STYLES[urgency])}>
+    <span className={cn("inline-flex flex-wrap items-center gap-x-1.5", !closed && URGENCY_STYLES[urgency])}>
       {!compact && urgency !== "later" && !closed ? <CalendarClock className="size-3.5" /> : null}
-      {formatDate(date)}
+      <span className="whitespace-nowrap">{formatDate(date)}</span>
       {!closed && urgency !== "later" ? (
-        <span className="text-xs font-normal opacity-80">({relativeDays(date, today)})</span>
+        <span className="text-xs font-normal whitespace-nowrap opacity-80">({relativeDays(date, today)})</span>
       ) : null}
     </span>
   );

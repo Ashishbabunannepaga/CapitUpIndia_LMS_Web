@@ -121,23 +121,18 @@ export function QuickTaskForm({
         });
       }}
     >
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          name="title"
-          required
-          maxLength={300}
-          placeholder="Plan a task, e.g. Call Rajesh about the GMC quote"
-          aria-label="Task"
-          className="flex-1"
-        />
-        <div className="flex gap-2">
-          <Input name="date" type="date" defaultValue={today} aria-label="Date" className="w-36" />
-          <Input name="time" type="time" defaultValue="10:00" aria-label="Time" className="w-28" />
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
+      <Input
+        name="title"
+        required
+        maxLength={300}
+        placeholder="Plan a task, e.g. Call Rajesh about the GMC quote"
+        aria-label="Task"
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input name="date" type="date" defaultValue={today} aria-label="Date" className="w-auto min-w-0 flex-1 sm:flex-none" />
+        <Input name="time" type="time" defaultValue="10:00" aria-label="Time" className="w-28" />
         {assignees ? (
-          <NativeSelect name="assignee" size="sm" aria-label="Assign to" defaultValue={currentUserId} className="max-w-56">
+          <NativeSelect name="assignee" aria-label="Assign to" defaultValue={currentUserId} className="w-full sm:w-auto sm:min-w-40 sm:flex-1">
             {assignees.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.id === currentUserId ? `Me (${a.full_name})` : a.full_name}
@@ -145,12 +140,12 @@ export function QuickTaskForm({
             ))}
           </NativeSelect>
         ) : null}
-        {error ? <p className="text-xs text-destructive">{error}</p> : null}
-        <Button type="submit" size="sm" disabled={pending} className="ml-auto">
+        <Button type="submit" disabled={pending} className="ml-auto">
           {pending ? <Loader2 className="animate-spin" /> : <Plus />}
           Add task
         </Button>
       </div>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </form>
   );
 }

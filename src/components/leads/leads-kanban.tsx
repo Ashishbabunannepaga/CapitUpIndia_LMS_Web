@@ -41,8 +41,8 @@ export function LeadsKanban({ leads, showAgent }: { leads: LeadWithAgent[]; show
           {error}
         </p>
       ) : null}
-      <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-        <div className="grid min-w-[1200px] grid-cols-6 gap-3">
+      <div className="relative -mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
+        <div className="grid min-w-[1040px] grid-cols-6 gap-2.5">
           {LEAD_STATUSES.map((status) => {
             const column = board.filter((lead) => lead.status === status);
             return (
@@ -85,7 +85,7 @@ export function LeadsKanban({ leads, showAgent }: { leads: LeadWithAgent[]; show
                         event.dataTransfer.effectAllowed = "move";
                       }}
                       className={cn(
-                        "group cursor-grab rounded-lg border bg-card p-3 text-sm shadow-xs active:cursor-grabbing",
+                        "group relative cursor-grab rounded-lg border bg-card p-3 text-sm shadow-xs active:cursor-grabbing",
                         lead.is_duplicate && "border-red-200",
                       )}
                     >

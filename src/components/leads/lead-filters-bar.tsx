@@ -130,11 +130,11 @@ export function LeadFiltersBar({
         <NativeSelect
           size="sm"
           aria-label="New or renewal"
-          className="lg:w-36"
+          className="lg:w-40"
           value={filters.type ?? ""}
           onChange={(e) => apply({ type: (e.target.value || null) as LeadFilters["type"] })}
         >
-          <option value="">New and renewal</option>
+          <option value="">New &amp; renewal</option>
           {LEAD_TYPES.map((t) => (
             <option key={t} value={t}>
               {t}

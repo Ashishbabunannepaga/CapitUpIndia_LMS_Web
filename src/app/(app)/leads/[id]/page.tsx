@@ -18,8 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireProfile } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
-import { formatDateTime, nowMs } from "@/lib/dates";
-import { CLOSED_STATUSES, formatNoteLine } from "@/lib/domain";
+import { formatDateTime, formatNoteTimestamp, nowMs } from "@/lib/dates";
+import { CLOSED_STATUSES } from "@/lib/domain";
 import { findSimilarLeads, getLead, getLeadEvents, getLeadNotes, getTeam } from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -139,13 +139,16 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
     getLeadNotes(id),
     getLeadEvents(id),
     admin ? getTeam() : Promise.resolve([]),
-    lead.is_duplicate ? findSimilarLeads(lead.client_name, id) : Promise.resolve([]),
+    findSimilarLeads(lead.client_name, id),
     supabase.rpc("unread_lead_notes", { p_limit: 200 }),
   ]);
   const unreadIds = new Set((unread.data ?? []).filter((n) => n.lead_id === id).map((n) => n.id));
   const saved = (await searchParams).saved;
   const savedMessage = typeof saved === "string" ? SAVED_MESSAGES[saved] : undefined;
 
+  // Other records for the same company. A newer record is flagged as a
+  // duplicate; the original owner still sees who else holds the company.
+  const sameCompany = similar.filter((match) => match.is_exact);
   const closed = CLOSED_STATUSES.includes(lead.status);
   const now = nowMs();
   const visibleEvents = events.filter((e) => !e.is_background_reminder);
@@ -232,10 +235,37 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             {admin ? <ResolveDuplicateButton leadId={lead.id} /> : null}
           </div>
         </div>
+      ) : sameCompany.length > 0 ? (
+        <div
+          role="note"
+          className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-semibold">This company has another record</p>
+            <ul className="mt-1 space-y-0.5">
+              {sameCompany.map((match) => (
+                <li key={match.lead_id}>
+                  {admin || match.assigned_agent_id === profile.id ? (
+                    <Link href={`/leads/${match.lead_id}`} className="font-medium underline">
+                      {match.client_name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{match.client_name}</span>
+                  )}{" "}
+                  · {match.assigned_agent_name}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-amber-800/80 dark:text-amber-100/80">
+              Coordinate before reaching out so the client hears from one person.
+            </p>
+          </div>
+        </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="min-w-0 space-y-6 xl:col-span-2">
           <Panel title="Policy">
             <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               <Fact label="Renewal date">
@@ -293,7 +323,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
           </Panel>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Panel title={`Notes thread (${notes.length})`}>
             <AddNoteForm leadId={lead.id} />
             {notes.length > 0 ? (
@@ -308,14 +338,12 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                   >
                     <p className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span>
-                        <span className="font-medium text-foreground">{note.agent_name}</span> ·{" "}
-                        {formatDateTime(note.created_at)}
+                        <span className="font-medium text-foreground">{note.agent_name}</span> -{" "}
+                        {formatNoteTimestamp(note.created_at)}
                       </span>
                       {unreadIds.has(note.id) ? <Badge className="px-1.5 py-0 text-[10px]">New</Badge> : null}
                     </p>
-                    <p className="whitespace-pre-wrap" title={formatNoteLine(note.agent_name, note.created_at, note.content)}>
-                      {note.content}
-                    </p>
+                    <p className="whitespace-pre-wrap">{note.content}</p>
                   </li>
                 ))}
               </ol>

@@ -100,3 +100,18 @@ export function relativeDays(date: string, today: string = todayInBusinessTz()):
 export function nowMs(): number {
   return Date.now();
 }
+
+/** "05 Oct 2026, 14:30" in business time, the note timestamp format. */
+export function formatNoteTimestamp(timestamp: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: BUSINESS_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(timestamp));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}`;
+}
