@@ -7,7 +7,8 @@ import { leadIntakePrompt, visitingCardPrompt } from "@/lib/ai/prompts";
 import { leadSchema } from "@/lib/ai/schemas";
 import { requireProfile } from "@/lib/auth";
 import { todayInBusinessTz } from "@/lib/dates";
-import { MAX_CARD_BYTES, sniffImage, uploadCard } from "@/lib/visiting-cards";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
+import { sniffImage, uploadCard } from "@/lib/visiting-cards";
 
 export type ExtractionResult =
   | {
@@ -64,7 +65,7 @@ export async function scanVisitingCard(formData: FormData): Promise<ExtractionRe
   const profile = await requireProfile();
   const file = formData.get("card");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose a photo of the card." };
-  if (file.size > MAX_CARD_BYTES) return { ok: false, error: "The photo is larger than 5 MB." };
+  if (file.size > MAX_UPLOAD_BYTES) return { ok: false, error: `The photo is larger than ${MAX_UPLOAD_LABEL}.` };
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const image = sniffImage(bytes);

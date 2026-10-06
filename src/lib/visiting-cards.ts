@@ -10,7 +10,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // leads the signed-in user can already read (RLS).
 
 const BUCKET = "visiting-cards";
-export const MAX_CARD_BYTES = 5 * 1024 * 1024;
 
 const SIGNATURES: { mime: string; ext: string; test: (b: Uint8Array) => boolean }[] = [
   { mime: "image/jpeg", ext: "jpg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
