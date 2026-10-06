@@ -14,8 +14,19 @@ import { AgentName } from "./lead-views";
 
 type Move = { id: number; status: LeadStatus };
 
-/** Pipeline board: drag a card to another column to change its status. */
-export function LeadsKanban({ leads, showAgent }: { leads: LeadWithAgent[]; showAgent: boolean }) {
+/**
+ * Pipeline board: drag a card to another column to change its status.
+ * `totals` holds each column's full count when not every matching lead is loaded.
+ */
+export function LeadsKanban({
+  leads,
+  totals,
+  showAgent,
+}: {
+  leads: LeadWithAgent[];
+  totals: Record<LeadStatus, number> | null;
+  showAgent: boolean;
+}) {
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<LeadStatus | null>(null);
@@ -45,6 +56,10 @@ export function LeadsKanban({ leads, showAgent }: { leads: LeadWithAgent[]; show
         <div className="grid min-w-[1040px] grid-cols-6 gap-2.5">
           {LEAD_STATUSES.map((status) => {
             const column = board.filter((lead) => lead.status === status);
+            // Cards moved in or out since the counts were taken shift the total too.
+            const total = totals
+              ? totals[status] + column.length - leads.filter((lead) => lead.status === status).length
+              : column.length;
             return (
               <section
                 key={status}
@@ -72,7 +87,7 @@ export function LeadsKanban({ leads, showAgent }: { leads: LeadWithAgent[]; show
                     {status}
                   </div>
                   <span className="rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                    {column.length}
+                    {total}
                   </span>
                 </header>
                 <div className="flex flex-1 flex-col gap-2 p-2">
@@ -144,8 +159,13 @@ export function LeadsKanban({ leads, showAgent }: { leads: LeadWithAgent[]; show
                       </div>
                     </article>
                   ))}
-                  {column.length === 0 ? (
+                  {column.length === 0 && total === 0 ? (
                     <p className="px-2 py-6 text-center text-xs text-muted-foreground">Drop a lead here</p>
+                  ) : null}
+                  {total > column.length ? (
+                    <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+                      Showing {column.length} of {total}. Narrow the filters to see the rest.
+                    </p>
                   ) : null}
                 </div>
               </section>

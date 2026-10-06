@@ -14,6 +14,11 @@ function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? "";
 }
 
+/** The POC's name, or "" when it is the "Contact Person" placeholder the old app and add_lead_contact() store. */
+function contactName(name: string): string {
+  return name.trim().toLowerCase() === "contact person" ? "" : name.trim();
+}
+
 /** Used when AI is unavailable, so the agent still gets a sendable draft. */
 function templateDraft(tone: FollowUpTone, poc: string, client: string, product: string, sender: string): string {
   const hello = poc ? `Hi ${firstName(poc)},` : "Hello,";
@@ -47,7 +52,7 @@ export async function generateFollowUp(leadId: number, tone: string, previousDra
   const sender = firstName(profile.full_name) || profile.full_name;
   const context = [
     `Company: ${lead.client_name}`,
-    `Contact: ${lead.poc_name || "unknown"}${lead.poc_designation && lead.poc_designation !== "poc" ? ` (${lead.poc_designation})` : ""}`,
+    `Contact: ${contactName(lead.poc_name) || "unknown"}${lead.poc_designation && lead.poc_designation !== "poc" ? ` (${lead.poc_designation})` : ""}`,
     `Product: ${lead.policy_product}${lead.sub_product_name ? ` - ${lead.sub_product_name}` : ""} (${lead.type}, ${lead.business_type})`,
     `Pipeline status: ${lead.status}`,
     lead.renewal_date ? `Renewal date: ${formatDate(lead.renewal_date)}` : "",
@@ -80,7 +85,7 @@ export async function generateFollowUp(leadId: number, tone: string, previousDra
     if (!(error instanceof AiUnavailableError)) throw error;
     return {
       ok: true,
-      text: templateDraft(tone, lead.poc_name, lead.client_name, lead.policy_product, sender),
+      text: templateDraft(tone, contactName(lead.poc_name), lead.client_name, lead.policy_product, sender),
       source: "template",
       notice: `${error.message} Here is a standard draft instead.`,
     };

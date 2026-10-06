@@ -2,8 +2,9 @@ import "server-only";
 
 import { cache } from "react";
 
-import type { Lead, Profile } from "@/lib/database.types";
+import type { Lead, LeadStatus, Profile } from "@/lib/database.types";
 import { addDays, todayInBusinessTz } from "@/lib/dates";
+import { LEAD_STATUSES } from "@/lib/domain";
 import type { LeadFilters } from "@/lib/lead-filters";
 import { createClient } from "@/lib/supabase/server";
 
@@ -43,10 +44,11 @@ function searchTerm(q: string): string {
 
 export const LEAD_LIST_LIMIT = 500;
 
-export async function listLeads(filters: LeadFilters): Promise<{ leads: LeadWithAgent[]; truncated: boolean }> {
-  const supabase = await createClient();
-  const today = todayInBusinessTz();
-  let query = supabase.from("leads").select("*");
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/** The leads matching the list filters; `head` counts them without loading rows. */
+function filteredLeads(supabase: Supabase, filters: LeadFilters, today: string, head?: { count: "exact"; head: true }) {
+  let query = supabase.from("leads").select("*", head);
 
   const term = searchTerm(filters.q);
   if (term) {
@@ -84,6 +86,12 @@ export async function listLeads(filters: LeadFilters): Promise<{ leads: LeadWith
       query = query.is("renewal_date", null);
       break;
   }
+  return query;
+}
+
+export async function listLeads(filters: LeadFilters): Promise<{ leads: LeadWithAgent[]; truncated: boolean }> {
+  const supabase = await createClient();
+  let query = filteredLeads(supabase, filters, todayInBusinessTz());
 
   switch (filters.sort) {
     case "name":
@@ -106,6 +114,20 @@ export async function listLeads(filters: LeadFilters): Promise<{ leads: LeadWith
   if (error) throw error;
   const truncated = data.length > LEAD_LIST_LIMIT;
   return { leads: await withAgentNames(data.slice(0, LEAD_LIST_LIMIT)), truncated };
+}
+
+/** How many leads match the filters in each status, for board columns beyond the list limit. */
+export async function countLeadsByStatus(filters: LeadFilters): Promise<Record<LeadStatus, number>> {
+  const supabase = await createClient();
+  const today = todayInBusinessTz();
+  const counts = await Promise.all(
+    LEAD_STATUSES.map(async (status) => {
+      const { count, error } = await filteredLeads(supabase, { ...filters, status }, today, { count: "exact", head: true });
+      if (error) throw error;
+      return [status, count ?? 0] as const;
+    }),
+  );
+  return Object.fromEntries(counts) as Record<LeadStatus, number>;
 }
 
 export async function getLead(id: number): Promise<LeadWithAgent | null> {

@@ -192,6 +192,7 @@ export default async function MyDayPage() {
     followUps,
     renewalsResult,
     overdueRenewalsResult,
+    overdueRenewalCount,
     openTasksResult,
     doneTodayResult,
     recentResult,
@@ -213,12 +214,18 @@ export default async function MyDayPage() {
       .limit(60),
     supabase
       .from("leads")
-      .select("*", { count: "exact" })
+      .select("*")
       .lt("renewal_date", today)
       .gte("renewal_date", addDays(today, -30))
       .not("status", "in", OPEN_STATUSES)
       .order("renewal_date", { ascending: false })
       .limit(10),
+    // Every overdue renewal, like the list the KPI links to; the panel shows the last 30 days.
+    supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .lt("renewal_date", today)
+      .not("status", "in", OPEN_STATUSES),
     supabase
       .from("events")
       .select("*")
@@ -313,7 +320,7 @@ export default async function MyDayPage() {
         />
         <Kpi
           label="Overdue renewals"
-          value={overdueRenewalsResult.count ?? 0}
+          value={overdueRenewalCount.count ?? 0}
           href={leadsHref({ renewal: "overdue", sort: "renewal_desc" })}
           icon={AlarmClock}
           tone="urgent"
