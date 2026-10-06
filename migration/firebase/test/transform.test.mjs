@@ -86,5 +86,27 @@ test("records that differ in any field are both kept", () => {
     ],
   });
   assert.deepEqual(imported.map((l) => l.legacyId), ["1", "3", "4"]);
-  assert.deepEqual(skipped.map((s) => s.reason), ["Exact copy of record 1"]);
+  assert.deepEqual(skipped.map((s) => s.reason), [`Copy of record 1, which writes the company name as "Acme Pvt Ltd"`]);
+});
+
+test("the old calendar fills a blanked renewal date and keeps an overwritten client", () => {
+  const due = (id, leadId, title, date) => [id, { id, leadId, title, date, isSystemGenerated: true, isBackgroundReminder: false, notes: "POC: X" }];
+  const { imported, calendarMismatches } = transform({
+    leads: [
+      lead({ id: 1, clientName: "Jan First Ltd", renewalDate: "" }),
+      lead({ id: 2, clientName: "Chiranjeevi" }),
+      lead({ id: 3, clientName: "Split Dates", renewalDate: "" }),
+    ],
+    events: Object.fromEntries([
+      due("a", 1, "Renewal due: Jan First Ltd (Health)", "2027-01-01"),
+      due("b", 2, "Renewal due: Awaze pvt Ltd (Health)", "2026-08-07"),
+      due("c", 3, "Renewal due: Split Dates (Health)", "2027-01-01"),
+      due("d", 3, "Renewal due: Split Dates (Health)", "2027-02-01"),
+      due("e", 1, "Task due: Jan First Ltd (Health)", "2026-12-31"),
+    ]),
+  });
+  assert.equal(imported[0].renewalDate, "2027-01-01");
+  assert.match(imported[1].notes, /Old calendar entry for this record: "Renewal due: Awaze pvt Ltd \(Health\)" on 2026-08-07 \(POC: X\)/);
+  assert.equal(imported[2].renewalDate, null, "conflicting calendar dates are not guessed");
+  assert.deepEqual(calendarMismatches.map((c) => c.calendarClient), ["Awaze pvt Ltd"]);
 });

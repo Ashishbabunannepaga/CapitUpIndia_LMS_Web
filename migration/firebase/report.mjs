@@ -10,7 +10,8 @@ function countBy(items, key) {
 }
 
 export function buildReport(result, { sourceLabel, generatedAt }) {
-  const { imported, skipped, duplicateGroups, events, skippedEvents, agents, stats } = result;
+  const { imported, skipped, duplicateGroups, events, skippedEvents, calendarMismatches = [], calendarOrphans = 0, agents, stats } =
+    result;
   const flagged = imported.filter((l) => l.flags.length);
   const notes = imported.reduce((n, l) => n + l.leadNotes.length, 0);
   const withDates = imported.filter((l) => l.renewalDate).length;
@@ -31,7 +32,8 @@ export function buildReport(result, { sourceLabel, generatedAt }) {
   L.push(`| Agent notes split into the notes timeline | ${notes} |`);
   L.push(`| Leads with a renewal date (reminders regenerated) | ${withDates} |`);
   L.push(`| Hand-made calendar events imported | ${events.length} |`);
-  L.push(`| Old renewal reminders skipped (regenerated instead) | ${skippedEvents.systemGenerated} |`);
+  L.push(`| Old renewal reminders skipped (regenerated from renewal dates instead) | ${skippedEvents.systemGenerated} |`);
+  L.push(`| Old calendar entries naming a different client (kept in notes) | ${calendarMismatches.length} |`);
   const otherEventSkips = skippedEvents.orphaned + skippedEvents.unreadableDate + skippedEvents.noTitle;
   if (otherEventSkips) {
     L.push(
@@ -39,6 +41,12 @@ export function buildReport(result, { sourceLabel, generatedAt }) {
     );
   }
   L.push("");
+  const cutoff = new Date(Date.parse(generatedAt) - 30 * 86400000).toISOString().slice(0, 10);
+  const longPast = imported.filter((l) => l.renewalDate && l.renewalDate < cutoff).length;
+  if (longPast) {
+    L.push(`${longPast} renewal dates are more than 30 days past. Their due tasks are imported as done so they do not bury today's work on My Day; the leads keep their dates, so analytics still counts them as overdue renewals.`);
+    L.push("");
+  }
   if (stats.renewalTimesDropped) {
     L.push(`${stats.renewalTimesDropped} renewal dates carried a time of day; the web app keeps the date and uses the configured due time (10:00 IST).`);
     L.push("");
@@ -64,16 +72,39 @@ export function buildReport(result, { sourceLabel, generatedAt }) {
   L.push("## Agents");
   L.push("");
   L.push("When the import runs, each agent is matched to the web account with the same full name (or the email given in `agents.json`).");
+  L.push("The old app's Admin login maps to the web admin account when no account is called Admin and there is exactly one active admin.");
   L.push("If an agent who owns leads has no account, the import stops before writing anything. `check.sql` shows the matches beforehand.");
   L.push("");
   L.push("| Agent in the old app | Leads | Notes written | Events | Web account |");
   L.push("| --- | ---: | ---: | ---: | --- |");
   const matchText = (a) =>
-    a.match === "email" ? esc(a.email) : a.match === "unassigned" ? "Unassigned (by choice)" : a.required ? "**needed**, matched by full name" : "optional, matched by full name";
+    a.match === "email"
+      ? esc(a.email)
+      : a.match === "unassigned"
+        ? "Unassigned (by choice)"
+        : `${a.required ? "**needed**" : "optional"}, matched by full name${a.key === "admin" ? " or the admin account" : ""}`;
   for (const a of agents) {
     L.push(`| ${esc(a.name)} | ${a.leads} | ${a.notes} | ${a.events} | ${matchText(a)} |`);
   }
   L.push("");
+
+  if (calendarMismatches.length) {
+    L.push("## Old calendar entries that name a different client");
+    L.push("");
+    L.push("The old app reused record ids across phones, so a lead could be overwritten by another while its calendar entry kept the original client.");
+    L.push("These entries are added to the notes of the lead that now holds the record. Check whether the client in the calendar needs its own lead.");
+    L.push("");
+    L.push("| Old id | Lead now | Calendar entry | Date | Details |");
+    L.push("| --- | --- | --- | --- | --- |");
+    for (const c of calendarMismatches) {
+      L.push(`| ${esc(c.legacyId)} | ${esc(c.clientName)} | ${esc(c.title)} | ${esc(c.date)} | ${esc(c.notes)} |`);
+    }
+    L.push("");
+  }
+  if (calendarOrphans) {
+    L.push(`Old calendar entries for ${calendarOrphans} leads that are no longer in the export (deleted in the old app) are not imported.`);
+    L.push("");
+  }
 
   if (duplicateGroups.length) {
     L.push("## Duplicate companies");

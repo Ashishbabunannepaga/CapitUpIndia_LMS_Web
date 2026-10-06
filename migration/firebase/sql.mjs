@@ -79,12 +79,19 @@ export function buildImportSql(result, { sourceLabel = "firebase export", genera
   push(") m");
   push("where a.email is null and not a.unassigned and m.name_key = a.name_key and m.n = 1;");
   push("");
+  push("-- The old app's built-in \"admin\" login is the administrator: when no account");
+  push("-- is called Admin, use the only active admin account.");
+  push("update firebase_agents a set profile_id = (select p.id from public.profiles p where p.role = 'ADMIN' and p.is_active)");
+  push("where a.profile_id is null and a.email is null and not a.unassigned and a.name_key = 'admin'");
+  push("  and (select count(*) from public.profiles p where p.role = 'ADMIN' and p.is_active) = 1;");
+  push("");
   push("do $$");
   push("declare problems text;");
   push("begin");
   push("  select string_agg(");
   push("    case");
   push("      when a.email is not null then format('%s (%s leads): no web account with email %s', a.display_name, a.lead_count, a.email)");
+  push("      when a.name_key = 'admin' then format('%s: no account named Admin and not exactly one active admin account', a.display_name)");
   push(`      when (select count(*) from public.profiles p where ${SQL_NAME_KEY} = a.name_key) > 1`);
   push("        then format('%s (%s leads): several web accounts have this name', a.display_name, a.lead_count)");
   push("      else format('%s (%s leads): no web account with this full name', a.display_name, a.lead_count)");
@@ -134,6 +141,15 @@ export function buildImportSql(result, { sourceLabel = "firebase export", genera
   }
 
   push("alter table public.leads enable trigger leads_track_assignment;");
+  push("");
+  push("-- The old app never closed its renewal-due entries, so every renewal date more");
+  push("-- than 30 days past would open as an overdue task and bury today's work on My");
+  push("-- Day. Close those; the lead keeps its renewal date, so overdue renewals still");
+  push("-- show in analytics and on the lead.");
+  push("update public.events e set is_completed = true");
+  push("from firebase_lead_map m");
+  push("where e.lead_id = m.lead_id and e.is_system_generated and e.milestone = 'DUE'");
+  push("  and e.event_timestamp < now() - interval '30 days';");
   push("");
 
   if (notes) {
@@ -196,8 +212,10 @@ export function buildCheckSql(result, { generatedAt = new Date().toISOString() }
   push("  select a.*,");
   push("    (select count(*) from public.profiles p where a.email is not null and p.email = a.email) as by_email,");
   push(`    (select count(*) from public.profiles p where ${SQL_NAME_KEY} = a.name_key) as by_name,`);
+  push("    (select count(*) from public.profiles p where a.name_key = 'admin' and p.role = 'ADMIN' and p.is_active) as admins,");
   push("    (select string_agg(p.full_name || ' <' || p.email || '>' || case when p.is_active then '' else ' (inactive)' end, ', ')");
-  push(`       from public.profiles p where (a.email is not null and p.email = a.email) or (a.email is null and ${SQL_NAME_KEY} = a.name_key)) as accounts`);
+  push(`       from public.profiles p where (a.email is not null and p.email = a.email) or (a.email is null and ${SQL_NAME_KEY} = a.name_key)) as accounts,`);
+  push("    (select string_agg(p.full_name || ' <' || p.email || '>', ', ') from public.profiles p where p.role = 'ADMIN' and p.is_active) as admin_accounts");
   push("  from agents a",);
   push(")");
   push("select 1 as ord, 'Database migrations applied' as check_name,");
@@ -220,6 +238,7 @@ export function buildCheckSql(result, { generatedAt = new Date().toISOString() }
   push("    when m.unassigned then 'ok'");
   push("    when m.email is not null and m.by_email = 1 then 'ok'");
   push("    when m.email is null and m.by_name = 1 then 'ok'");
+  push("    when m.email is null and m.by_name = 0 and m.admins = 1 then 'ok'");
   push("    when not m.required then 'ok'");
   push("    when m.email is not null then 'no web account with email ' || m.email");
   push("    when m.by_name > 1 then 'several web accounts have this name'");
@@ -228,6 +247,7 @@ export function buildCheckSql(result, { generatedAt = new Date().toISOString() }
   push("  case");
   push("    when m.unassigned then 'imported as Unassigned (by choice)'");
   push("    when coalesce(m.accounts, '') <> '' and (m.by_email = 1 or (m.email is null and m.by_name = 1)) then 'maps to ' || m.accounts");
+  push("    when m.email is null and m.by_name = 0 and m.admins = 1 then 'maps to the admin account ' || m.admin_accounts");
   push("    when not m.required then 'no account; their notes keep the name only'");
   push("    else coalesce('matches ' || m.accounts, 'create an account, then: update public.profiles set full_name = ''' || m.display_name || ''' where email = ''<their login email>''')");
   push("  end");
