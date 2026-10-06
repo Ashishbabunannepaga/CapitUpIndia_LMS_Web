@@ -74,3 +74,17 @@ test("agent names use the spelling from leads, not the login", () => {
   });
   assert.deepEqual(agents.map((a) => [a.name, a.leads]), [["Sravani", 3]]);
 });
+
+test("records that differ in any field are both kept", () => {
+  const base = { clientName: "Acme Pvt Ltd", pocName: "Ravi", pocDesignation: "poc", poc2EmailId: "" };
+  const { imported, skipped } = transform({
+    leads: [
+      lead({ id: 1, ...base }),
+      lead({ id: 2, ...base, clientName: "Acme Pvt. Ltd" }),
+      lead({ id: 3, ...base, pocDesignation: "Director" }),
+      lead({ id: 4, ...base, poc2EmailId: "b@acme.example" }),
+    ],
+  });
+  assert.deepEqual(imported.map((l) => l.legacyId), ["1", "3", "4"]);
+  assert.deepEqual(skipped.map((s) => s.reason), ["Exact copy of record 1"]);
+});

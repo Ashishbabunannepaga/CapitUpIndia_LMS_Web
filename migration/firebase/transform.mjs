@@ -328,12 +328,16 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
     if (extras.length) noteParts.push(`[Imported from the old app]\n${extras.join("\n")}`);
     lead.notes = fit(noteParts.filter(Boolean).join("\n\n"), 20000, "Notes", flags);
 
-    // A record that repeats another one field for field is skipped, not imported twice.
+    // A record that repeats another one in every imported field is skipped, not
+    // imported twice. Only the company name is compared loosely ("Pvt. Ltd" vs
+    // "Pvt Ltd"); any other difference keeps both records.
     const fingerprint = JSON.stringify([
       normalizeCompanyName(lead.clientName), lead.type, lead.businessType, lead.policyProduct,
-      lead.subProductName.toLowerCase(), lead.renewalDate, lead.pocName.toLowerCase(),
-      lead.pocContactNumber, lead.pocEmailId, lead.poc2Name.toLowerCase(), lead.status,
-      agentKey(lead.agentName), lead.notes, leadNotes.map((n) => n.content),
+      lead.subProductName, lead.renewalDate,
+      lead.pocName, lead.pocDesignation, lead.pocContactNumber, lead.pocEmailId,
+      lead.poc2Name, lead.poc2Designation, lead.poc2ContactNumber, lead.poc2EmailId,
+      lead.status, agentKey(lead.agentName), lead.notes,
+      leadNotes.map((n) => [n.agentName, n.content, n.createdAt]),
     ]);
     if (exactCopies.has(fingerprint)) {
       skipped.push({ legacyId, clientName, reason: `Exact copy of record ${exactCopies.get(fingerprint)}` });
