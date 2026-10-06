@@ -1,0 +1,247 @@
+{
+  "leads": [
+    null,
+    {
+      "id": 1,
+      "clientName": "Renee Systems Pvt Ltd",
+      "type": "Renewal",
+      "businessType": "Corporate",
+      "policyProduct": "Health",
+      "subProductName": "Group health insurance",
+      "renewalDate": "2030-03-15 11:30",
+      "pocName": "Rajesh",
+      "pocDesignation": "Director",
+      "pocContactNumber": "9876543210",
+      "pocEmailId": "Rajesh@Renee.example",
+      "poc2Name": "",
+      "poc2Designation": "",
+      "poc2ContactNumber": "",
+      "poc2EmailId": "",
+      "isDuplicate": false,
+      "duplicateLabel": "",
+      "notes": "Met at the expo.\n[Amit Kumar - 02 Oct 2026, 14:05]: Called Rajesh, asked for quote\n[Admin - 03 Oct 2026, 09:00]: Please prioritise",
+      "status": "Contacted",
+      "assignedAgent": "Amit Kumar",
+      "createdAt": 1790000000000
+    },
+    {
+      "id": 2,
+      "clientName": "renee systems",
+      "type": "New",
+      "businessType": "Corporate",
+      "policyProduct": "Fire",
+      "subProductName": "",
+      "renewalDate": "",
+      "pocName": "Sita",
+      "pocDesignation": "",
+      "pocContactNumber": "9000000001, 9000000002, 9000000003, 9000000004",
+      "pocEmailId": "sita at renee",
+      "notes": "",
+      "status": "Pending",
+      "assignedAgent": "Neha",
+      "createdAt": 1790000100000
+    },
+    {
+      "id": 3,
+      "clientName": "Kaveri Textiles",
+      "type": "Meeting",
+      "businessType": "retail",
+      "policyProduct": "Workmen Comp",
+      "subProductName": "",
+      "renewalDate": "31/12/2029",
+      "pocName": "O'Brien",
+      "pocContactNumber": "",
+      "pocEmailId": "",
+      "notes": "Free text only",
+      "status": "Converted",
+      "assignedAgent": "Unassigned",
+      "createdAt": 1790000200000
+    },
+    {
+      "id": 4,
+      "clientName": "   ",
+      "status": "Prospect",
+      "createdAt": 1790000300000
+    },
+    {
+      "id": 5,
+      "clientName": "Kaveri Textiles",
+      "type": "Meeting",
+      "businessType": "retail",
+      "policyProduct": "Workmen Comp",
+      "subProductName": "",
+      "renewalDate": "31/12/2029",
+      "pocName": "O'Brien",
+      "pocContactNumber": "",
+      "pocEmailId": "",
+      "notes": "Free text only",
+      "status": "Converted",
+      "assignedAgent": "Unassigned",
+      "createdAt": 1790000400000
+    },
+    {
+      "id": 6,
+      "clientName": "Ganga Motors",
+      "type": "Renewal",
+      "policyProduct": "motor",
+      "renewalDate": "2026-02-30",
+      "status": "Whatever",
+      "assignedAgent": "Old Agent",
+      "createdAt": 1790000500000
+    },
+    {
+      "id": 7,
+      "clientName": "Old Renewal Co",
+      "type": "Renewal",
+      "businessType": "Corporate",
+      "policyProduct": "Life",
+      "renewalDate": "2024-05-01",
+      "pocName": "Meera",
+      "status": "Active Client",
+      "assignedAgent": "Neha",
+      "createdAt": 1790000700000
+    },
+    {
+      "id": 8,
+      "clientName": "Jan First Ltd",
+      "type": "Renewal",
+      "businessType": "Corporate",
+      "policyProduct": "Health",
+      "renewalDate": "",
+      "pocName": "Ravi",
+      "status": "Prospect",
+      "assignedAgent": "Neha",
+      "createdAt": 1790000800000
+    },
+    {
+      "id": 9,
+      "clientName": "Chiranjeevi",
+      "type": "New",
+      "businessType": "Corporate",
+      "policyProduct": "Fire or Property",
+      "renewalDate": "",
+      "pocName": "Chiranjeevi",
+      "status": "Prospect",
+      "assignedAgent": "Neha",
+      "createdAt": 1790000900000
+    }
+  ],
+  "events": {
+    "10": {
+      "id": 10,
+      "leadId": 1,
+      "title": "Renewal due: Renee Systems (Health)",
+      "date": "2030-03-15",
+      "isSystemGenerated": true,
+      "assignedAgent": "Amit Kumar"
+    },
+    "11": {
+      "id": 11,
+      "leadId": 1,
+      "title": "T-10 Days Alert",
+      "date": "2030-03-05",
+      "isSystemGenerated": true,
+      "isBackgroundReminder": true
+    },
+    "12": {
+      "id": 12,
+      "leadId": 1,
+      "title": "Site visit",
+      "date": "2026-10-20 15:00",
+      "notes": "Bring brochure",
+      "isCompleted": false,
+      "isSystemGenerated": false,
+      "assignedAgent": "Amit Kumar",
+      "createdAt": 1790000600000
+    },
+    "13": {
+      "id": 13,
+      "leadId": 99,
+      "title": "Call back",
+      "date": "2026-10-21",
+      "isSystemGenerated": false
+    },
+    "14": {
+      "id": 14,
+      "leadId": 0,
+      "title": "Team meeting",
+      "date": "2026-10-22",
+      "isCompleted": true,
+      "isSystemGenerated": false,
+      "assignedAgent": "Neha"
+    },
+    "15": {
+      "id": 15,
+      "title": "call Hathnoora SI",
+      "date": "2026-11-05",
+      "isCompleted": false,
+      "isSystemGenerated": false,
+      "isBackgroundReminder": false,
+      "assignedAgent": "Admin",
+      "notes": "",
+      "createdAt": 1790001000000
+    },
+    "16": {
+      "id": 16,
+      "leadId": 5,
+      "title": "Kaveri visit",
+      "date": "2026-11-06 11:00",
+      "isCompleted": false,
+      "isSystemGenerated": false,
+      "isBackgroundReminder": false,
+      "assignedAgent": "Neha",
+      "notes": "",
+      "createdAt": 1790001100000
+    },
+    "17": {
+      "id": 17,
+      "leadId": 8,
+      "title": "Renewal due: Jan First Ltd (Health)",
+      "date": "2027-01-01",
+      "isCompleted": false,
+      "isSystemGenerated": true,
+      "isBackgroundReminder": false,
+      "assignedAgent": "Neha",
+      "notes": "POC: Ravi. Agent: Neha."
+    },
+    "18": {
+      "id": 18,
+      "leadId": 8,
+      "title": "T-30 Days Renewal Alert: Jan First Ltd",
+      "date": "2026-12-02",
+      "isCompleted": false,
+      "isSystemGenerated": true,
+      "isBackgroundReminder": true,
+      "assignedAgent": "Neha",
+      "notes": ""
+    },
+    "19": {
+      "id": 19,
+      "leadId": 9,
+      "title": "Renewal due: Awaze pvt Ltd (Health)",
+      "date": "2026-08-07",
+      "isCompleted": false,
+      "isSystemGenerated": true,
+      "isBackgroundReminder": false,
+      "assignedAgent": "Neha",
+      "notes": "POC: Chiranjeevi (9154230981). Agent: Neha."
+    },
+    "20": {
+      "id": 20,
+      "leadId": 9,
+      "title": "Renewal due: Awaze pvt Ltd (Health)",
+      "date": "2026-08-07",
+      "isCompleted": false,
+      "isSystemGenerated": true,
+      "isBackgroundReminder": false,
+      "assignedAgent": "Neha",
+      "notes": "POC: Chiranjeevi (9154230981). Agent: Neha."
+    }
+  },
+  "users": {
+    "admin": "FIXTURE-SECRET-1",
+    "Amit Kumar": "FIXTURE-SECRET-2",
+    "Neha": "FIXTURE-SECRET-3",
+    "Priya": "FIXTURE-SECRET-4"
+  }
+}
