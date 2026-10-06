@@ -7,7 +7,15 @@ import type { UserRole } from "@/lib/database.types";
 import { navForRole } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
-export function SidebarNav({ role, onNavigate }: { role: UserRole; onNavigate?: () => void }) {
+export function SidebarNav({
+  role,
+  badges,
+  onNavigate,
+}: {
+  role: UserRole;
+  badges?: Record<string, number>;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
 
   return (
@@ -33,6 +41,14 @@ export function SidebarNav({ role, onNavigate }: { role: UserRole; onNavigate?: 
               >
                 <Icon className={cn("size-4", active ? "text-sidebar-primary" : "text-sidebar-foreground/60")} />
                 {item.title}
+                {badges?.[item.href] ? (
+                  <span
+                    className="ml-auto rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] leading-none font-semibold text-sidebar-primary-foreground"
+                    title={`${badges[item.href]} new notes`}
+                  >
+                    {badges[item.href] > 99 ? "99+" : badges[item.href]}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

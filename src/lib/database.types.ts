@@ -31,6 +31,8 @@ export type AiFeature =
   | "bulk_mapping"
   | "other";
 
+export type NotificationKind = "renewal_reminder" | "other";
+
 export type Database = {
   public: {
     Tables: {
@@ -73,11 +75,14 @@ export type Database = {
           notes: string;
           status: LeadStatus;
           assigned_agent_id: string | null;
+          // Maintained by the database whenever assigned_agent_id changes.
+          assigned_at: string | null;
           is_duplicate: boolean;
           duplicate_label: string;
           duplicate_resolved_at: string | null;
           duplicate_resolved_by: string | null;
           visiting_card_path: string | null;
+          address: string;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -101,6 +106,7 @@ export type Database = {
           status?: LeadStatus;
           assigned_agent_id?: string | null;
           visiting_card_path?: string | null;
+          address?: string;
         };
         Update: Partial<Database["public"]["Tables"]["leads"]["Insert"]> & {
           is_duplicate?: boolean;
@@ -252,6 +258,25 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      notifications: {
+        Row: {
+          id: number;
+          user_id: string;
+          kind: NotificationKind;
+          title: string;
+          body: string;
+          lead_id: number | null;
+          event_id: number | null;
+          milestone: string | null;
+          created_at: string;
+          read_at: string | null;
+        };
+        // Written by the server (service role) only.
+        Insert: never;
+        // Users may only set read_at on their own notifications.
+        Update: { read_at?: string | null };
+        Relationships: [];
+      };
       renewal_milestone_offsets: {
         Row: { milestone: string; offset_interval: string; sort_order: number };
         Insert: never;
@@ -282,6 +307,35 @@ export type Database = {
           is_exact: boolean;
         }[];
       };
+      add_lead_contact: {
+        Args: {
+          p_lead_id: number;
+          p_name: string;
+          p_designation?: string;
+          p_phone?: string;
+          p_email?: string;
+        };
+        Returns: "poc1" | "poc2" | "notes" | "existing";
+      };
+      unread_lead_notes: {
+        Args: { p_limit?: number };
+        Returns: {
+          id: number;
+          lead_id: number;
+          client_name: string;
+          agent_id: string | null;
+          agent_name: string;
+          content: string;
+          created_at: string;
+        }[];
+      };
+      count_unread_lead_notes: { Args: Record<string, never>; Returns: number };
+      mark_lead_notes_read: { Args: { p_lead_id?: number | null }; Returns: number };
+      // Service role only.
+      deliver_due_reminders: { Args: { p_limit?: number }; Returns: number };
+      next_round_robin_agents: { Args: { p_count: number }; Returns: string[] };
+      pipeline_analytics: { Args: Record<string, never>; Returns: Json };
+      ai_usage_summary: { Args: { p_from: string; p_to?: string }; Returns: Json };
     };
     Enums: {
       user_role: UserRole;
@@ -306,3 +360,4 @@ export type Lead = Tables<"leads">;
 export type LeadEvent = Tables<"events">;
 export type LeadNote = Tables<"lead_notes">;
 export type AiUsageLog = Tables<"ai_usage_logs">;
+export type AppNotification = Tables<"notifications">;

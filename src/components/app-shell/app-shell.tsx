@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Profile } from "@/lib/database.types";
 import { cn } from "@/lib/utils";
+import type { AppNotification } from "@/lib/database.types";
+import { NotificationBell } from "./notification-bell";
 import { SidebarNav } from "./sidebar-nav";
 
 type ShellUser = Pick<Profile, "full_name" | "email" | "role">;
@@ -25,7 +27,17 @@ function Brand() {
   );
 }
 
-function UserPanel({ user }: { user: ShellUser }) {
+type NotificationItem = Pick<AppNotification, "id" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
+
+function UserPanel({
+  user,
+  notifications,
+  unreadNotifications,
+}: {
+  user: ShellUser;
+  notifications: NotificationItem[];
+  unreadNotifications: number;
+}) {
   const initials = user.full_name
     .split(/\s+/)
     .map((part) => part[0])
@@ -50,6 +62,7 @@ function UserPanel({ user }: { user: ShellUser }) {
         </div>
         <p className="truncate text-xs text-sidebar-foreground/60">{user.email}</p>
       </div>
+      <NotificationBell notifications={notifications} unread={unreadNotifications} />
       <form action="/auth/signout" method="post">
         <Button
           type="submit"
@@ -66,28 +79,61 @@ function UserPanel({ user }: { user: ShellUser }) {
   );
 }
 
-function SidebarContents({ user, onNavigate }: { user: ShellUser; onNavigate?: () => void }) {
+type NavBadges = Record<string, number>;
+
+function SidebarContents({
+  user,
+  badges,
+  notifications,
+  unreadNotifications,
+  onNavigate,
+}: {
+  user: ShellUser;
+  badges?: NavBadges;
+  notifications: NotificationItem[];
+  unreadNotifications: number;
+  onNavigate?: () => void;
+}) {
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className="flex h-16 shrink-0 items-center">
         <Brand />
       </div>
       <div className="flex-1 overflow-y-auto">
-        <SidebarNav role={user.role} onNavigate={onNavigate} />
+        <SidebarNav role={user.role} badges={badges} onNavigate={onNavigate} />
       </div>
-      <UserPanel user={user} />
+      <UserPanel user={user} notifications={notifications} unreadNotifications={unreadNotifications} />
     </div>
   );
 }
 
-export function AppShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
+export function AppShell({
+  user,
+  badges,
+  notifications = [],
+  unreadNotifications = 0,
+  children,
+}: {
+  user: ShellUser;
+  /** Counts shown next to sidebar items, keyed by href (e.g. unread notes on My Day). */
+  badges?: NavBadges;
+  /** Renewal reminders for the bell, newest first. */
+  notifications?: NotificationItem[];
+  unreadNotifications?: number;
+  children: React.ReactNode;
+}) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="min-h-svh">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block">
-        <SidebarContents user={user} />
+        <SidebarContents
+          user={user}
+          badges={badges}
+          notifications={notifications}
+          unreadNotifications={unreadNotifications}
+        />
       </aside>
 
       {/* Mobile header + drawer */}
@@ -111,7 +157,13 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
       >
         <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
         <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw]">
-          <SidebarContents user={user} onNavigate={() => setMobileOpen(false)} />
+          <SidebarContents
+            user={user}
+            badges={badges}
+            notifications={notifications}
+            unreadNotifications={unreadNotifications}
+            onNavigate={() => setMobileOpen(false)}
+          />
           <Button
             variant="ghost"
             size="icon"
