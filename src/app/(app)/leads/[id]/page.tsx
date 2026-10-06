@@ -152,6 +152,10 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
   // Other records for the same company. A newer record is flagged as a
   // duplicate; the original owner still sees who else holds the company.
   const sameCompany = similar.filter((match) => match.is_exact);
+  // An agent whose duplicate only matches their own records has no one to clash
+  // with, so they get the gentler same-company note instead of the warning.
+  const ownDuplicate =
+    !admin && lead.is_duplicate && sameCompany.length > 0 && sameCompany.every((m) => m.assigned_agent_id === profile.id);
   const closed = CLOSED_STATUSES.includes(lead.status);
   const now = nowMs();
   const visibleEvents = events.filter((e) => !e.is_background_reminder);
@@ -201,7 +205,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
         </p>
       ) : null}
 
-      {lead.is_duplicate ? (
+      {lead.is_duplicate && !ownDuplicate ? (
         <div
           role="alert"
           className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-100"
@@ -261,7 +265,9 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               ))}
             </ul>
             <p className="mt-1 text-amber-800/80 dark:text-amber-100/80">
-              Coordinate before reaching out so the client hears from one person.
+              {ownDuplicate
+                ? "All of these records are yours. Your admin can merge them or clear the duplicate flag."
+                : "Coordinate before reaching out so the client hears from one person."}
             </p>
           </div>
         </div>

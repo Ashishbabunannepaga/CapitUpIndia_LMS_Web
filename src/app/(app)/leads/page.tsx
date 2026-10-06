@@ -9,7 +9,7 @@ import { LeadsKanban } from "@/components/leads/leads-kanban";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireProfile } from "@/lib/auth";
 import { parseLeadFilters } from "@/lib/lead-filters";
-import { getTeam, LEAD_LIST_LIMIT, listLeads } from "@/lib/leads";
+import { countLeadsByStatus, getTeam, LEAD_LIST_LIMIT, listLeads } from "@/lib/leads";
 
 export const metadata: Metadata = { title: "Leads" };
 
@@ -21,6 +21,8 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   const effective = filters.view === "kanban" ? { ...filters, status: null } : filters;
 
   const [{ leads, truncated }, team] = await Promise.all([listLeads(effective), getTeam()]);
+  // Past the list limit the loaded cards undercount, so columns take their totals from the database.
+  const columnTotals = filters.view === "kanban" && truncated ? await countLeadsByStatus(effective) : null;
   const agents = team.filter((member) => member.is_active);
   const filtered = Boolean(
     effective.q || effective.status || effective.product || effective.type || effective.agent || effective.renewal || effective.duplicates,
@@ -47,14 +49,18 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       <LeadFiltersBar filters={filters} agents={agents} showAgentFilter={admin} />
 
       <p className="mb-3 text-xs text-muted-foreground">
-        {leads.length === 1 ? "1 lead" : `${leads.length} leads`}
+        {columnTotals
+          ? `${Object.values(columnTotals).reduce((sum, n) => sum + n, 0)} leads`
+          : leads.length === 1
+            ? "1 lead"
+            : `${leads.length} leads`}
         {truncated ? ` (showing the first ${LEAD_LIST_LIMIT}; narrow the filters to see the rest)` : ""}
       </p>
 
       {leads.length === 0 ? (
         <EmptyLeads filtered={filtered} />
       ) : filters.view === "kanban" ? (
-        <LeadsKanban leads={leads} showAgent={admin} />
+        <LeadsKanban leads={leads} totals={columnTotals} showAgent={admin} />
       ) : filters.view === "cards" ? (
         <LeadCards leads={leads} showAgent={admin} />
       ) : (

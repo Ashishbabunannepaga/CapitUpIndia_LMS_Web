@@ -98,5 +98,6 @@ five minutes before renewal. Check that this fits your Inngest plan.
 
 ## Loading the old app's data
 
-The Firebase import is a separate one-time step (see the Firebase migration PR). Run it
-only after the agent accounts in step 5 exist.
+The Firebase import is a separate one-time step: follow
+[`migration/firebase/README.md`](../migration/firebase/README.md). Run it only after
+the agent accounts in step 5 exist.

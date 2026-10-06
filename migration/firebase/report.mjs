@@ -72,7 +72,7 @@ export function buildReport(result, { sourceLabel, generatedAt }) {
   L.push("## Agents");
   L.push("");
   L.push("When the import runs, each agent is matched to the web account with the same full name (or the email given in `agents.json`).");
-  L.push("The old app's Admin login maps to the web admin account when no account is called Admin and there is exactly one active admin.");
+  L.push("The old app's Admin login maps to the admin account called Admin, or else to the only active admin account. An agent account called Admin never takes it.");
   L.push("If an agent who owns leads has no account, the import stops before writing anything. `check.sql` shows the matches beforehand.");
   L.push("");
   L.push("| Agent in the old app | Leads | Notes written | Events | Web account |");
