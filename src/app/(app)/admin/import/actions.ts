@@ -15,6 +15,7 @@ import { todayInBusinessTz } from "@/lib/dates";
 import { isLeadStatus } from "@/lib/domain";
 import { fromCellMatrix, parsePastedSheet, rowsAsText, heuristicMapRow, type ParsedSheet } from "@/lib/import/sheet";
 import { createClient } from "@/lib/supabase/server";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 
 // Bulk ingestion for admins: paste TSV/CSV or upload a sheet, let Gemini map
 // the columns (15 rows per request, as the existing app did), review every
@@ -25,7 +26,6 @@ import { createClient } from "@/lib/supabase/server";
 const CHUNK_SIZE = 15;
 const MAX_ROWS = 500;
 const MAX_PASTE = 500_000;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 export type PreviewRow = {
   row: number;
@@ -200,7 +200,7 @@ export async function previewUploadedSheet(formData: FormData): Promise<PreviewR
   const file = formData.get("sheet");
   const useAi = formData.get("use_ai") !== "false";
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose a file to import." };
-  if (file.size > MAX_FILE_BYTES) return { ok: false, error: "That file is larger than 10 MB." };
+  if (file.size > MAX_UPLOAD_BYTES) return { ok: false, error: `That file is larger than ${MAX_UPLOAD_LABEL}.` };
 
   const name = file.name.toLowerCase();
   if (name.endsWith(".xlsx")) {

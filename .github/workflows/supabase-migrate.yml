@@ -1,0 +1,46 @@
+name: Apply database migrations
+
+# Applies supabase/migrations to the live Supabase database. It only runs when
+# someone starts it from the Actions tab, so merging a PR never changes the
+# live database on its own. Start with "dry run" ticked to see what it would
+# apply.
+#
+# Needs one repository secret, SUPABASE_DB_URL: the "Session pooler"
+# connection string from Supabase (Connect > Session pooler), with the
+# database password filled in.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only list the migrations that would be applied
+        type: boolean
+        default: true
+
+concurrency:
+  group: supabase-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Push migrations
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the secret is set
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::Add the SUPABASE_DB_URL repository secret (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+      - name: Migrations already on the database
+        run: npx supabase migration list --db-url "$SUPABASE_DB_URL"
+      - name: Apply migrations
+        run: npx supabase db push --db-url "$SUPABASE_DB_URL" --skip-vault --yes ${{ inputs.dry_run && '--dry-run' || '' }}

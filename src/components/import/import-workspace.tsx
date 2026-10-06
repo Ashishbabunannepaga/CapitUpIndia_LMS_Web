@@ -19,6 +19,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/dates";
 import { LEAD_STATUSES, POLICY_PRODUCTS } from "@/lib/domain";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { cn } from "@/lib/utils";
 
 type Agent = { id: string; full_name: string };
@@ -80,6 +81,10 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
 
   function upload(file: File) {
     setError(null);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`That file is larger than ${MAX_UPLOAD_LABEL}. Split it, or paste the rows instead.`);
+      return;
+    }
     const formData = new FormData();
     formData.set("sheet", file);
     formData.set("use_ai", String(useAi));

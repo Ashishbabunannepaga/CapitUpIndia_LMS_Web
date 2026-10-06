@@ -17,8 +17,11 @@ Realtime) behind it.
    Add `GEMINI_API_KEY` for the AI features; without it the app falls back to basic extraction
    and standard follow-up drafts, and card scanning is unavailable.
 5. `npm run dev` and open http://localhost:3000.
-6. For renewal reminders, run `npx inngest-cli@latest dev` in a second terminal. It finds
-   `/api/inngest` and runs the dispatcher every minute.
+6. For renewal reminders, set `INNGEST_DEV=1` in `.env.local` and run
+   `npx inngest-cli@latest dev` in a second terminal. It finds `/api/inngest` and runs the
+   dispatcher every minute.
+
+To put the app online (Supabase, Vercel and Inngest), follow [docs/deploy.md](docs/deploy.md).
 
 ### Creating the first admin
 
