@@ -48,15 +48,22 @@ check() {
   echo "ok - $1"
 }
 
+# An agent who calls themselves Admin never takes the old admin login's work.
+q "insert into auth.users (email, raw_user_meta_data) values ('agent-admin@example.com', '{\"full_name\": \"Admin\"}')" >/dev/null
+
 # Refuses to run before the agents who own leads have accounts, and writes nothing.
 if "${PSQL[@]}" "$DATABASE_URL" -f "$OUT/import.sql" >/dev/null 2>"$OUT/err"; then fail "import ran without agent accounts"; fi
-grep -q "Agents without a web account: Neha (4 leads): no web account with email neha@example.com; Amit Kumar (1 leads): no web account with this full name; Admin: no account named Admin" "$OUT/err" \
+grep -q "Agents without a web account: Neha (4 leads): no web account with email neha@example.com; Amit Kumar (1 leads): no web account with this full name; Admin: no admin account is named Admin and there are 0 active admin accounts" "$OUT/err" \
   || fail "unexpected error: $(cat "$OUT/err")"
 check "nothing written on failure" "select count(*) from public.leads" "0"
 check "trigger left enabled after failure" "select tgenabled from pg_trigger where tgname = 'leads_track_assignment'" "O"
 not_ok="$("${PSQL[@]}" "$DATABASE_URL" -F '|' -f "$OUT/check.sql" | awk -F'|' '$3 != "ok"' | wc -l)"
 [[ "$not_ok" == "3" ]] || fail "check.sql should report 3 problems before accounts exist, got $not_ok"
 echo "ok - check.sql reports the missing accounts"
+admin_row="$("${PSQL[@]}" "$DATABASE_URL" -F '|' -f "$OUT/check.sql" | awk -F'|' '$2 ~ /^Agent Admin/ {print $3 "|" $4}')"
+[[ "$admin_row" == '0 active admin accounts|map Admin to one admin email in agents.json, e.g. {"Admin": "<admin email>"}, and regenerate' ]] \
+  || fail "check.sql Admin row: '$admin_row'"
+echo "ok - check.sql explains the Admin mapping"
 
 # Two accounts with the same name are ambiguous, never guessed.
 q "insert into auth.users (email, raw_user_meta_data) values ('amit1@example.com', '{\"full_name\": \"Amit  Kumar\"}'), ('amit2@example.com', '{\"full_name\": \"amit kumar\"}')" >/dev/null
@@ -101,7 +108,7 @@ check "notes split into lead_notes" \
   "select string_agg(agent_name || '/' || (agent_id is not null) || ': ' || content, ' | ' order by created_at) from public.lead_notes" \
   "Amit  Kumar/true: Called Rajesh, asked for quote | Ash/true: Please prioritise"
 check "note time is IST" "select min(created_at) = '2026-10-02 14:05+05:30'::timestamptz from public.lead_notes" "t"
-check "imported notes start out read for everyone" "select count(*) from public.lead_note_reads" "6"
+check "imported notes start out read for everyone" "select count(*) from public.lead_note_reads" "8"
 check "free text stays in notes" "select notes from public.leads where client_name = 'Renee Systems Pvt Ltd'" "Met at the expo."
 check "renewal milestones regenerated" \
   "select count(*) from public.events where is_system_generated and lead_id = (select id from public.leads where client_name = 'Renee Systems Pvt Ltd')" \
@@ -116,8 +123,8 @@ check "event on a skipped copy follows the kept lead" \
 check "renewal date recovered from the old calendar" "select renewal_date || '/' || (select count(*) from public.events e where e.lead_id = l.id and e.is_system_generated) from public.leads l where client_name = 'Jan First Ltd'" "2027-01-01/10"
 check "calendar entry for an overwritten client kept in notes" \
   "select notes like '%Old calendar entry for this record: \"Renewal due: Awaze pvt Ltd (Health)\" on 2026-08-07 (POC: Chiranjeevi (9154230981). Agent: Neha.)%' and (length(notes) - length(replace(notes, 'Awaze', ''))) / 5 = 1 from public.leads where client_name = 'Chiranjeevi'" "t"
-check "long-past due task imported as done" \
-  "select is_completed from public.events e join public.leads l on l.id = e.lead_id where l.client_name = 'Old Renewal Co' and e.milestone = 'DUE'" "t"
+check "long-past due task imported as done on its due date" \
+  "select is_completed and completed_at = event_timestamp from public.events e join public.leads l on l.id = e.lead_id where l.client_name = 'Old Renewal Co' and e.milestone = 'DUE'" "t"
 check "future due task left open" \
   "select is_completed from public.events e join public.leads l on l.id = e.lead_id where l.client_name = 'Renee Systems Pvt Ltd' and e.milestone = 'DUE'" "f"
 check "quote in name survives" "select poc_name from public.leads where client_name = 'Kaveri Textiles'" "O'Brien"
@@ -130,5 +137,46 @@ echo "ok - check.sql reports the finished import"
 if "${PSQL[@]}" "$DATABASE_URL" -f "$OUT/import.sql" >/dev/null 2>"$OUT/err"; then fail "import ran twice"; fi
 grep -q "already been imported" "$OUT/err" || fail "unexpected error on re-run: $(cat "$OUT/err")"
 check "re-run changed nothing" "select count(*) from public.leads" "7"
+check "marker records what was created" \
+  "select jsonb_array_length(value -> 'lead_ids') || '/' || jsonb_array_length(value -> 'event_ids') from public.app_settings where key = 'firebase_import'" "7/4"
+
+# undo.sql removes exactly the import, and only before anyone has worked on it.
+q "insert into public.leads (client_name) values ('Walk-in Co')" >/dev/null
+q "insert into public.lead_notes (lead_id, content) select id, 'Called back' from public.leads where client_name = 'Kaveri Textiles'" >/dev/null
+if "${PSQL[@]}" "$DATABASE_URL" -f "$HERE/undo.sql" >/dev/null 2>"$OUT/err"; then fail "undo ran after work on the imported leads"; fi
+grep -q "0 leads edited, 1 notes added, 0 calendar events added or changed" "$OUT/err" || fail "unexpected undo error: $(cat "$OUT/err")"
+echo "ok - undo refuses once people have worked on the import"
+q "delete from public.lead_notes where content = 'Called back'" >/dev/null
+"${PSQL[@]}" "$DATABASE_URL" -o /dev/null -f "$OUT/undo.sql" 2>"$OUT/err" || fail "undo failed: $(cat "$OUT/err")"
+grep -q "Removed 7 imported leads and 4 imported calendar events" "$OUT/err" || fail "unexpected undo output: $(cat "$OUT/err")"
+check "undo keeps other leads" "select string_agg(client_name, ',') from public.leads" "Walk-in Co"
+check "undo removes notes, events and the marker" \
+  "select (select count(*) from public.lead_notes) || '/' || (select count(*) from public.events) || '/' || (select count(*) from public.app_settings where key = 'firebase_import')" "0/0/0"
+
+# Data that tries to break out of the generated SQL stays data, and check.sql's
+# suggested fix for a missing account is runnable as written.
+cat >"$OUT/crafted.json" <<JSON
+{"leads": {"x": {"id": "9\\n\\\\! touch $OUT/pwned\\ndrop table public.leads; --\\u2028select 1", "clientName": "Crafted Co \$firebase_import\$ \$\$", "status": "Prospect", "assignedAgent": "Ravi D'Souza", "createdAt": 1790000000000}}}
+JSON
+mkdir -p "$OUT/crafted"
+node "$HERE/cli.mjs" --input "$OUT/crafted.json" --out "$OUT/crafted" >/dev/null
+q "insert into auth.users (email, raw_user_meta_data) values ('dsouza@example.com', '{}')" >/dev/null
+hint="$("${PSQL[@]}" "$DATABASE_URL" -F '|' -f "$OUT/crafted/check.sql" | awk -F'|' '$2 ~ /^Agent Ravi/ {print $4}')"
+[[ "$hint" == "create an account, then: update public.profiles set full_name = 'Ravi D''Souza' where email = '<their login email>'" ]] \
+  || fail "unexpected hint: '$hint'"
+q "$(sed "s/<their login email>/dsouza@example.com/" <<<"${hint#create an account, then: }")" >/dev/null
+check "suggested name fix maps the agent" \
+  "select count(*) from public.profiles where full_name = 'Ravi D''Souza'" "1"
+"${PSQL[@]}" "$DATABASE_URL" -o /dev/null -f "$OUT/crafted/import.sql" 2>"$OUT/err" || fail "crafted import failed: $(cat "$OUT/err")"
+[[ ! -e "$OUT/pwned" ]] || fail "a shell command in the data ran"
+check "crafted id is stored as data" \
+  "select client_name || ' by ' || p.full_name from public.leads l join public.profiles p on p.id = l.assigned_agent_id where l.client_name like 'Crafted Co%'" \
+  'Crafted Co $firebase_import$ $$ by Ravi D'"'"'Souza'
+"${PSQL[@]}" "$DATABASE_URL" -o /dev/null -f "$HERE/undo.sql" 2>/dev/null
+
+# After an undo the import can run again.
+"${PSQL[@]}" "$DATABASE_URL" -o /dev/null -f "$OUT/import.sql"
+check "re-import after undo" \
+  "select (select count(*) from public.leads) || '/' || (select count(*) from public.lead_notes) || '/' || (select count(*) from public.events where not is_system_generated)" "8/2/4"
 
 echo "All Firebase import checks passed"

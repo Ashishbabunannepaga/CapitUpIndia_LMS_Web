@@ -10,13 +10,15 @@
 //   out/report.json the same, machine-readable
 //   out/import.sql  one transaction that loads it; never run by this script
 //   out/check.sql   read-only readiness check (agent accounts, migrations)
+//   out/undo.sql    removes exactly what import.sql created, straight afterwards
 //
 // It never connects to Firebase or Supabase. From /users it reads only the
 // user names: the values are plaintext passwords and are never read into the
 // output, printed or migrated.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { buildReport } from "./report.mjs";
@@ -69,6 +71,7 @@ writeFileSync(`${outDir}/report.md`, buildReport(result, meta));
 writeFileSync(`${outDir}/report.json`, JSON.stringify({ ...meta, ...result }, null, 2));
 writeFileSync(`${outDir}/import.sql`, buildImportSql(result, meta));
 writeFileSync(`${outDir}/check.sql`, buildCheckSql(result, meta));
+copyFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "undo.sql"), `${outDir}/undo.sql`);
 
 const flagged = result.imported.filter((l) => l.flags.length).length;
 const needed = result.agents.filter((a) => a.required).map((a) => a.name);
@@ -76,4 +79,4 @@ console.log(`Leads: ${result.imported.length} to import (${flagged} flagged), ${
 console.log(`Duplicate companies: ${result.duplicateGroups.length}`);
 console.log(`Notes: ${result.imported.reduce((n, l) => n + l.leadNotes.length, 0)}, events: ${result.events.length}`);
 console.log(`Agents who need a web account: ${needed.join(", ") || "none"}`);
-console.log(`Wrote ${outDir}/report.md, report.json, check.sql and import.sql`);
+console.log(`Wrote ${outDir}/report.md, report.json, check.sql, import.sql and undo.sql`);

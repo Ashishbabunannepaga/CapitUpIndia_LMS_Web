@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { buildCheckSql, buildImportSql } from "../sql.mjs";
 import { normalizeCompanyName, parseAppDate, parseNoteTimestamp, transform } from "../transform.mjs";
 
 const lead = (over) => ({ id: 1, clientName: "Acme", status: "Prospect", policyProduct: "Health", createdAt: 1790000000000, ...over });
@@ -109,4 +110,37 @@ test("the old calendar fills a blanked renewal date and keeps an overwritten cli
   assert.match(imported[1].notes, /Old calendar entry for this record: "Renewal due: Awaze pvt Ltd \(Health\)" on 2026-08-07 \(POC: X\)/);
   assert.equal(imported[2].renewalDate, null, "conflicting calendar dates are not guessed");
   assert.deepEqual(calendarMismatches.map((c) => c.calendarClient), ["Awaze pvt Ltd"]);
+});
+
+// What the database would execute: the SQL with comments and quoted literals removed.
+function executable(sql) {
+  let out = "";
+  for (let i = 0; i < sql.length; i++) {
+    if (sql.startsWith("--", i)) {
+      while (i < sql.length && sql[i] !== "\n") i++;
+      out += "\n";
+    } else if (sql[i] === "'") {
+      for (i++; i < sql.length; i++) {
+        if (sql[i] === "'" && sql[i + 1] === "'") i++;
+        else if (sql[i] === "'") break;
+      }
+      out += "''";
+    } else {
+      out += sql[i];
+    }
+  }
+  return out;
+}
+
+test("text from the export never becomes executable SQL", () => {
+  const evil = "9\n\\! touch pwned\ndrop table public.leads; -- select 1\r";
+  const result = transform({ leads: [lead({ id: evil, clientName: "Evil $firebase_import$", assignedAgent: "D'Souza\ndrop table x;" })] });
+  const meta = { sourceLabel: "export.json\ndrop table public.leads;", generatedAt: "2026-10-06T00:00:00Z\n\\! touch pwned" };
+  for (const sql of [buildImportSql(result, meta), buildCheckSql(result, meta)]) {
+    const code = executable(sql);
+    assert.doesNotMatch(code, /drop table|\\!|pwned/i);
+  }
+  const sql = buildImportSql(result, meta);
+  assert.match(sql, /^do \$firebase_import_\$$/m, "the dollar-quote tag avoids text in the data");
+  assert.match(sql, /^-- legacy "9\\n\\\\! touch pwned\\ndrop table public\.leads; -- select 1"$/m);
 });
