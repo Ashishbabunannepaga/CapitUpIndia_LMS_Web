@@ -160,15 +160,21 @@ function agentKey(name) {
  * @param {object|Array} input.leads    Firebase /leads node
  * @param {object|Array} [input.events] Firebase /events node
  * @param {string[]} [input.userNames]  Keys of /users only (never the values)
- * @param {Record<string,string>} [input.agentEmails] agent display name -> login email
+ * @param {Record<string,string|null>} [input.agentEmails] Optional overrides, old agent name ->
+ *   login email of their web account, or null to import their leads as Unassigned. Names left
+ *   out are matched to a web account with the same full name when the import runs.
  */
 export function transform({ leads, events, userNames = [], agentEmails = {} }) {
-  const emailByAgent = new Map(Object.entries(agentEmails).map(([n, e]) => [agentKey(n), str(e).toLowerCase()]));
-  const agentsSeen = new Map(); // key -> { name, leads, notes, fromUsers }
+  const emailByAgent = new Map(
+    Object.entries(agentEmails).map(([n, e]) => [agentKey(n), e === null ? null : str(e).toLowerCase() || null]),
+  );
+  const agentsSeen = new Map(); // key -> { name, leads, notes, events, fromUsers }
   const seeAgent = (name, field) => {
     const key = agentKey(name);
     if (!key || key === "unassigned") return null;
-    if (!agentsSeen.has(key)) agentsSeen.set(key, { name: str(name), leads: 0, notes: 0, fromUsers: false, spellings: new Map() });
+    if (!agentsSeen.has(key)) {
+      agentsSeen.set(key, { name: str(name), leads: 0, notes: 0, events: 0, fromUsers: false, spellings: new Map() });
+    }
     const agent = agentsSeen.get(key);
     if (field) {
       agent[field] += 1;
@@ -268,8 +274,7 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
 
     // Agent
     const rawAgent = str(l.assignedAgent);
-    const agent = seeAgent(rawAgent, "leads");
-    const agentEmail = agent ? emailByAgent.get(agent) ?? null : null;
+    const agent = seeAgent(rawAgent);
 
     // Notes: timestamped agent lines become lead_notes, the rest stays as text.
     const leadNotes = [];
@@ -279,10 +284,9 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
       const at = m ? parseNoteTimestamp(m[2]) : null;
       const content = m ? m[3].trim() : "";
       if (m && at && content) {
-        const noteAgent = seeAgent(m[1], "notes");
         leadNotes.push({
           agentName: str(m[1]).slice(0, 120),
-          agentEmail: noteAgent ? emailByAgent.get(noteAgent) ?? null : null,
+          agentKey: seeAgent(m[1]),
           content: content.slice(0, 5000),
           createdAt: at,
         });
@@ -313,7 +317,7 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
       poc2EmailId: mapEmail(l.poc2EmailId, "POC 2", extras, flags),
       status,
       agentName: rawAgent && agent ? rawAgent : "Unassigned",
-      agentEmail,
+      agentKey: agent,
       createdAt,
       leadNotes,
       notes: "",
@@ -337,6 +341,8 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
     }
     exactCopies.set(fingerprint, legacyId);
 
+    if (agent) seeAgent(rawAgent, "leads");
+    for (const n of leadNotes) if (n.agentKey) seeAgent(n.agentName, "notes");
     imported.push(lead);
   }
 
@@ -380,7 +386,7 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
       skippedEvents.unreadableDate += 1;
       continue;
     }
-    const agent = seeAgent(e.assignedAgent);
+    const agent = seeAgent(e.assignedAgent, "events");
     importedEvents.push({
       legacyId: str(e.id) || key,
       leadLegacyId: leadLegacyId && leadLegacyId !== "0" ? leadLegacyId : null,
@@ -389,19 +395,30 @@ export function transform({ leads, events, userNames = [], agentEmails = {} }) {
       eventTimestamp: `${when.date} ${when.time ?? "10:00"}:00+05:30`,
       notes: str(e.notes).slice(0, 5000),
       isCompleted: e.isCompleted === true || e.isCompleted === "true",
-      agentEmail: agent ? emailByAgent.get(agent) ?? null : null,
+      agentKey: agent,
       createdAt: msToIso(e.createdAt),
     });
   }
 
-  const agents = [...agentsSeen.values()]
-    .map((a) => ({
-      name: a.name,
-      leads: a.leads,
-      notes: a.notes,
-      fromUsers: a.fromUsers,
-      email: emailByAgent.get(agentKey(a.name)) ?? null,
-    }))
+  // How each agent finds their web account at import time: by the email given in
+  // agents.json, deliberately Unassigned (null there), or by matching full name.
+  // Agents who own leads must resolve or the import stops before writing anything.
+  const agents = [...agentsSeen.entries()]
+    .map(([key, a]) => {
+      const mapped = emailByAgent.has(key);
+      const email = mapped ? emailByAgent.get(key) : null;
+      return {
+        key,
+        name: a.name,
+        leads: a.leads,
+        notes: a.notes,
+        events: a.events,
+        fromUsers: a.fromUsers,
+        match: !mapped ? "name" : email ? "email" : "unassigned",
+        email,
+        required: a.leads > 0 && !(mapped && !email),
+      };
+    })
     .sort((a, b) => b.leads - a.leads || a.name.localeCompare(b.name));
 
   return { imported, skipped, duplicateGroups, events: importedEvents, skippedEvents, agents, stats };

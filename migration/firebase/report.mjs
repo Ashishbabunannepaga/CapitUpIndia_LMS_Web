@@ -14,7 +14,6 @@ export function buildReport(result, { sourceLabel, generatedAt }) {
   const flagged = imported.filter((l) => l.flags.length);
   const notes = imported.reduce((n, l) => n + l.leadNotes.length, 0);
   const withDates = imported.filter((l) => l.renewalDate).length;
-  const unmapped = agents.filter((a) => !a.email && (a.leads || a.notes));
   const L = [];
 
   L.push("# Firebase import dry run");
@@ -64,16 +63,15 @@ export function buildReport(result, { sourceLabel, generatedAt }) {
 
   L.push("## Agents");
   L.push("");
-  L.push("Each agent needs a web account before the import runs. Map names to login emails in `agents.json`.");
+  L.push("When the import runs, each agent is matched to the web account with the same full name (or the email given in `agents.json`).");
+  L.push("If an agent who owns leads has no account, the import stops before writing anything. `check.sql` shows the matches beforehand.");
   L.push("");
-  L.push("| Agent in the old app | Leads | Notes written | Web account email |");
-  L.push("| --- | ---: | ---: | --- |");
+  L.push("| Agent in the old app | Leads | Notes written | Events | Web account |");
+  L.push("| --- | ---: | ---: | ---: | --- |");
+  const matchText = (a) =>
+    a.match === "email" ? esc(a.email) : a.match === "unassigned" ? "Unassigned (by choice)" : a.required ? "**needed**, matched by full name" : "optional, matched by full name";
   for (const a of agents) {
-    L.push(`| ${esc(a.name)} | ${a.leads} | ${a.notes} | ${a.email ? esc(a.email) : "**not mapped**"} |`);
-  }
-  if (unmapped.length) {
-    L.push("");
-    L.push(`${unmapped.length} agent name(s) are not mapped; their leads would be imported as Unassigned.`);
+    L.push(`| ${esc(a.name)} | ${a.leads} | ${a.notes} | ${a.events} | ${matchText(a)} |`);
   }
   L.push("");
 
