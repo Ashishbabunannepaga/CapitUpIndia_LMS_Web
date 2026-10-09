@@ -6,4 +6,6 @@ interface CloudflareEnv {
   /** Public URL of the app, e.g. https://lms.capitupindia.com. */
   BETTER_AUTH_URL?: string;
   GEMINI_API_KEY?: string;
+  /** One-time code that opens /setup for the first admin; remove it after setup. */
+  SETUP_CODE?: string;
 }

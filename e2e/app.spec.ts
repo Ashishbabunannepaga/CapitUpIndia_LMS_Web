@@ -156,6 +156,60 @@ test("the admin sees every agent's leads", async ({ page }) => {
   expect(response?.status()).toBe(200);
 });
 
+test("an agent plans a task on My Day and ticks it off", async ({ page }) => {
+  await signIn(page, "amit");
+  await page.getByLabel("Task").fill("UI Call Priya about the quote");
+  await page.getByRole("button", { name: "Add task" }).click();
+  const box = page.getByLabel('Mark "UI Call Priya about the quote" done');
+  await expect(box).toBeVisible();
+  await box.check();
+  await expect
+    .poll(async () => (await queryFirst<{ is_completed: number }>(db, "select is_completed from events where title = ?", "UI Call Priya about the quote"))?.is_completed)
+    .toBe(1);
+});
+
+test("the admin adds a person who can then sign in, and disabling them shuts them out", async ({ page, browser }) => {
+  await execute(db, "delete from user where email = 'ravi@e2e.test'");
+  await signIn(page, "admin");
+  await page.goto("/admin/team");
+  await page.getByLabel("Full name").fill("Ravi E2E");
+  await page.getByLabel("Work email").fill("Ravi@E2E.test");
+  await page.getByLabel("First password").fill("ravi-Password-1");
+  await page.getByRole("button", { name: "Add person" }).click();
+  await expect(page.getByText("Account created.")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "ravi@e2e.test" })).toBeVisible();
+
+  const ravi = await browser.newPage();
+  await ravi.setExtraHTTPHeaders({ "cf-connecting-ip": clientAddress() });
+  await ravi.goto("/login");
+  await ravi.getByLabel("Work email").fill("ravi@e2e.test");
+  await ravi.getByLabel("Password").fill("ravi-Password-1");
+  await ravi.getByRole("button", { name: "Sign in" }).click();
+  await expect(ravi).toHaveURL(/\/my-day/);
+
+  const row = page.getByRole("row").filter({ hasText: "ravi@e2e.test" });
+  await row.getByRole("button", { name: "Disable" }).click();
+  await expect(row.getByText("Disabled")).toBeVisible();
+
+  // Their open session ends on the next request.
+  await ravi.goto("/leads");
+  await expect(ravi).toHaveURL(/\/login/);
+  await ravi.close();
+});
+
+test("an admin cannot demote or disable themselves from the team page", async ({ page }) => {
+  await signIn(page, "admin");
+  await page.goto("/admin/team");
+  const own = page.getByRole("row").filter({ hasText: USERS.admin.email });
+  await expect(own.getByLabel(`Role for ${USERS.admin.name}`)).toBeDisabled();
+  await expect(own.getByRole("button", { name: "Disable" })).toHaveCount(0);
+});
+
+test("first-run setup is closed once the team exists", async ({ request }) => {
+  const response = await request.get("/setup");
+  expect(response.status()).toBe(404);
+});
+
 test("signing out ends the session", async ({ page }) => {
   await signIn(page, "amit");
   await expect(page).toHaveURL(/\/my-day/);

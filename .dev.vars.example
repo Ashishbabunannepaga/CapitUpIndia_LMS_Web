@@ -3,3 +3,5 @@
 BETTER_AUTH_SECRET=local-dev-secret-change-me-0123456789abcdef
 BETTER_AUTH_URL=http://localhost:3000
 GEMINI_API_KEY=
+# Opens /setup on an empty database so you can create the first admin locally.
+SETUP_CODE=local-setup-code-123

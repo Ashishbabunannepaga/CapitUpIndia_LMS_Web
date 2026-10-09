@@ -32,5 +32,5 @@
     "APP_TIMEZONE": "Asia/Kolkata"
   }
   // Secrets (dashboard or `wrangler secret put`, never in this file):
-  //   BETTER_AUTH_SECRET, GEMINI_API_KEY
+  //   BETTER_AUTH_SECRET, BETTER_AUTH_URL, GEMINI_API_KEY, and SETUP_CODE until the first admin exists
 }

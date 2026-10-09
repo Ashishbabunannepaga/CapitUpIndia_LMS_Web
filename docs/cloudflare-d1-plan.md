@@ -16,7 +16,7 @@ longer part of the launch.
 | Renewal milestone triggers            | Recomputed in the same D1 batch as the lead write                               |
 | Inngest cron every minute             | Workers Cron Trigger every minute calling the reminder job                      |
 | Supabase Storage (visiting cards)     | Private R2 bucket, files only served through a signed-in route                  |
-| Supabase Realtime refresh             | Refresh on focus plus a light 30-second poll of a "last changed" stamp          |
+| Supabase Realtime refresh             | Page refresh every minute while the tab is visible, and on coming back to it   |
 | Gemini key in Vercel env              | Worker secret `GEMINI_API_KEY`, entered by Ash in the Cloudflare dashboard      |
 
 Why OpenNext and not vinext: Cloudflare now recommends vinext for new apps, but
@@ -75,17 +75,21 @@ app's routes and actions directly".
 5. **Renewals and reminders** (done in this PR, except the cron wiring and
    round-robin, which land with step 6): milestone sync on lead write,
    `deliverDueReminders()`, tasks.
-6. **AI and import**: Gemini intake/OCR (cards read from R2), bulk import in
-   D1 batches, AI usage and cost tables, analytics queries rewritten for SQLite.
-7. **Firebase import**: the migration thread's importer re-targeted to emit D1
-   SQL (or call the data layer) instead of Postgres SQL; dry run against a
-   local D1 first.
-8. **Cut-over**: create the production D1 database and R2 bucket, deploy, Ash
-   creates the first admin, run the import, then remove the Supabase code,
-   the Vercel config and the old Inngest wiring.
-
-The app stays shippable on Supabase until step 8; the switch happens in one
-deploy.
+6. **AI and import** (done in this PR): Gemini intake/OCR (cards in R2), bulk
+   import, AI usage and cost, analytics, round-robin, and the reminder cron in
+   `worker.ts`.
+7. **Screens** (done in this PR): every page, action and route moved onto the
+   data layer; sign-in/out through Better Auth's handler; cards served by
+   `/leads/[id]/card`; the Team page creates accounts, changes roles, disables
+   people and resets passwords; `/setup` creates the first admin. Supabase,
+   Inngest and the Vercel config are removed. Playwright runs against the
+   built Worker on a local D1 (21 browser and HTTP tests).
+8. **Firebase import**: the migration thread's importer re-targeted to emit D1
+   SQL instead of Postgres SQL, dry run against a local D1 first. Until then
+   `supabase/migrations` stays only because that importer's tests load it.
+9. **Cut-over**: follow [deploy.md](deploy.md): create the D1 database and R2
+   bucket, connect the repo with Workers Builds, add secrets, create the first
+   admin at `/setup`, add the team, run the import.
 
 ## What only Ash does
 
@@ -93,8 +97,11 @@ deploy.
    read/write limits (enforced since 2026-09-01). A small team likely fits,
    but Workers Paid (USD 5/month) removes the risk of the app stopping mid-day.
    Recommended: Paid.
-2. Before cut-over: add `GEMINI_API_KEY` and `BETTER_AUTH_SECRET` as Worker
-   secrets in the dashboard (never in chat). Claude creates the D1 database
-   and R2 bucket through the Cloudflare connector when Ash says go.
-3. Connect the custom domain in Cloudflare (DNS is already there).
-4. After launch: pause or delete the Supabase project and the Vercel project.
+2. Before cut-over: add `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
+   `GEMINI_API_KEY` and `SETUP_CODE` as Worker secrets in the dashboard
+   (never in chat). Claude creates the D1 database and R2 bucket through the
+   Cloudflare connector when Ash says go.
+3. Connect the repository in Workers Builds (deploy.md step 3), then create
+   the first admin at `/setup` and add the team.
+4. Connect the custom domain in Cloudflare (DNS is already there).
+5. After launch: pause or delete the Supabase project and the Vercel project.

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 
+import { AddMemberForm, MemberControls } from "@/components/admin/team-controls";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireSession } from "@/lib/auth";
 import { listTeam } from "@/server/data/users";
 
@@ -22,7 +23,18 @@ export default async function TeamPage() {
 
   return (
     <>
-      <PageHeader title="Team" description="Agents and admins who can sign in. New accounts start as agents." />
+      <PageHeader
+        title="Team"
+        description="Agents and admins who can sign in. Only admins add people; there is no public sign-up."
+      />
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Add a person</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AddMemberForm />
+        </CardContent>
+      </Card>
       <Card className="py-0">
         <CardContent className="px-0">
           <div className="overflow-x-auto">
@@ -34,6 +46,7 @@ export default async function TeamPage() {
                   <th className="px-4 py-3 font-medium">Role</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Joined</th>
+                  <th className="px-4 py-3 font-medium">Manage</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -52,6 +65,9 @@ export default async function TeamPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 tabular-nums">{joinedFormat.format(new Date(member.created_at))}</td>
+                    <td className="px-4 py-3">
+                      <MemberControls key={`${member.role}-${member.is_active}`} member={member} isSelf={member.id === actor.id} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

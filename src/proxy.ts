@@ -1,8 +1,9 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
-// /api/auth is the sign-in API (src/server/auth.ts); it does its own checks.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/auth"];
+// /api/auth is the sign-in API (src/server/auth.ts) and /setup the first-run
+// page (src/server/data/setup.ts); both do their own checks.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/setup"];
 
 /**
  * Sends visitors without a session cookie to /login. This is a convenience
