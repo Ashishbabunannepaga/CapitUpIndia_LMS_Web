@@ -44,3 +44,7 @@ next-env.d.ts
 # Firebase migration: real exports contain customer data and plaintext passwords
 /migration/firebase/input/
 /migration/firebase/out/
+
+# Playwright
+/test-results/
+/playwright-report/

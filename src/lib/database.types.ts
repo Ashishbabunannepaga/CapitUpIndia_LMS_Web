@@ -289,6 +289,7 @@ export type Database = {
       current_user_role: { Args: Record<string, never>; Returns: UserRole | null };
       is_admin: { Args: Record<string, never>; Returns: boolean };
       is_active_user: { Args: Record<string, never>; Returns: boolean };
+      is_end_user_request: { Args: Record<string, never>; Returns: boolean };
       normalize_company_name: { Args: { name: string }; Returns: string };
       renewal_due_at: { Args: { p_renewal_date: string }; Returns: string };
       find_similar_leads: {

@@ -46,12 +46,15 @@ refuses role changes from anyone else and never lets the last active admin be re
 | `npm run build` | Production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Route type generation and `tsc` |
-| `npm test` | Unit tests for extraction, date parsing and sheet mapping (Vitest) |
-| `npm run db:test` | Applies all migrations to a throwaway Postgres and runs the access-control tests |
+| `npm test` | Unit tests for extraction, dates, sheets, forms, filters, links and the Gemini wrapper (Vitest) |
+| `npm run db:test` | Applies all migrations to a throwaway Postgres and runs the access-control and edge-case tests |
+| `npm run test:e2e` | Browser and API tests (Playwright) against the local Supabase from `npx supabase start`; resets that local database first |
 | `npm run db:types` | Regenerates `src/lib/database.types.ts` from a running local Supabase |
 
 `db:test` needs PostgreSQL 15+ binaries (`initdb`, `pg_ctl`, `psql`) on the machine,
 or set `DATABASE_URL` to an empty database. CI runs it against `postgres:17`.
+`supabase/tests/fixtures/company_names.json` is checked by both the unit tests and the
+SQL tests, so the app and the database always group company names the same way.
 
 ## Data model
 

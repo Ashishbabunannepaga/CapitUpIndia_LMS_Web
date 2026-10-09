@@ -60,7 +60,7 @@ const DUMMY_EMAILS = new Set(["contact@company.com", "rahul@acme.com", "john@acm
 const DUMMY_EMAIL_DOMAINS = /@(example\.(com|org|net)|domain\.com|email\.com|company\.com)$/;
 
 const PRODUCT_KEYWORDS: [RegExp, PolicyProduct][] = [
-  [/fire|property|burglary|package|\bsfsp\b|\biar\b|industrial all risk|\boffice\b|\bshop\b/, "Fire or Property"],
+  [/fire|property|burglary|package|\bsfsp\b|\biar\b|industrial all risk/, "Fire or Property"],
   [/\bwc\b|workm[ae]n|worker|liabilit|\bd&o\b|directors|professional indemnity|\bpi\b|\bcgl\b|cyber/, "Liability"],
   [/marine|cargo|transit|hull/, "Marine"],
   [/\bcredit\b|trade credit/, "Credit"],
@@ -68,6 +68,8 @@ const PRODUCT_KEYWORDS: [RegExp, PolicyProduct][] = [
   [/\blife\b|term plan|\bgtl\b|group term/, "Life"],
   [/motor|vehicle|\bcar\b|4 ?wheeler|2 ?wheeler|two wheeler|four wheeler|bike|fleet|truck/, "Motor"],
   [/health|medical|mediclaim|\bgmc\b|\bgpa\b|floater|hospital/, "Health"],
+  // Weak hints last, so "health cover for office staff" stays Health.
+  [/\boffice\b|\bshop\b/, "Fire or Property"],
 ];
 
 /** One of the 8 products; keyword match on free text, Health when nothing fits. */
@@ -159,7 +161,10 @@ export function cleanEmail(value: string, opts: { sourceText?: string }, dropped
   return "";
 }
 
-/** "Rajesh ( HR )" -> name Rajesh, designation HR; "Viresh Kumar (GM- HR), mohan" -> Viresh Kumar / GM- HR. */
+/**
+ * "Rajesh ( HR )" -> name Rajesh, designation HR; "Viresh Kumar (GM- HR), mohan" -> Viresh Kumar / GM- HR;
+ * "Rajesh Kumar - HR Head" -> Rajesh Kumar / HR Head.
+ */
 export function splitNameAndDesignation(rawName: string): { name: string; designation: string } {
   let name = rawName.replace(/^["'\s]+|["'\s,;]+$/g, "");
   let designation = "";
@@ -167,20 +172,33 @@ export function splitNameAndDesignation(rawName: string): { name: string; design
   if (bracket) {
     designation = bracket[1].trim();
     name = name.replace(bracket[0], " ");
+  } else {
+    // A spaced dash separates a title; "Jean-Paul" keeps its hyphen.
+    const dash = /^(.+?)\s+[-\u2013\u2014]\s+(.+)$/.exec(name);
+    if (dash && !/\d/.test(dash[2])) {
+      name = dash[1];
+      designation = dash[2].split(/[,;/]/)[0].trim();
+    }
   }
   name = name.split(/[,;/]|\bor\b|&/)[0];
   return { name: name.replace(/\s+/g, " ").trim(), designation };
 }
 
-/** Title-cases words written all in lower case; leaves acronyms and mixed case alone. */
+const LOWER_WORDS = new Set(["and", "of", "the", "for", "in", "at", "llp"]);
+
+/**
+ * Title-cases words written all in lower case; leaves acronyms and mixed case alone.
+ * "sharma's" -> "Sharma's", "o'brien" -> "O'Brien".
+ */
 export function tidyCase(value: string): string {
-  return value.replace(/\b([a-z])([a-z]*)\b/g, (word, first: string, rest: string) =>
-    ["and", "of", "the", "for", "in", "at", "pvt", "ltd", "llp"].includes(word)
-      ? word === "pvt" || word === "ltd"
-        ? first.toUpperCase() + rest
-        : word
-      : first.toUpperCase() + rest,
-  ).replace(/^[a-z]/, (c) => c.toUpperCase());
+  return value
+    .replace(/\b([a-z])([a-z]*)\b/g, (word: string, first: string, rest: string, offset: number, all: string) => {
+      if (LOWER_WORDS.has(word)) return word;
+      // The tail of a contraction or possessive ('s, 't, 'll) stays lower case.
+      if (/['\u2019]/.test(all[offset - 1] ?? "") && word.length <= 2) return word;
+      return first.toUpperCase() + rest;
+    })
+    .replace(/^[a-z]/, (c) => c.toUpperCase());
 }
 
 function cleanPoc(
