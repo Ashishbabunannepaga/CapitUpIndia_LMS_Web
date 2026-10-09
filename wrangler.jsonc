@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "capitup-lms",
-  "main": ".open-next/worker.js",
+  "main": "worker.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
@@ -9,6 +9,8 @@
     "binding": "ASSETS"
   },
   "observability": { "enabled": true },
+  // worker.ts imports server code that starts with `import "server-only"`.
+  "alias": { "server-only": "./src/worker/server-only-stub.ts" },
   "d1_databases": [
     {
       "binding": "DB",

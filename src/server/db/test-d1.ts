@@ -3,8 +3,9 @@ import path from "node:path";
 
 import { getPlatformProxy } from "wrangler";
 
-// A fresh, in-memory D1 (the same SQLite build as production, run by workerd)
-// with every migration in migrations/ applied. For tests only.
+// A fresh, in-memory D1 (the same SQLite build as production, run by
+// workerd) with every migration in migrations/ applied, and an empty R2
+// bucket. For tests only.
 export async function freshD1() {
   const proxy = await getPlatformProxy<CloudflareEnv>({ persist: false });
   const db = proxy.env.DB;
@@ -16,5 +17,5 @@ export async function freshD1() {
       .filter(Boolean);
     for (const statement of statements) await db.prepare(statement).run();
   }
-  return { db, dispose: () => proxy.dispose() };
+  return { db, cards: proxy.env.CARDS, dispose: () => proxy.dispose() };
 }

@@ -45,6 +45,8 @@ jobs:
           git status --porcelain migrations | tee /dev/stderr | (! grep .)
       - run: npm run d1:migrate:local
       - run: npm run cf:build
+      - name: Bundle the Worker entry (app + cron)
+        run: npx wrangler deploy --dry-run --outdir /tmp/worker-bundle
 
   database:
     name: Migrations, access-control and edge-case tests

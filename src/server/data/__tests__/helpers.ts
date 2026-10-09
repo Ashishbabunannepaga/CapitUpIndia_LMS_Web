@@ -6,8 +6,8 @@ export const PASSWORD = "correct-horse-battery";
 
 /** A fresh D1 with an admin (Asha) and two agents (Amit, Neha). */
 export async function testWorld() {
-  const { db: d1, dispose } = await freshD1();
-  const ctx = createDataContext(d1, { BETTER_AUTH_SECRET: "test-secret-".padEnd(48, "x"), BETTER_AUTH_URL: "http://localhost:3000" });
+  const { db: d1, cards, dispose } = await freshD1();
+  const ctx = createDataContext(d1, { BETTER_AUTH_SECRET: "test-secret-".padEnd(48, "x"), BETTER_AUTH_URL: "http://localhost:3000" }, cards);
   const adminProfile = await createFirstAdmin(ctx, { email: "asha@capitup.test", fullName: "Asha Admin", password: PASSWORD });
   const admin = adminProfile;
   const amit = await createUser(ctx, admin, { email: "amit@capitup.test", fullName: "Amit Agent", password: PASSWORD });
