@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gte, isNull, lt, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { BatchItem } from "drizzle-orm/batch";
 
@@ -269,6 +269,21 @@ export async function getLeadEvents(ctx: DataContext, actor: Actor, leadId: numb
     .from(events)
     .where(and(eq(events.lead_id, leadId), isAdmin(actor) ? undefined : eq(events.assigned_agent_id, actor.id)))
     .orderBy(asc(events.event_timestamp));
+}
+
+/** Every lead sharing a company name with a flagged duplicate, oldest first. Admins only. */
+export async function listDuplicateGroups(ctx: DataContext, actor: Actor): Promise<Lead[]> {
+  assertAdmin(actor);
+  const flagged = ctx.db
+    .selectDistinct({ name: leads.client_name_normalized })
+    .from(leads)
+    .where(eq(leads.is_duplicate, true))
+    .limit(500);
+  return ctx.db
+    .select()
+    .from(leads)
+    .where(inArray(leads.client_name_normalized, flagged))
+    .orderBy(asc(leads.created_at), asc(leads.id));
 }
 
 // --- Writes ----------------------------------------------------------------

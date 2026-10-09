@@ -10,8 +10,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Project notes
 
-- Business rules live in the database (see `supabase/migrations`); keep RLS and the guard
-  triggers the source of truth for who can do what, and add a case to
-  `supabase/tests/access_control.test.sql` whenever you change them (`npm run db:test`).
-- Keep `src/lib/database.types.ts` in sync with migrations.
-- Never import `src/lib/supabase/admin.ts` outside server code; it bypasses RLS.
+- The app runs on Cloudflare Workers (OpenNext) with D1 and R2; see `docs/cloudflare-d1-plan.md`.
+- Business rules live in the data layer (`src/server/data/*`): every page, action and route
+  calls a data function with the signed-in actor, never SQL. Add a case to the Vitest suites
+  in `src/server/data/__tests__` whenever you change who can do what (`npm test`).
+- Only `src/server` may import `@/server/db`; ESLint enforces it.
+- After changing `src/server/db/schema.ts`, run `npm run d1:generate` and commit the migration.

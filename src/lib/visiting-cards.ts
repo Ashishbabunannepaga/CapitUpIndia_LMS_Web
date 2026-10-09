@@ -1,15 +1,6 @@
-import "server-only";
-
-import { randomUUID } from "node:crypto";
-
-import { createAdminClient } from "@/lib/supabase/admin";
-
-// Visiting card images live in the private "visiting-cards" bucket under
-// "<uploader id>/<uuid>.<ext>". Only the server touches the bucket: it
-// uploads after checking the file, and signs short-lived URLs only for
-// leads the signed-in user can already read (RLS).
-
-const BUCKET = "visiting-cards";
+// Visiting card images live in the private R2 bucket under
+// "<uploader id>/<uuid>.<ext>" (see src/server/data/cards.ts). They are
+// served only through /leads/<id>/card, to people who can see the lead.
 
 const SIGNATURES: { mime: string; ext: string; test: (b: Uint8Array) => boolean }[] = [
   { mime: "image/jpeg", ext: "jpg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
@@ -29,24 +20,7 @@ export function sniffImage(bytes: Uint8Array): { mime: string; ext: string } | n
 
 const PATH_PATTERN = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
-/** True for a card path this user uploaded (the database enforces the same rule for agents). */
+/** True for a card path this user uploaded (the data layer enforces the same rule for agents). */
 export function isOwnCardPath(path: string, userId: string): boolean {
   return PATH_PATTERN.test(path) && path.startsWith(`${userId}/`);
-}
-
-export async function uploadCard(userId: string, bytes: Uint8Array, image: { mime: string; ext: string }) {
-  const path = `${userId}/${randomUUID()}.${image.ext}`;
-  const { error } = await createAdminClient().storage.from(BUCKET).upload(path, bytes, {
-    contentType: image.mime,
-    upsert: false,
-  });
-  if (error) throw error;
-  return path;
-}
-
-/** A 10-minute link to a card. Call only after confirming the user can see the lead. */
-export async function signedCardUrl(path: string): Promise<string | null> {
-  const { data, error } = await createAdminClient().storage.from(BUCKET).createSignedUrl(path, 600);
-  if (error) return null;
-  return data.signedUrl;
 }

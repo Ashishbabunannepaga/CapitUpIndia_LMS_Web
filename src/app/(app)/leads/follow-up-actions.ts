@@ -2,9 +2,9 @@
 
 import { AiRateLimitError, AiUnavailableError, generate, MODELS } from "@/lib/ai/gemini";
 import { followUpPrompt, isFollowUpTone, rephrasePrompt, type FollowUpTone } from "@/lib/ai/prompts";
-import { requireProfile } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
-import { createClient } from "@/lib/supabase/server";
+import { getLead, getLeadNotes } from "@/server/data/leads";
 
 export type FollowUpResult =
   | { ok: true; text: string; source: "ai" | "template"; notice?: string }
@@ -33,21 +33,17 @@ function templateDraft(tone: FollowUpTone, poc: string, client: string, product:
 
 /**
  * Writes (or rewrites) a short follow-up for a lead. The lead is read as the
- * signed-in user, so RLS decides whether they may see it.
+ * signed-in user, so only their own leads (or any, for admins) work.
  */
 export async function generateFollowUp(leadId: number, tone: string, previousDraft?: string): Promise<FollowUpResult> {
-  const profile = await requireProfile();
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Your session has ended. Sign in again." };
+  const { ctx, actor: profile } = session;
   if (!isFollowUpTone(tone)) return { ok: false, error: "Pick a tone." };
 
-  const supabase = await createClient();
-  const { data: lead } = await supabase.from("leads").select("*").eq("id", leadId).maybeSingle();
+  const lead = await getLead(ctx, profile, leadId);
   if (!lead) return { ok: false, error: "That lead no longer exists or isn't yours." };
-  const { data: notes } = await supabase
-    .from("lead_notes")
-    .select("agent_name, content, created_at")
-    .eq("lead_id", leadId)
-    .order("created_at", { ascending: false })
-    .limit(5);
+  const notes = (await getLeadNotes(ctx, profile, leadId)).slice(0, 5);
 
   const sender = firstName(profile.full_name) || profile.full_name;
   const context = [
@@ -65,6 +61,7 @@ export async function generateFollowUp(leadId: number, tone: string, previousDra
   const rephrase = Boolean(previousDraft?.trim());
   try {
     const { value } = await generate({
+      ctx,
       user: profile,
       feature: rephrase ? "follow_up_rephrase" : "follow_up",
       models: MODELS.writing,

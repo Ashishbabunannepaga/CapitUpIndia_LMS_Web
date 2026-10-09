@@ -2,31 +2,76 @@ import "server-only";
 
 import { cache } from "react";
 
-import type { Lead, LeadStatus, Profile } from "@/lib/database.types";
-import { addDays, todayInBusinessTz } from "@/lib/dates";
-import { LEAD_STATUSES } from "@/lib/domain";
-import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
-import { createClient } from "@/lib/supabase/server";
+import type { LeadStatus, Profile } from "@/lib/database.types";
+import type { LeadFilters } from "@/lib/lead-filters";
+import { requireSession } from "@/lib/auth";
+import * as leadData from "@/server/data/leads";
+import { findSimilarLeads as findSimilar } from "@/server/data/duplicates";
+import { recentNotifications } from "@/server/data/notifications";
+import { listTeam } from "@/server/data/users";
 
-// Reads for the workspace screens. Everything runs as the signed-in user, so
-// RLS decides which leads come back; nothing here filters by role for safety.
+// Reads for the workspace screens, as the signed-in user. The data layer
+// (src/server/data) decides which leads come back.
 
 export type TeamMember = Pick<Profile, "id" | "full_name" | "role" | "is_active">;
 
-export type LeadWithAgent = Lead & { agent_name: string | null };
+export type LeadWithAgent = leadData.LeadWithAgent;
 
-/** Everyone the caller can see (active users see the whole team). */
+export const LEAD_LIST_LIMIT = leadData.LEAD_LIST_LIMIT;
+
+/** The whole team (every active user can see it). */
 export const getTeam = cache(async (): Promise<TeamMember[]> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, full_name, role, is_active")
-    .order("full_name");
-  if (error) throw error;
-  return data;
+  const { ctx, actor } = await requireSession();
+  const team = await listTeam(ctx, actor);
+  return team.map(({ id, full_name, role, is_active }) => ({ id, full_name, role, is_active }));
 });
 
-export async function withAgentNames<T extends Pick<Lead, "assigned_agent_id">>(
+export async function listLeads(filters: LeadFilters): Promise<{ leads: LeadWithAgent[]; truncated: boolean }> {
+  const { ctx, actor } = await requireSession();
+  return leadData.listLeads(ctx, actor, filters);
+}
+
+/** How many leads match the filters in each status, for board columns beyond the list limit. */
+export async function countLeadsByStatus(filters: LeadFilters): Promise<Record<LeadStatus, number>> {
+  const { ctx, actor } = await requireSession();
+  return leadData.countLeadsByStatus(ctx, actor, filters);
+}
+
+export async function getLead(id: number): Promise<LeadWithAgent | null> {
+  const { ctx, actor } = await requireSession();
+  return leadData.getLead(ctx, actor, id);
+}
+
+export async function getLeadNotes(leadId: number) {
+  const { ctx, actor } = await requireSession();
+  return leadData.getLeadNotes(ctx, actor, leadId);
+}
+
+/** Visible calendar events for a lead (the renewal due date and tasks), oldest first. */
+export async function getLeadEvents(leadId: number) {
+  const { ctx, actor } = await requireSession();
+  return leadData.getLeadEvents(ctx, actor, leadId);
+}
+
+/** Other companies with a similar name, across all agents (owner names only). */
+export async function findSimilarLeads(clientName: string, excludeId?: number) {
+  if (!clientName.trim()) return [];
+  const { ctx, actor } = await requireSession();
+  return findSimilar(ctx, actor, clientName, { excludeId });
+}
+
+/** Recent renewal reminders for the bell, and how many are unread. */
+export const getRecentNotifications = cache(async () => {
+  const { ctx, actor } = await requireSession();
+  return recentNotifications(ctx, actor, 20);
+});
+
+export const getUnreadNoteCount = cache(async (): Promise<number> => {
+  const { ctx, actor } = await requireSession();
+  return leadData.countUnreadLeadNotes(ctx, actor);
+});
+
+export async function withAgentNames<T extends Pick<LeadWithAgent, "assigned_agent_id">>(
   leads: T[],
 ): Promise<(T & { agent_name: string | null })[]> {
   const team = await getTeam();
@@ -36,162 +81,3 @@ export async function withAgentNames<T extends Pick<Lead, "assigned_agent_id">>(
     agent_name: lead.assigned_agent_id ? (names.get(lead.assigned_agent_id) ?? null) : null,
   }));
 }
-
-export const LEAD_LIST_LIMIT = 500;
-
-type Supabase = Awaited<ReturnType<typeof createClient>>;
-
-/** The leads matching the list filters; `head` counts them without loading rows. */
-function filteredLeads(supabase: Supabase, filters: LeadFilters, today: string, head?: { count: "exact"; head: true }) {
-  let query = supabase.from("leads").select("*", head);
-
-  const terms = searchTerms(filters.q);
-  if (terms.length > 0) {
-    query = query.or(
-      terms
-        .flatMap((term) => {
-          const like = `%${term}%`;
-          return [
-            `client_name.ilike.${like}`,
-            `poc_name.ilike.${like}`,
-            `poc2_name.ilike.${like}`,
-            `sub_product_name.ilike.${like}`,
-            `poc_contact_number.ilike.${like}`,
-            `poc2_contact_number.ilike.${like}`,
-            `poc_email_id.ilike.${like}`,
-            `poc2_email_id.ilike.${like}`,
-            `notes.ilike.${like}`,
-          ];
-        })
-        .join(","),
-    );
-  }
-  if (filters.status) query = query.eq("status", filters.status);
-  if (filters.product) query = query.eq("policy_product", filters.product);
-  if (filters.type) query = query.eq("type", filters.type);
-  if (filters.agent === "unassigned") query = query.is("assigned_agent_id", null);
-  else if (filters.agent) query = query.eq("assigned_agent_id", filters.agent);
-  if (filters.duplicates) query = query.eq("is_duplicate", true);
-
-  switch (filters.renewal) {
-    case "overdue":
-      query = query.lt("renewal_date", today).not("status", "in", '("Closed Won","Closed Lost")');
-      break;
-    case "7":
-    case "30":
-    case "90":
-      query = query.gte("renewal_date", today).lte("renewal_date", addDays(today, Number(filters.renewal)));
-      break;
-    case "none":
-      query = query.is("renewal_date", null);
-      break;
-  }
-  return query;
-}
-
-export async function listLeads(filters: LeadFilters): Promise<{ leads: LeadWithAgent[]; truncated: boolean }> {
-  const supabase = await createClient();
-  let query = filteredLeads(supabase, filters, todayInBusinessTz());
-
-  switch (filters.sort) {
-    case "name":
-      query = query.order("client_name_normalized").order("id");
-      break;
-    case "renewal_asc":
-      query = query.order("renewal_date", { ascending: true, nullsFirst: false }).order("id");
-      break;
-    case "renewal_desc":
-      query = query.order("renewal_date", { ascending: false, nullsFirst: false }).order("id");
-      break;
-    case "created":
-      query = query.order("created_at", { ascending: false }).order("id", { ascending: false });
-      break;
-    default:
-      query = query.order("updated_at", { ascending: false }).order("id", { ascending: false });
-  }
-
-  const { data, error } = await query.limit(LEAD_LIST_LIMIT + 1);
-  if (error) throw error;
-  const truncated = data.length > LEAD_LIST_LIMIT;
-  return { leads: await withAgentNames(data.slice(0, LEAD_LIST_LIMIT)), truncated };
-}
-
-/** How many leads match the filters in each status, for board columns beyond the list limit. */
-export async function countLeadsByStatus(filters: LeadFilters): Promise<Record<LeadStatus, number>> {
-  const supabase = await createClient();
-  const today = todayInBusinessTz();
-  const counts = await Promise.all(
-    LEAD_STATUSES.map(async (status) => {
-      const { count, error } = await filteredLeads(supabase, { ...filters, status }, today, { count: "exact", head: true });
-      if (error) throw error;
-      return [status, count ?? 0] as const;
-    }),
-  );
-  return Object.fromEntries(counts) as Record<LeadStatus, number>;
-}
-
-export async function getLead(id: number): Promise<LeadWithAgent | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("leads").select("*").eq("id", id).maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  const [lead] = await withAgentNames([data]);
-  return lead;
-}
-
-export async function getLeadNotes(leadId: number) {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("lead_notes")
-    .select("*")
-    .eq("lead_id", leadId)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false });
-  if (error) throw error;
-  return data;
-}
-
-/** Visible calendar events for a lead (the renewal due date and tasks), oldest first. */
-export async function getLeadEvents(leadId: number) {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("events")
-    .select("*")
-    .eq("lead_id", leadId)
-    .order("event_timestamp");
-  if (error) throw error;
-  return data;
-}
-
-/** Other companies with a similar name, across all agents (owner names only). */
-export async function findSimilarLeads(clientName: string, excludeId?: number) {
-  if (!clientName.trim()) return [];
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("find_similar_leads", {
-    p_client_name: clientName,
-    p_exclude_id: excludeId ?? null,
-  });
-  if (error) throw error;
-  return data;
-}
-
-/** Recent renewal reminders for the bell, and how many are unread. */
-export const getRecentNotifications = cache(async () => {
-  const supabase = await createClient();
-  const [{ data }, { count }] = await Promise.all([
-    supabase
-      .from("notifications")
-      .select("id, title, body, lead_id, created_at, read_at")
-      .order("created_at", { ascending: false })
-      .limit(20),
-    supabase.from("notifications").select("id", { count: "exact", head: true }).is("read_at", null),
-  ]);
-  return { items: data ?? [], unread: count ?? 0 };
-});
-
-export const getUnreadNoteCount = cache(async (): Promise<number> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("count_unread_lead_notes");
-  if (error) return 0;
-  return data ?? 0;
-});

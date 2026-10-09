@@ -10,8 +10,6 @@ jobs:
     name: Lint, typecheck, test and build
     runs-on: ubuntu-latest
     env:
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder
       NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v4
@@ -29,8 +27,6 @@ jobs:
     name: Cloudflare Worker build and D1 migrations
     runs-on: ubuntu-latest
     env:
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder
       NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v4
@@ -48,29 +44,8 @@ jobs:
       - name: Bundle the Worker entry (app + cron)
         run: npx wrangler deploy --dry-run --outdir /tmp/worker-bundle
 
-  database:
-    name: Migrations, access-control and edge-case tests
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-      - run: scripts/test-db.sh
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-
   e2e:
-    name: End-to-end (browser and API against local Supabase)
+    name: End-to-end (browser and HTTP against the built Worker on local D1)
     runs-on: ubuntu-latest
     env:
       NEXT_TELEMETRY_DISABLED: 1
@@ -81,7 +56,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx supabase start -x studio,imgproxy,vector,logflare,edge-runtime,supavisor,mailpit,storage-api
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4

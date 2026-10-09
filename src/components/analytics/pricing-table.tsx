@@ -7,9 +7,9 @@ import { updateExchangeRate, updateModelPricing } from "@/app/(app)/admin/ai-usa
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { Tables } from "@/lib/database.types";
+import type { ModelPricing } from "@/lib/database.types";
 
-type Model = Tables<"ai_model_pricing">;
+type Model = ModelPricing;
 
 function SaveState({ state }: { state: "idle" | "saving" | "saved" | string }) {
   if (state === "saving") return <Loader2 className="size-4 animate-spin text-muted-foreground" />;

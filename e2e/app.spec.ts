@@ -1,6 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { adminClient, PASSWORD, USERS, userId, type UserKey } from "./fixtures";
+import { createLead } from "@/server/data/leads";
+
+import { actor, clientAddress, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
 
 // The real app in a real browser: sign-in, creating a lead, the duplicate
 // warning, notes, status changes and what each role can open.
@@ -8,6 +10,7 @@ import { adminClient, PASSWORD, USERS, userId, type UserKey } from "./fixtures";
 test.describe.configure({ mode: "serial" });
 
 async function signIn(page: Page, user: UserKey, password = PASSWORD) {
+  await page.setExtraHTTPHeaders({ "cf-connecting-ip": clientAddress() });
   await page.goto("/login");
   await page.getByLabel("Work email").fill(USERS[user].email);
   await page.getByLabel("Password").fill(password);
@@ -15,21 +18,26 @@ async function signIn(page: Page, user: UserKey, password = PASSWORD) {
   if (password === PASSWORD) await expect(page).not.toHaveURL(/\/login/);
 }
 
+let db: LocalDb;
 let nehaLead: number;
 
+async function leadRow(clientName: string) {
+  return queryFirst(db, "select * from leads where client_name = ?", clientName);
+}
+
 test.beforeAll(async () => {
-  const admin = adminClient();
-  await admin.from("leads").delete().like("client_name", "UI %");
-  const { data, error } = await admin
-    .from("leads")
-    .insert({ client_name: "UI Renee Systems", assigned_agent_id: await userId("neha"), poc_name: "Rajesh" })
-    .select("id")
-    .single();
-  if (error) throw error;
-  nehaLead = data.id;
+  db = await openLocalDb();
+  await execute(db, "delete from leads where client_name like 'UI %'");
+  const neha = await actor(db, "neha");
+  nehaLead = await retrying(() => createLead(db.ctx, neha, { client_name: "UI Renee Systems", poc_name: "Rajesh" }));
+});
+
+test.afterAll(async () => {
+  await db?.dispose();
 });
 
 test("signed-out visitors are sent to the login page and brought back after", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "cf-connecting-ip": clientAddress() });
   await page.goto("/leads?view=cards");
   await expect(page).toHaveURL(/\/login/);
   await page.getByLabel("Work email").fill(USERS.amit.email);
@@ -45,6 +53,7 @@ test("a wrong password gets one plain message", async ({ page }) => {
 });
 
 test("a login link cannot bounce the user to another site", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "cf-connecting-ip": clientAddress() });
   await page.goto("/login?next=" + encodeURIComponent("/\\evil.example"));
   await page.getByLabel("Work email").fill(USERS.amit.email);
   await page.getByLabel("Password").fill(PASSWORD);
@@ -74,19 +83,22 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
   await expect(page.getByText(USERS.amit.name).first()).toBeVisible();
 
   await page.getByLabel("Lead status").first().selectOption("Quoted");
+  // Check through the app, not by polling the database file the Worker is writing to.
   await expect
     .poll(async () => {
-      const { data } = await adminClient().from("leads").select("status").eq("client_name", "UI Kaveri Textiles").single();
-      return data?.status;
+      await page.reload();
+      return page.getByLabel("Lead status").first().inputValue();
     })
     .toBe("Quoted");
+  expect((await leadRow("UI Kaveri Textiles"))?.status).toBe("Quoted");
 
-  const { data: events } = await adminClient()
-    .from("events")
-    .select("milestone")
-    .eq("is_system_generated", true)
-    .in("lead_id", (await adminClient().from("leads").select("id").eq("client_name", "UI Kaveri Textiles")).data!.map((l) => l.id));
-  expect(events).toHaveLength(10);
+  const lead = await leadRow("UI Kaveri Textiles");
+  const milestones = await queryFirst<{ n: number }>(
+    db,
+    "select count(*) as n from events where is_system_generated = 1 and lead_id = ?",
+    lead!.id,
+  );
+  expect(milestones?.n).toBe(10);
 });
 
 test("the form explains invalid input instead of saving it", async ({ page }) => {
@@ -96,11 +108,7 @@ test("the form explains invalid input instead of saving it", async ({ page }) =>
   await page.locator("#poc_contact_number").fill("call me maybe");
   await page.getByRole("button", { name: "Save lead" }).click();
   await expect(page.getByText("Use digits, spaces, + or - only.")).toBeVisible();
-  const { count } = await adminClient()
-    .from("leads")
-    .select("id", { count: "exact", head: true })
-    .eq("client_name", "UI Bad Input Co");
-  expect(count).toBe(0);
+  expect(await leadRow("UI Bad Input Co")).toBeNull();
 });
 
 test("creating a company another agent owns shows who has it", async ({ page }) => {
@@ -116,12 +124,11 @@ test("creating a company another agent owns shows who has it", async ({ page }) 
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Save lead" }).click();
   await expect(page.getByText("Lead saved.")).toBeVisible();
-  const { data } = await adminClient()
-    .from("leads")
-    .select("is_duplicate, duplicate_label")
-    .eq("client_name", "UI Renee Systems Pvt Ltd")
-    .single();
-  expect(data).toEqual({ is_duplicate: true, duplicate_label: "Duplicate: Already being processed by agent(s) [Neha E2E]" });
+  const copy = await leadRow("UI Renee Systems Pvt Ltd");
+  expect({ is_duplicate: copy?.is_duplicate, duplicate_label: copy?.duplicate_label }).toEqual({
+    is_duplicate: 1,
+    duplicate_label: "Duplicate: Already being processed by agent(s) [Neha E2E]",
+  });
 });
 
 test("an agent cannot open another agent's lead or the admin pages", async ({ page }) => {

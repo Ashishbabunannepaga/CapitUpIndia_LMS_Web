@@ -30,6 +30,7 @@ const eslintConfig = defineConfig([
             {
               group: ["@/server/db", "@/server/db/*", "**/server/db", "**/server/db/*"],
               message: "Use a function from @/server/data; it applies the signed-in user's access rules.",
+              allowTypeImports: true,
             },
           ],
         },

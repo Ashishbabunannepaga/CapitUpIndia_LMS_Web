@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { createClient } from "@/lib/supabase/server";
+import { requireSession } from "@/lib/auth";
+import { listTeam } from "@/server/data/users";
 
 export const metadata: Metadata = { title: "Team" };
 
@@ -15,16 +16,9 @@ const joinedFormat = new Intl.DateTimeFormat("en-IN", {
 });
 
 export default async function TeamPage() {
-  const supabase = await createClient();
-  const { data: members, error } = await supabase
-    .from("profiles")
-    .select("id, full_name, email, role, is_active, created_at")
-    .order("is_active", { ascending: false })
-    .order("full_name");
-
-  if (error) {
-    throw new Error(`Could not load the team: ${error.message}`);
-  }
+  const { ctx, actor } = await requireSession();
+  // Active people first, then by name.
+  const members = (await listTeam(ctx, actor)).sort((a, b) => Number(b.is_active) - Number(a.is_active));
 
   return (
     <>
