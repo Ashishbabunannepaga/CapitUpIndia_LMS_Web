@@ -1,0 +1,34 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "capitup-lms",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "capitup-lms",
+      // Filled in when the production database is created (cut-over step).
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "CARDS",
+      "bucket_name": "capitup-lms-visiting-cards"
+    }
+  ],
+  // Renewal reminders: deliver anything due, every minute (UTC).
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    "APP_TIMEZONE": "Asia/Kolkata"
+  }
+  // Secrets (dashboard or `wrangler secret put`, never in this file):
+  //   BETTER_AUTH_SECRET, GEMINI_API_KEY
+}

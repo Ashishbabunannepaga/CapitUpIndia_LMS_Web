@@ -45,17 +45,20 @@ the app gets one:
   rows, and blocking deletion of the last admin.
 
 The existing 70+ database tests (`supabase/tests/*.sql`) are rewritten as
-Vitest tests that run against a real local D1 through
-`@cloudflare/vitest-pool-workers`, one test per rule, plus the forged-field and
+Vitest tests that run against a real in-memory D1 (`freshD1()` in
+`src/server/db/test-d1.ts`, the same SQLite build as production), one test per rule, plus the forged-field and
 cross-agent cases. The Playwright suite keeps running against the built Worker
 (`wrangler dev`) and moves from "call the Supabase API directly" to "call the
 app's routes and actions directly".
 
 ## Work, in order (one PR each where it helps review)
 
-1. **Platform**: OpenNext + Wrangler config, D1 + R2 bindings, local dev with
+1. **Platform** (done in this PR): OpenNext + Wrangler config, D1 + R2 bindings, local dev with
    `wrangler`, CI building the Worker. Drizzle schema for all tables, first
    D1 migration, generated types replacing `database.types.ts`.
+   Commands: `npm run cf:build` builds the Worker, `npx wrangler dev` runs it,
+   `npm run d1:generate` writes a migration after a schema change,
+   `npm run d1:migrate:local` applies migrations to the local D1.
 2. **Auth**: Better Auth (email + password, admin-created users only), login,
    sign-out, session check in `src/proxy.ts`, the safe `next` redirect, a
    "create user" screen for admins, and a password reset admins can trigger.

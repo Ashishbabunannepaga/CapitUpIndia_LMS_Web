@@ -25,6 +25,27 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  cloudflare:
+    name: Cloudflare Worker build and D1 migrations
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Migrations match src/server/db/schema.ts
+        run: |
+          npx drizzle-kit generate --name ci-drift-check
+          git status --porcelain migrations | tee /dev/stderr | (! grep .)
+      - run: npm run d1:migrate:local
+      - run: npm run cf:build
+
   database:
     name: Migrations, access-control and edge-case tests
     runs-on: ubuntu-latest
