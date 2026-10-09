@@ -84,6 +84,15 @@ export const authVerification = sqliteTable("verification", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
 });
 
+// Sign-in attempts per IP and endpoint (Better Auth rate limiting). Stored in
+// D1 so every Worker instance sees the same counts.
+export const authRateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});
+
 // --- App tables ------------------------------------------------------------
 
 export const profiles = sqliteTable(

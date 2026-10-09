@@ -4,9 +4,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/database.types";
 import { publicEnv } from "@/lib/env";
 
-// /api/inngest is called by Inngest, not a browser; it verifies its own
-// signature with INNGEST_SIGNING_KEY.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/inngest"];
+// /api/auth is the D1 sign-in API (src/server/auth.ts). /api/inngest is
+// called by Inngest, not a browser; it verifies its own signature with
+// INNGEST_SIGNING_KEY.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/api/inngest"];
 
 /**
  * Refreshes the Supabase session cookie on every request and sends signed-out

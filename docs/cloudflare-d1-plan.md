@@ -59,9 +59,14 @@ app's routes and actions directly".
    Commands: `npm run cf:build` builds the Worker, `npx wrangler dev` runs it,
    `npm run d1:generate` writes a migration after a schema change,
    `npm run d1:migrate:local` applies migrations to the local D1.
-2. **Auth**: Better Auth (email + password, admin-created users only), login,
+2. **Auth** (done in this PR): Better Auth (email + password, admin-created users only), login,
    sign-out, session check in `src/proxy.ts`, the safe `next` redirect, a
    "create user" screen for admins, and a password reset admins can trigger.
+   Done so far: `src/server/auth.ts` (sessions in D1, sign-up off, 5 sign-in
+   tries per minute per IP, cross-site posts refused), `src/server/data/actor.ts`
+   (a deactivated user is cut off on their next request), team accounts in
+   `src/server/data/users.ts`, and `createFirstAdmin` for a new deployment.
+   The screens switch over in step 3 together with the data.
 3. **Data layer + access rules**: leads, notes, POC contacts, events,
    notifications, profiles, settings, audit; every rule from the SQL tests as
    a Vitest case.
