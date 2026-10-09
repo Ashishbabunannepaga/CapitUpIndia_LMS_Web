@@ -5,7 +5,7 @@ import { cache } from "react";
 import type { Lead, LeadStatus, Profile } from "@/lib/database.types";
 import { addDays, todayInBusinessTz } from "@/lib/dates";
 import { LEAD_STATUSES } from "@/lib/domain";
-import type { LeadFilters } from "@/lib/lead-filters";
+import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
 import { createClient } from "@/lib/supabase/server";
 
 // Reads for the workspace screens. Everything runs as the signed-in user, so
@@ -37,11 +37,6 @@ export async function withAgentNames<T extends Pick<Lead, "assigned_agent_id">>(
   }));
 }
 
-/** Strips characters that have meaning inside a PostgREST or() filter. */
-function searchTerm(q: string): string {
-  return q.replace(/[,()*%\\:"']/g, " ").replace(/\s+/g, " ").trim();
-}
-
 export const LEAD_LIST_LIMIT = 500;
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -50,20 +45,25 @@ type Supabase = Awaited<ReturnType<typeof createClient>>;
 function filteredLeads(supabase: Supabase, filters: LeadFilters, today: string, head?: { count: "exact"; head: true }) {
   let query = supabase.from("leads").select("*", head);
 
-  const term = searchTerm(filters.q);
-  if (term) {
-    const like = `%${term}%`;
+  const terms = searchTerms(filters.q);
+  if (terms.length > 0) {
     query = query.or(
-      [
-        `client_name.ilike.${like}`,
-        `poc_name.ilike.${like}`,
-        `poc2_name.ilike.${like}`,
-        `sub_product_name.ilike.${like}`,
-        `poc_contact_number.ilike.${like}`,
-        `poc_email_id.ilike.${like}`,
-        `poc2_email_id.ilike.${like}`,
-        `notes.ilike.${like}`,
-      ].join(","),
+      terms
+        .flatMap((term) => {
+          const like = `%${term}%`;
+          return [
+            `client_name.ilike.${like}`,
+            `poc_name.ilike.${like}`,
+            `poc2_name.ilike.${like}`,
+            `sub_product_name.ilike.${like}`,
+            `poc_contact_number.ilike.${like}`,
+            `poc2_contact_number.ilike.${like}`,
+            `poc_email_id.ilike.${like}`,
+            `poc2_email_id.ilike.${like}`,
+            `notes.ilike.${like}`,
+          ];
+        })
+        .join(","),
     );
   }
   if (filters.status) query = query.eq("status", filters.status);

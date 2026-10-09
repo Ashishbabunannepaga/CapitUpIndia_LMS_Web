@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isValidIsoDate } from "@/lib/date-parse";
 import { BUSINESS_TYPES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
 
 // Validation for the lead form. The database re-checks lengths, email shape,
@@ -33,7 +34,7 @@ export const leadFormSchema = z
     renewal_date: z
       .string()
       .trim()
-      .refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), "Use a valid date.")
+      .refine((v) => v === "" || isValidIsoDate(v), "Use a valid date.")
       .default(""),
     poc_name: text(120),
     poc_designation: text(120),
@@ -45,7 +46,11 @@ export const leadFormSchema = z
     poc2_email_id: email,
     notes: text(20000),
     status: z.enum(LEAD_STATUSES as [string, ...string[]]).default("Prospect"),
-    assigned_agent_id: z.string().trim().default(""),
+    assigned_agent_id: z
+      .string()
+      .trim()
+      .refine((v) => v === "" || v === "unassigned" || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v), "Pick an agent from the list.")
+      .default(""),
     // Set by AI intake after a visiting card scan; checked on the server.
     visiting_card_path: z.string().trim().max(200).default(""),
     confirm_duplicate: z.string().optional(),

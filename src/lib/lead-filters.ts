@@ -61,9 +61,9 @@ export function parseLeadFilters(params: RawParams): LeadFilters {
     product: isPolicyProduct(product) ? product : null,
     type: (LEAD_TYPES as readonly string[]).includes(type) ? (type as LeadType) : null,
     agent: agent === "unassigned" || /^[0-9a-f-]{36}$/i.test(agent) ? agent : null,
-    renewal: renewal in RENEWAL_WINDOWS ? (renewal as RenewalWindow) : null,
+    renewal: Object.hasOwn(RENEWAL_WINDOWS, renewal) ? (renewal as RenewalWindow) : null,
     duplicates: one(params, "duplicates") === "1",
-    sort: sort in LEAD_SORTS ? (sort as LeadSort) : "updated",
+    sort: Object.hasOwn(LEAD_SORTS, sort) ? (sort as LeadSort) : "updated",
   };
 }
 
@@ -81,4 +81,17 @@ export function leadsHref(filters: Partial<LeadFilters>): string {
   if (filters.sort && filters.sort !== "updated") params.set("sort", filters.sort);
   const query = params.toString();
   return query ? `/leads?${query}` : "/leads";
+}
+
+/**
+ * Search terms for the leads list, safe to put inside a PostgREST or()
+ * filter: characters with meaning there are stripped. A phone-like query
+ * also yields its bare digits, so "98450 12345" finds "9845012345".
+ */
+export function searchTerms(q: string): string[] {
+  const term = q.replace(/[,()*%\\:"']/g, " ").replace(/\s+/g, " ").trim();
+  if (!term) return [];
+  const digits = term.replace(/\D/g, "");
+  const phoneLike = /^[\d\s+\-/]+$/.test(term) && digits.length >= 4;
+  return phoneLike && digits !== term ? [term, digits] : [term];
 }

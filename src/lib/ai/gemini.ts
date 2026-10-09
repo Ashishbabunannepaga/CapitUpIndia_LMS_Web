@@ -130,12 +130,20 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<{ value: T;
   );
 }
 
-/** Parses a JSON object, tolerating stray text around it. */
+/** Parses a JSON object, tolerating code fences and stray text (even text with braces) around it. */
 export function parseJsonObject(text: string): Record<string, unknown> {
   const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("No JSON object in response");
-  const value: unknown = JSON.parse(text.slice(start, end + 1));
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Response is not an object");
-  return value as Record<string, unknown>;
+  if (start < 0) throw new Error("No JSON object in response");
+  let lastError: unknown = new Error("No JSON object in response");
+  // Try the longest candidate first, then shorter ones ending at earlier braces.
+  for (let end = text.lastIndexOf("}"); end > start; end = text.lastIndexOf("}", end - 1)) {
+    try {
+      const value: unknown = JSON.parse(text.slice(start, end + 1));
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Response is not an object");
+      return value as Record<string, unknown>;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }

@@ -3,7 +3,7 @@
 // improves on this; this pass also runs when AI is unavailable, and decides
 // nothing the user cannot see and edit.
 
-import { parseLooseDate } from "@/lib/date-parse";
+import { excelSerialToIso, parseLooseDate } from "@/lib/date-parse";
 import { splitNameAndDesignation } from "@/lib/ai/lead-cleanup";
 
 export type SheetRow = { row: number; cells: string[] };
@@ -27,28 +27,55 @@ const HEADER_WORDS = [
   "email",
 ];
 
-/** Splits a CSV line, honouring quotes. */
-export function splitCsvLine(line: string): string[] {
-  const cells: string[] = [];
-  let current = "";
+/**
+ * Splits delimited text into rows of cells. A cell that starts with a quote
+ * may hold the delimiter, line breaks and doubled quotes, as Excel and Google
+ * Sheets write them when copying or exporting.
+ */
+export function splitDelimited(text: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
   let quoted = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
+  let cellStart = true;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
     if (quoted) {
       if (c === '"') {
-        if (line[i + 1] === '"') {
-          current += '"';
+        if (text[i + 1] === '"') {
+          cell += '"';
           i++;
         } else quoted = false;
-      } else current += c;
-    } else if (c === '"') quoted = true;
-    else if (c === ",") {
-      cells.push(current);
-      current = "";
-    } else current += c;
+      } else cell += c;
+      continue;
+    }
+    if (c === '"' && cellStart) {
+      quoted = true;
+      cellStart = false;
+    } else if (c === delimiter) {
+      row.push(cell);
+      cell = "";
+      cellStart = true;
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      cellStart = true;
+    } else {
+      cell += c;
+      if (c !== " ") cellStart = false;
+    }
   }
-  cells.push(current);
-  return cells.map((c) => c.trim());
+  row.push(cell);
+  rows.push(row);
+  return rows.map((cells) => cells.map((c) => c.trim()));
+}
+
+/** Splits one CSV line, honouring quotes. */
+export function splitCsvLine(line: string): string[] {
+  return splitDelimited(line.replace(/[\r\n]+/g, " "), ",")[0];
 }
 
 export function looksLikeHeader(cells: string[]): boolean {
@@ -58,9 +85,11 @@ export function looksLikeHeader(cells: string[]): boolean {
 
 /** Parses pasted TSV or CSV. Row numbers are 1-based over the data rows. */
 export function parsePastedSheet(text: string): ParsedSheet {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
-  const split = (line: string) => (line.includes("\t") ? line.split("\t").map((c) => c.trim()) : splitCsvLine(line));
-  const parsed = lines.map(split);
+  const clean = text.replace(/^\uFEFF/, "");
+  const firstLine = clean.split(/\r?\n/).find((line) => line.trim() !== "") ?? "";
+  const parsed = splitDelimited(clean, firstLine.includes("\t") ? "\t" : ",").filter((cells) =>
+    cells.some((c) => c !== ""),
+  );
   const header = parsed.length > 0 && looksLikeHeader(parsed[0]) ? parsed[0] : [];
   const body = header.length > 0 ? parsed.slice(1) : parsed;
   return { header, rows: body.map((cells, i) => ({ row: i + 1, cells })) };
@@ -131,11 +160,19 @@ export function heuristicMapRow(sheet: ParsedSheet, row: SheetRow, today: string
 
   const dateCell = cellFor("date of renewal", "renewal", "expiry", "date of referral", "referral");
   const remarks = cellFor("remark", "notes", "comment");
-  const renewalDate = parseLooseDate(dateCell, today) ?? parseLooseDate(remarks, today) ?? "";
+  // A date column formatted as a number holds an Excel serial (46300 = 05 Oct 2026).
+  const serialDate = /^\d{5}(?:\.\d+)?$/.test(dateCell) ? excelSerialToIso(Number(dateCell)) : null;
+  // Without a header, the first cell that reads as a date is the renewal.
+  const headerlessDate =
+    sheet.header.length === 0
+      ? (row.cells.filter((c) => !EMAIL.test(c)).map((c) => parseLooseDate(c, today)).find(Boolean) ?? null)
+      : null;
+  const renewalDate =
+    serialDate ?? parseLooseDate(dateCell, today) ?? parseLooseDate(remarks, today) ?? headerlessDate ?? "";
 
   const policyText = cellFor("type of policy", "policy", "product", "cover");
   const contactCell = cellFor("contact person", "poc name", "name") || "";
-  const { name, designation } = splitNameAndDesignation(contactCell.replace(EMAIL, "").replace(/\+?[\d\s\-()]{8,}/g, ""));
+  const { name, designation } = splitNameAndDesignation(contactCell.replace(EMAIL, "").replace(/\+?\d[\d\s-]{6,}\d/g, ""));
 
   const location = cellFor("location", "vertical", "address");
   const status = cellFor("status");

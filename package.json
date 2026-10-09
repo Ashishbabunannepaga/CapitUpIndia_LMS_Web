@@ -12,7 +12,8 @@
     "db:test": "scripts/test-db.sh",
     "db:types": "supabase gen types typescript --local --schema public > src/lib/database.types.ts",
     "migrate:firebase": "node migration/firebase/cli.mjs",
-    "migrate:firebase:test": "node --test migration/firebase/test/*.test.mjs && migration/firebase/test/sql-load.sh"
+    "migrate:firebase:test": "node --test migration/firebase/test/*.test.mjs && migration/firebase/test/sql-load.sh",
+    "test:e2e": "scripts/e2e.sh"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",
@@ -32,6 +33,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.5",
     "@types/react": "^19",

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { safeNextPath } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
 
 const credentialsSchema = z.object({
@@ -12,14 +13,6 @@ const credentialsSchema = z.object({
 });
 
 export type LoginState = { error?: string; email?: string };
-
-/** Only allow redirects back into this app. */
-function safeNext(next: string | undefined): string {
-  if (next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login")) {
-    return next;
-  }
-  return "/my-day";
-}
 
 export async function signIn(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const parsed = credentialsSchema.safeParse({
@@ -49,5 +42,5 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
     return { error: "Your account is disabled. Contact your administrator.", email };
   }
 
-  redirect(safeNext(parsed.data.next));
+  redirect(safeNextPath(parsed.data.next));
 }

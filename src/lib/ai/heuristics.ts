@@ -16,8 +16,8 @@ function firstMatch(text: string, patterns: RegExp[]): string {
 
 export function heuristicParseText(text: string, today: string): Record<string, string> {
   const client = firstMatch(text, [
-    new RegExp(`\\b(?:company|client|corporate|firm|account)\\s*(?:name)?\\s*(?:is|:|-)?\\s+([A-Z][\\w&.'-]*(?:\\s+[A-Z][\\w&.'-]*)*)${STOP}`),
-    new RegExp(`\\b(?:from|at|of)\\s+([A-Z][\\w&.'-]*(?:\\s+[A-Z][\\w&.'-]*)*)${STOP}`),
+    new RegExp(`\\b(?:[Cc]ompany|[Cc]lient|[Cc]orporate|[Ff]irm|[Aa]ccount)\\s*(?:[Nn]ame)?\\s*(?:is|:|-)?\\s+([A-Z][\\w&.'-]*(?:\\s+[A-Z][\\w&.'-]*)*)${STOP}`),
+    new RegExp(`\\b(?:[Ff]rom|at|of)\\s+([A-Z][\\w&.'-]*(?:\\s+[A-Z][\\w&.'-]*)*)${STOP}`),
   ]);
 
   const pocRaw = firstMatch(text, [

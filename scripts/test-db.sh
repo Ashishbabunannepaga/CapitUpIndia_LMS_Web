@@ -36,6 +36,10 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
   psql "${PSQL_OPTS[@]}" "$DATABASE_URL" -f "$f"
 done
 
+# Tests read fixtures by paths relative to the repository root.
+cd "$ROOT"
+psql "${PSQL_OPTS[@]}" "$DATABASE_URL" -f supabase/tests/helpers.sql
+
 for f in "$ROOT"/supabase/tests/*.test.sql; do
   echo "Running $(basename "$f")"
   psql "${PSQL_OPTS[@]}" "$DATABASE_URL" -f "$f"
