@@ -163,9 +163,20 @@ test("an agent plans a task on My Day and ticks it off", async ({ page }) => {
   const box = page.getByLabel('Mark "UI Call Priya about the quote" done');
   await expect(box).toBeVisible();
   await box.check();
+  // Confirm through the app first: querying the shared database file while the
+  // Worker is still writing makes the Worker's write fail with SQLITE_BUSY.
   await expect
-    .poll(async () => (await queryFirst<{ is_completed: number }>(db, "select is_completed from events where title = ?", "UI Call Priya about the quote"))?.is_completed)
-    .toBe(1);
+    .poll(async () => {
+      await page.reload();
+      return page.getByLabel('Mark "UI Call Priya about the quote" not done').isChecked();
+    })
+    .toBe(true);
+  const task = await queryFirst<{ is_completed: number }>(
+    db,
+    "select is_completed from events where title = ?",
+    "UI Call Priya about the quote",
+  );
+  expect(task?.is_completed).toBe(1);
 });
 
 test("the admin adds a person who can then sign in, and disabling them shuts them out", async ({ page, browser }) => {
