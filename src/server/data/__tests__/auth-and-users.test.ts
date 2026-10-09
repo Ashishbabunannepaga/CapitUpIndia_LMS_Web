@@ -34,7 +34,7 @@ describe("signing in", () => {
     const { response, headers } = await signIn(world.ctx, "amit@capitup.test");
     expect(response.status).toBe(200);
     const result = await resolveActor(world.ctx, headers);
-    expect(result).toEqual({ status: "ok", actor: world.amit });
+    expect(result).toMatchObject({ status: "ok", actor: { id: world.amit.id, email: "amit@capitup.test", role: "AGENT" } });
   });
 
   it("matches the email case-insensitively", async () => {
@@ -136,7 +136,7 @@ describe("team accounts", () => {
       password: PASSWORD,
     });
     expect(member.email).toBe("long.name@capitup.test");
-    expect(member.fullName).toHaveLength(120);
+    expect(member.full_name).toHaveLength(120);
     expect((await signIn(world.ctx, "long.name@capitup.test")).response.status).toBe(200);
   });
 
@@ -158,8 +158,8 @@ describe("team accounts", () => {
     await renameUser(ctx, amit, amit.id, "  Amit Kumar  ");
     await expect(renameUser(ctx, amit, neha.id, "Hacked")).rejects.toBeInstanceOf(AccessDeniedError);
     const team = await listTeam(ctx, amit);
-    expect(team.find((m) => m.id === amit.id)?.fullName).toBe("Amit Kumar");
-    expect(team.find((m) => m.id === neha.id)?.fullName).toBe("Neha Agent");
+    expect(team.find((m) => m.id === amit.id)?.full_name).toBe("Amit Kumar");
+    expect(team.find((m) => m.id === neha.id)?.full_name).toBe("Neha Agent");
   });
 
   it("resetting a password signs the user out and the new one works", async () => {
@@ -180,8 +180,8 @@ describe("team accounts", () => {
 
   it("lists active agents for assignment", async () => {
     const agents = await listActiveAgents(world.ctx, world.amit);
-    expect(agents.map((a) => a.fullName)).toContain("Neha Agent");
-    expect(agents.map((a) => a.fullName)).not.toContain("Asha Admin");
+    expect(agents.map((a) => a.full_name)).toContain("Neha Agent");
+    expect(agents.map((a) => a.full_name)).not.toContain("Asha Admin");
   });
 
   it("reports an unknown team member plainly", async () => {

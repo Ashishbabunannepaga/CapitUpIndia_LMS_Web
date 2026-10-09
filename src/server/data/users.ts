@@ -44,16 +44,16 @@ export type TeamMember = typeof profiles.$inferSelect;
 // Every active user may see the team; `actor` proves the caller was resolved.
 export async function listTeam(ctx: DataContext, actor: Actor): Promise<TeamMember[]> {
   void actor;
-  return ctx.db.select().from(profiles).orderBy(asc(profiles.fullName));
+  return ctx.db.select().from(profiles).orderBy(asc(profiles.full_name));
 }
 
-export async function listActiveAgents(ctx: DataContext, actor: Actor): Promise<Pick<TeamMember, "id" | "fullName">[]> {
+export async function listActiveAgents(ctx: DataContext, actor: Actor): Promise<Pick<TeamMember, "id" | "full_name">[]> {
   void actor;
   const rows = await ctx.db
-    .select({ id: profiles.id, fullName: profiles.fullName, role: profiles.role, isActive: profiles.isActive })
+    .select({ id: profiles.id, full_name: profiles.full_name, role: profiles.role, is_active: profiles.is_active })
     .from(profiles)
-    .orderBy(asc(profiles.fullName));
-  return rows.filter((r) => r.isActive && r.role === "AGENT").map(({ id, fullName }) => ({ id, fullName }));
+    .orderBy(asc(profiles.full_name));
+  return rows.filter((r) => r.is_active && r.role === "AGENT").map(({ id, full_name }) => ({ id, full_name }));
 }
 
 /** Creates a sign-in account and its profile. Admins only. */
@@ -78,7 +78,7 @@ export async function createUser(ctx: DataContext, actor: Actor, input: unknown)
     });
     const [profile] = await ctx.db
       .insert(profiles)
-      .values({ id: user.id, email: data.email, fullName: data.fullName, role: data.role })
+      .values({ id: user.id, email: data.email, full_name: data.fullName, role: data.role })
       .returning();
     return profile;
   } catch (error) {
@@ -96,7 +96,7 @@ export async function createFirstAdmin(ctx: DataContext, input: unknown): Promis
   const [{ total }] = await ctx.db.select({ total: count() }).from(profiles);
   if (total > 0) throw new AccessDeniedError("This app is already set up. Ask an admin for an account.");
   const data = parse(newUserSchema, input);
-  const bootstrap: Actor = { id: "setup", email: "", fullName: "Setup", role: "ADMIN" };
+  const bootstrap = { id: "setup", role: "ADMIN" } as Actor;
   return createUser(ctx, bootstrap, { ...data, role: "ADMIN" });
 }
 
@@ -115,7 +115,7 @@ export async function setActive(ctx: DataContext, actor: Actor, userId: string, 
   assertAdmin(actor);
   await findMember(ctx, userId);
   try {
-    await ctx.db.update(profiles).set({ isActive: active }).where(eq(profiles.id, userId));
+    await ctx.db.update(profiles).set({ is_active: active }).where(eq(profiles.id, userId));
   } catch (error) {
     if (isTriggerError(error, LAST_ADMIN)) throw new AccessDeniedError("Keep at least one active admin.");
     throw error;
@@ -140,7 +140,7 @@ export async function renameUser(ctx: DataContext, actor: Actor, userId: string,
   if (actor.id !== userId) assertAdmin(actor);
   const value = parse(fullNameSchema, fullName);
   await findMember(ctx, userId);
-  await ctx.db.update(profiles).set({ fullName: value }).where(eq(profiles.id, userId));
+  await ctx.db.update(profiles).set({ full_name: value }).where(eq(profiles.id, userId));
 }
 
 async function findMember(ctx: DataContext, userId: string): Promise<TeamMember> {

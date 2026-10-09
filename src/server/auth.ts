@@ -59,6 +59,9 @@ export function createAuth(d1: D1Database, env: AuthEnv) {
       },
     },
     advanced: {
+      // UUIDs, like the Supabase ids the rest of the app (and the Firebase
+      // import) expects.
+      database: { generateId: () => crypto.randomUUID() },
       // Better Auth skips its cross-site checks when NODE_ENV is "test"; keep
       // them on so tests see what production does.
       disableOriginCheck: false,

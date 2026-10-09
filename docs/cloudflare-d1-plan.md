@@ -67,13 +67,14 @@ app's routes and actions directly".
    (a deactivated user is cut off on their next request), team accounts in
    `src/server/data/users.ts`, and `createFirstAdmin` for a new deployment.
    The screens switch over in step 3 together with the data.
-3. **Data layer + access rules**: leads, notes, POC contacts, events,
+3. **Data layer + access rules** (done in this PR): leads, notes, POC contacts, events,
    notifications, profiles, settings, audit; every rule from the SQL tests as
    a Vitest case.
-4. **Duplicates**: company-name normalisation (shared fixture already exists),
+4. **Duplicates** (done in this PR): company-name normalisation (shared fixture already exists),
    FTS5 trigram candidates, scoring and the "handled by" warning.
-5. **Renewals and reminders**: milestone sync on lead write, Cron Trigger job,
-   round-robin assignment.
+5. **Renewals and reminders** (done in this PR, except the cron wiring and
+   round-robin, which land with step 6): milestone sync on lead write,
+   `deliverDueReminders()`, tasks.
 6. **AI and import**: Gemini intake/OCR (cards read from R2), bulk import in
    D1 batches, AI usage and cost tables, analytics queries rewritten for SQLite.
 7. **Firebase import**: the migration thread's importer re-targeted to emit D1

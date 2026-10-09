@@ -6,13 +6,8 @@ import { profiles } from "../db/schema";
 import { AccessDeniedError } from "./errors";
 import type { DataContext } from "./context";
 
-/** The signed-in, active user every data function acts for. */
-export type Actor = {
-  id: string;
-  email: string;
-  fullName: string;
-  role: "ADMIN" | "AGENT";
-};
+/** The signed-in, active user every data function acts for: their profile. */
+export type Actor = typeof profiles.$inferSelect;
 
 export type ActorResult = { status: "ok"; actor: Actor } | { status: "signed-out" } | { status: "inactive" };
 
@@ -25,11 +20,8 @@ export async function resolveActor(ctx: DataContext, headers: Headers): Promise<
   const session = await ctx.auth.api.getSession({ headers });
   if (!session) return { status: "signed-out" };
   const profile = await ctx.db.query.profiles.findFirst({ where: eq(profiles.id, session.user.id) });
-  if (!profile || !profile.isActive) return { status: "inactive" };
-  return {
-    status: "ok",
-    actor: { id: profile.id, email: profile.email, fullName: profile.fullName, role: profile.role },
-  };
+  if (!profile || !profile.is_active) return { status: "inactive" };
+  return { status: "ok", actor: profile };
 }
 
 export function isAdmin(actor: Actor): boolean {
