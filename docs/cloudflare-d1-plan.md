@@ -93,14 +93,11 @@ app's routes and actions directly".
 
 ## What only Ash does
 
-1. Pick the plan. The Workers Free plan now hard-stops D1 at its daily row
-   read/write limits (enforced since 2026-09-01). A small team likely fits,
-   but Workers Paid (USD 5/month) removes the risk of the app stopping mid-day.
-   Recommended: Paid.
+1. Plan: Workers Paid (Ash, 2026-10-10).
 2. Before cut-over: add `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
    `GEMINI_API_KEY` and `SETUP_CODE` as Worker secrets in the dashboard
-   (never in chat). Claude creates the D1 database and R2 bucket through the
-   Cloudflare connector when Ash says go.
+   (never in chat). The D1 database `capitup-lms-prod` and the R2 bucket were
+   created on 2026-10-10.
 3. Connect the repository in Workers Builds (deploy.md step 3), then create
    the first admin at `/setup` and add the team.
 4. Connect the custom domain in Cloudflare (DNS is already there).

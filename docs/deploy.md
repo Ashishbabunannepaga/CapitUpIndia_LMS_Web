@@ -15,15 +15,19 @@ the app down mid-day. Dashboard > **Workers & Pages > Plans**.
 
 ## 2. Database and bucket
 
-Create them once (Claude can do this through the Cloudflare connector when you say go):
+Done on 2026-10-10 through the Cloudflare connector:
+
+- D1 database `capitup-lms-prod` (id `8b91cecb-2d26-460f-8e01-bcd31dee3d48`, APAC),
+  already in `wrangler.jsonc`. An older, unrelated `capitup-lms` database on the account
+  is left untouched.
+- R2 bucket `capitup-lms-visiting-cards`.
+
+For a fresh account the equivalent commands are:
 
 ```sh
-npx wrangler d1 create capitup-lms --location apac
+npx wrangler d1 create capitup-lms-prod --location apac
 npx wrangler r2 bucket create capitup-lms-visiting-cards
 ```
-
-Put the new database id into `wrangler.jsonc` (`d1_databases[0].database_id`) and merge
-that change.
 
 ## 3. Deploys from GitHub (Workers Builds)
 

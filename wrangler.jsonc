@@ -14,9 +14,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "capitup-lms",
-      // Filled in when the production database is created (cut-over step).
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_name": "capitup-lms-prod",
+      "database_id": "8b91cecb-2d26-460f-8e01-bcd31dee3d48",
       "migrations_dir": "migrations"
     }
   ],
