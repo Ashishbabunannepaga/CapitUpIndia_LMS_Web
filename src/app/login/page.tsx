@@ -16,6 +16,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const params = await searchParams;
   const next = typeof params.next === "string" ? params.next : undefined;
   const errorKey = typeof params.error === "string" ? params.error : undefined;
+  const setupDone = params.setup === "done";
 
   if (await getCurrentProfile()) {
     redirect("/my-day");
@@ -36,7 +37,11 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         <Card>
           <CardHeader>
             <CardTitle className="text-xl">Sign in</CardTitle>
-            <CardDescription>Use the account your administrator created for you.</CardDescription>
+            <CardDescription>
+              {setupDone
+                ? "Your admin account is ready. Sign in with it, then add your team under Team."
+                : "Use the account your administrator created for you."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <LoginForm next={next} initialError={errorKey ? ERRORS[errorKey] : undefined} />

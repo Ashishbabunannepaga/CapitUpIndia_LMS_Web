@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { isAdmin, requireProfile } from "@/lib/auth";
+import { friendlyError } from "@/lib/action-errors";
+import { getSession, isAdmin } from "@/lib/auth";
 import { businessDateTimeToIso, todayInBusinessTz } from "@/lib/dates";
-import { createClient } from "@/lib/supabase/server";
+import * as events from "@/server/data/events";
 
 export type TaskResult = { ok: true } | { ok: false; error: string };
 
@@ -22,9 +23,13 @@ const taskSchema = z.object({
   assignee: z.string().trim(),
 });
 
+const SIGNED_OUT: TaskResult = { ok: false, error: "Your session has ended. Sign in again." };
+
 /** Quick task from My Day. Agents plan for themselves; admins can assign to anyone active. */
 export async function createTask(formData: FormData): Promise<TaskResult> {
-  const profile = await requireProfile();
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  const { ctx, actor } = session;
   const parsed = taskSchema.safeParse({
     title: formData.get("title") ?? "",
     date: formData.get("date") ?? "",
@@ -34,37 +39,39 @@ export async function createTask(formData: FormData): Promise<TaskResult> {
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the task." };
   const { title, date, time, assignee } = parsed.data;
 
-  const assignedTo = isAdmin(profile) && assignee ? assignee : profile.id;
-  const supabase = await createClient();
-  const { error } = await supabase.from("events").insert({
-    title,
-    event_timestamp: businessDateTimeToIso(date || todayInBusinessTz(), time || "10:00"),
-    assigned_agent_id: assignedTo,
-  });
-  if (error) return { ok: false, error: error.code === "42501" ? "You can't assign tasks to that person." : error.message };
+  try {
+    await events.createTask(ctx, actor, {
+      title,
+      event_timestamp: businessDateTimeToIso(date || todayInBusinessTz(), time || "10:00"),
+      assigned_agent_id: isAdmin(actor) && assignee ? assignee : actor.id,
+    });
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
+  }
   revalidatePath("/", "layout");
   return { ok: true };
 }
 
 export async function setTaskDone(eventId: number, done: boolean): Promise<TaskResult> {
-  await requireProfile();
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("events")
-    .update({ is_completed: done })
-    .eq("id", eventId)
-    .select("id")
-    .single();
-  if (error) return { ok: false, error: "That task isn't yours or no longer exists." };
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  try {
+    await events.setEventDone(session.ctx, session.actor, eventId, done);
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
+  }
   revalidatePath("/", "layout");
   return { ok: true };
 }
 
 export async function deleteTask(eventId: number): Promise<TaskResult> {
-  await requireProfile();
-  const supabase = await createClient();
-  const { error } = await supabase.from("events").delete().eq("id", eventId).select("id").single();
-  if (error) return { ok: false, error: "Renewal events can't be deleted; complete them instead." };
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  try {
+    await events.deleteTask(session.ctx, session.actor, eventId);
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
+  }
   revalidatePath("/", "layout");
   return { ok: true };
 }

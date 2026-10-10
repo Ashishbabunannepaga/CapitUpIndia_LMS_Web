@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The Gemini wrapper with the SDK and database mocked: model fallback,
+// The Gemini wrapper with the SDK and data layer mocked: model fallback,
 // rate limiting, usage logging and the no-key path.
 
 const generateContent = vi.fn();
@@ -14,27 +14,28 @@ vi.mock("@google/genai", () => ({
     models = { generateContent };
   },
 }));
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({
-    from: (table: string) => {
-      if (table === "app_settings") {
-        return {
-          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: hourlyLimit === null ? null : { value: hourlyLimit } }) }) }),
-        };
-      }
-      return {
-        select: () => ({ eq: () => ({ gte: async () => ({ count: usageCount }) }) }),
-        insert: async (row: Record<string, unknown>) => {
-          inserted.push(row);
-          return { error: null };
-        },
-      };
-    },
-  }),
+vi.mock("@/server/data/ai", () => ({
+  // The data layer falls back to 200 when the setting is missing.
+  aiCallsThisHour: async () => ({ used: usageCount, limit: Number(hourlyLimit ?? 200) }),
+  logAiUsage: async (
+    _ctx: unknown,
+    u: { id: string; full_name: string },
+    call: { feature: string; model: string; inputTokens: number; outputTokens: number },
+  ) => {
+    inserted.push({
+      user_id: u.id,
+      agent_name: u.full_name,
+      feature_name: call.feature,
+      model_name: call.model,
+      input_tokens: call.inputTokens,
+      output_tokens: call.outputTokens,
+    });
+  },
 }));
 
 const user = { id: "00000000-0000-0000-0000-000000000001", full_name: "Priya" };
 const base = {
+  ctx: {} as never,
   user,
   feature: "lead_intake" as const,
   models: ["model-a", "model-b"],

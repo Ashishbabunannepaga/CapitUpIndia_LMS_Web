@@ -8,19 +8,23 @@ import { AiRateLimitError, AiUnavailableError, generate, MODELS, parseJsonObject
 import { cleanExtractedLead, type ExtractedLead } from "@/lib/ai/lead-cleanup";
 import { bulkMappingPrompt } from "@/lib/ai/prompts";
 import { bulkLeadsSchema } from "@/lib/ai/schemas";
-import { requireAdmin } from "@/lib/auth";
+import { friendlyError } from "@/lib/action-errors";
+import { getSession, isAdmin, type Session } from "@/lib/auth";
 import { normalizeCompanyName } from "@/lib/company-name";
-import type { LeadStatus } from "@/lib/database.types";
+import type { LeadStatus, PolicyProduct } from "@/lib/database.types";
 import { todayInBusinessTz } from "@/lib/dates";
 import { isLeadStatus } from "@/lib/domain";
 import { fromCellMatrix, parsePastedSheet, rowsAsText, heuristicMapRow, type ParsedSheet } from "@/lib/import/sheet";
-import { createClient } from "@/lib/supabase/server";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
+import { nextRoundRobinAgents } from "@/server/data/analytics";
+import { findSimilarLeads } from "@/server/data/duplicates";
+import { addLeadContact, addLeadNote, createLead, getLead, updateLead } from "@/server/data/leads";
+import { listActiveAgents } from "@/server/data/users";
 
 // Bulk ingestion for admins: paste TSV/CSV or upload a sheet, let Gemini map
 // the columns (15 rows per request, as the existing app did), review every
 // row, then commit. Rows are never imported without a preview, existing
-// companies are merged through add_lead_contact() instead of overwritten,
+// companies are merged through addLeadContact() instead of overwritten,
 // and new leads can be distributed round-robin.
 
 const CHUNK_SIZE = 15;
@@ -61,7 +65,7 @@ function toSheet(text: string): ParsedSheet {
 
 /** Maps one chunk with Gemini; falls back to the heuristic mapper per chunk. */
 async function mapChunk(
-  user: { id: string; full_name: string },
+  { ctx, actor: user }: Session,
   sheet: ParsedSheet,
   chunk: ParsedSheet["rows"],
   index: number,
@@ -70,6 +74,7 @@ async function mapChunk(
   calls: number,
 ): Promise<Map<number, Record<string, unknown>>> {
   const { value } = await generate({
+    ctx,
     user,
     feature: "bulk_mapping",
     models: MODELS.text,
@@ -95,8 +100,15 @@ async function mapChunk(
   return byRow;
 }
 
-async function buildPreview(sheet: ParsedSheet, useAi: boolean): Promise<PreviewResult> {
-  const profile = await requireAdmin();
+/** The signed-in admin, or null. */
+async function adminSession(): Promise<Session | null> {
+  const session = await getSession();
+  return session && isAdmin(session.actor) ? session : null;
+}
+
+const ADMINS_ONLY = { ok: false, error: "Only admins can import leads." } as const;
+
+async function buildPreview(session: Session, sheet: ParsedSheet, useAi: boolean): Promise<PreviewResult> {
   const today = todayInBusinessTz();
   if (sheet.rows.length === 0) return { ok: false, error: "No data rows found. Paste rows or upload a sheet." };
 
@@ -113,7 +125,7 @@ async function buildPreview(sheet: ParsedSheet, useAi: boolean): Promise<Preview
     try {
       const results = await Promise.all(
         chunks.map((chunk, i) =>
-          mapChunk(profile, sheet, chunk, i, chunks.length, today, i === 0 ? chunks.length : 0).catch((error) => {
+          mapChunk(session, sheet, chunk, i, chunks.length, today, i === 0 ? chunks.length : 0).catch((error) => {
             if (error instanceof AiRateLimitError) throw error;
             return null;
           }),
@@ -134,7 +146,6 @@ async function buildPreview(sheet: ParsedSheet, useAi: boolean): Promise<Preview
     }
   }
 
-  const supabase = await createClient();
   const preview: PreviewRow[] = [];
   const seen = new Map<string, number>();
 
@@ -164,8 +175,8 @@ async function buildPreview(sheet: ParsedSheet, useAi: boolean): Promise<Preview
   const names = [...new Set(preview.filter((p) => p.lead.client_name).map((p) => p.lead.client_name))];
   const matches = await Promise.all(
     names.map(async (name) => {
-      const { data } = await supabase.rpc("find_similar_leads", { p_client_name: name, p_limit: 3 });
-      return [normalizeCompanyName(name), data ?? []] as const;
+      const found = await findSimilarLeads(session.ctx, session.actor, name, { limit: 3 });
+      return [normalizeCompanyName(name), found] as const;
     }),
   );
   const matchesByKey = new Map(matches);
@@ -188,15 +199,17 @@ async function buildPreview(sheet: ParsedSheet, useAi: boolean): Promise<Preview
 }
 
 export async function previewPastedRows(text: string, useAi: boolean): Promise<PreviewResult> {
-  await requireAdmin();
+  const session = await adminSession();
+  if (!session) return ADMINS_ONLY;
   const content = String(text ?? "");
   if (!content.trim()) return { ok: false, error: "Paste some rows first." };
   if (content.length > MAX_PASTE) return { ok: false, error: "That paste is too large. Import it in smaller batches." };
-  return buildPreview(toSheet(content), useAi);
+  return buildPreview(session, toSheet(content), useAi);
 }
 
 export async function previewUploadedSheet(formData: FormData): Promise<PreviewResult> {
-  await requireAdmin();
+  const session = await adminSession();
+  if (!session) return ADMINS_ONLY;
   const file = formData.get("sheet");
   const useAi = formData.get("use_ai") !== "false";
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose a file to import." };
@@ -206,13 +219,13 @@ export async function previewUploadedSheet(formData: FormData): Promise<PreviewR
   if (name.endsWith(".xlsx")) {
     try {
       const matrix = await readSheet(Buffer.from(await file.arrayBuffer()));
-      return buildPreview(fromCellMatrix(matrix), useAi);
+      return buildPreview(session, fromCellMatrix(matrix), useAi);
     } catch {
       return { ok: false, error: "That spreadsheet could not be read. Save it as .xlsx or paste the rows instead." };
     }
   }
   if (name.endsWith(".csv") || name.endsWith(".txt") || name.endsWith(".tsv")) {
-    return buildPreview(toSheet(await file.text()), useAi);
+    return buildPreview(session, toSheet(await file.text()), useAi);
   }
   return { ok: false, error: "Upload an .xlsx, .csv or .tsv file, or paste the rows." };
 }
@@ -255,23 +268,24 @@ export type CommitInput = z.input<typeof commitSchema>;
 /**
  * Creates or merges the reviewed rows.
  *   * A company already in the CRM keeps its lead: the row's contacts go
- *     through add_lead_contact() (POC 1, then POC 2, then notes), the
+ *     through addLeadContact() (POC 1, then POC 2, then notes), the
  *     renewal date and sub-product fill in only if missing, and an import
  *     note records what happened. Nothing is overwritten.
  *   * Everything else is created with the chosen status and owner.
- * Runs as the admin, so RLS still applies.
+ * Runs as the admin, through the same data functions as the screens.
  */
 export async function commitImport(input: CommitInput): Promise<CommitResult> {
-  const profile = await requireAdmin();
+  const session = await adminSession();
+  if (!session) return ADMINS_ONLY;
+  const { ctx, actor: profile } = session;
   const parsed = commitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the rows before importing." };
   const { status, allocation, agentId, rows } = parsed.data;
-  const supabase = await createClient();
   const today = todayInBusinessTz();
 
   if (allocation === "agent") {
-    const { data: agent } = await supabase.from("profiles").select("id, is_active").eq("id", agentId).maybeSingle();
-    if (!agent?.is_active) return { ok: false, error: "Pick an active agent to assign these leads to." };
+    const agents = await listActiveAgents(ctx, profile);
+    if (!agents.some((a) => a.id === agentId)) return { ok: false, error: "Pick an active agent to assign these leads to." };
   }
 
   // Merge rows for the same company so one company becomes one lead.
@@ -285,12 +299,8 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
   const existing = new Map<string, number>();
   await Promise.all(
     [...groups.values()].map(async ([first]) => {
-      const { data } = await supabase.rpc("find_similar_leads", {
-        p_client_name: first.client_name,
-        p_limit: 1,
-        p_threshold: 0.8,
-      });
-      const exact = data?.find((m) => m.is_exact);
+      const found = await findSimilarLeads(ctx, profile, first.client_name, { limit: 1 });
+      const exact = found.find((m) => m.is_exact);
       if (exact) existing.set(normalizeCompanyName(first.client_name), exact.lead_id);
     }),
   );
@@ -298,9 +308,12 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
   const newGroups = [...groups.entries()].filter(([key]) => !existing.has(key));
   let owners: (string | null)[] = newGroups.map(() => (allocation === "agent" ? agentId : null));
   if (allocation === "round_robin" && newGroups.length > 0) {
-    const { data, error } = await supabase.rpc("next_round_robin_agents", { p_count: newGroups.length });
-    if (error) return { ok: false, error: "Could not work out the round-robin order. Try again." };
-    owners = data?.length ? data : newGroups.map(() => null);
+    try {
+      const order = await nextRoundRobinAgents(ctx, profile, newGroups.length);
+      owners = order.length ? order : newGroups.map(() => null);
+    } catch {
+      return { ok: false, error: "Could not work out the round-robin order. Try again." };
+    }
   }
 
   let created = 0;
@@ -319,13 +332,13 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
 
     if (leadId === undefined) {
       const owner = owners[ownerIndex++] ?? null;
-      const { data, error } = await supabase
-        .from("leads")
-        .insert({
+      let id: number;
+      try {
+        id = await createLead(ctx, profile, {
           client_name: first.client_name,
           type: first.type,
           business_type: first.business_type,
-          policy_product: first.policy_product as never,
+          policy_product: first.policy_product as PolicyProduct,
           sub_product_name: first.sub_product_name,
           renewal_date: first.renewal_date || null,
           address: first.address,
@@ -340,20 +353,18 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
           notes: first.notes,
           status: status as LeadStatus,
           assigned_agent_id: owner,
-        })
-        .select("id")
-        .single();
-      if (error || !data) {
-        fail(first.client_name, error?.message ?? "could not be created");
+        });
+      } catch (error) {
+        fail(first.client_name, friendlyError(error));
         continue;
       }
       created++;
-      await addExtraContacts(supabase, data.id, groupRows.slice(1), first);
+      await addExtraContacts(session, id, groupRows.slice(1), first);
       continue;
     }
 
     // Existing company: fill the gaps, never overwrite.
-    const { data: current } = await supabase.from("leads").select("*").eq("id", leadId).maybeSingle();
+    const current = await getLead(ctx, profile, leadId);
     if (!current) {
       fail(first.client_name, "the existing lead belongs to an agent and is not visible");
       continue;
@@ -363,10 +374,13 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
     if (!current.sub_product_name && first.sub_product_name) patch.sub_product_name = first.sub_product_name;
     if (!current.address && first.address) patch.address = first.address;
     if (Object.keys(patch).length > 0) {
-      const { error } = await supabase.from("leads").update(patch).eq("id", leadId).select("id").single();
-      if (error) fail(first.client_name, error.message);
+      try {
+        await updateLead(ctx, profile, leadId, patch);
+      } catch (error) {
+        fail(first.client_name, friendlyError(error));
+      }
     }
-    const contactResults = await addExtraContacts(supabase, leadId, groupRows, null);
+    const contactResults = await addExtraContacts(session, leadId, groupRows, null);
     const importNote = [
       `Bulk import ${today} by ${profile.full_name}.`,
       contactResults.length > 0 ? `Contacts: ${contactResults.join("; ")}.` : "No new contacts in the sheet.",
@@ -378,9 +392,12 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
       .filter(Boolean)
       .join(" ")
       .slice(0, 5000);
-    const { error: noteError } = await supabase.from("lead_notes").insert({ lead_id: leadId, content: importNote });
-    if (noteError) fail(first.client_name, noteError.message);
-    else merged++;
+    try {
+      await addLeadNote(ctx, profile, leadId, importNote);
+      merged++;
+    } catch (error) {
+      fail(first.client_name, friendlyError(error));
+    }
   }
 
   revalidatePath("/", "layout");
@@ -396,7 +413,7 @@ const CONTACT_WORDS: Record<string, string> = {
 
 /** Adds every contact in these rows through the POC merge rule. */
 async function addExtraContacts(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  { ctx, actor }: Session,
   leadId: number,
   rows: { poc_name: string; poc_designation: string; poc_contact_number: string; poc_email_id: string; poc2_name: string; poc2_designation: string; poc2_contact_number: string; poc2_email_id: string }[],
   skip: { poc_name: string; poc_contact_number: string; poc_email_id: string } | null,
@@ -412,14 +429,12 @@ async function addExtraContacts(
       return !(skip && name === skip.poc_name && phone === skip.poc_contact_number && email === skip.poc_email_id);
     });
     for (const [name, designation, phone, email] of contacts) {
-      const { data, error } = await supabase.rpc("add_lead_contact", {
-        p_lead_id: leadId,
-        p_name: name,
-        p_designation: designation,
-        p_phone: phone,
-        p_email: email,
-      });
-      if (!error && data) results.push(`${name || phone || email} ${CONTACT_WORDS[data] ?? data}`);
+      try {
+        const outcome = await addLeadContact(ctx, actor, leadId, { name, designation, phone, email });
+        results.push(`${name || phone || email} ${CONTACT_WORDS[outcome] ?? outcome}`);
+      } catch {
+        // A contact that cannot be added is left out of the summary.
+      }
     }
   }
   return results;

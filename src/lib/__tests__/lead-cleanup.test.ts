@@ -20,11 +20,10 @@ import { normalizeCompanyName } from "@/lib/company-name";
 const TODAY = "2026-10-05";
 
 describe("normalizeCompanyName", () => {
-  // The same fixture is checked against the SQL function in
-  // supabase/tests/edge_cases.test.sql, so duplicate grouping in the importer
-  // and in the database can never drift apart.
+  // The importer and the data layer (leads.client_name_normalized) both use
+  // normalizeCompanyName, so duplicate grouping cannot drift apart.
   const fixture = JSON.parse(
-    readFileSync(new URL("../../../supabase/tests/fixtures/company_names.json", import.meta.url), "utf8"),
+    readFileSync(new URL("./fixtures/company_names.json", import.meta.url), "utf8"),
   ) as Record<string, string>;
 
   it.each(Object.entries(fixture))("%j -> %j", (input, expected) => {

@@ -4,10 +4,10 @@ import Link from "next/link";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { BarList, Panel, StatCard } from "@/components/analytics/charts";
 import { PricingTable } from "@/components/analytics/pricing-table";
-import { requireAdmin } from "@/lib/auth";
+import { requireSession } from "@/lib/auth";
 import { AI_FEATURE_LABELS, formatCount, formatInr, getAiUsageSummary, plural } from "@/lib/analytics";
 import { formatDate, nowMs } from "@/lib/dates";
-import { createClient } from "@/lib/supabase/server";
+import { getExchangeRate, listModelPricing } from "@/server/data/ai";
 
 export const metadata: Metadata = { title: "AI Usage" };
 
@@ -19,17 +19,16 @@ function isRange(value: unknown): value is RangeKey {
 }
 
 export default async function AiUsagePage({ searchParams }: PageProps<"/admin/ai-usage">) {
-  await requireAdmin();
+  const { ctx, actor } = await requireSession();
   const params = await searchParams;
   const range: RangeKey = isRange(params.range) ? params.range : "30";
   const days = Number(range);
   const from = new Date(nowMs() - days * 86_400_000);
 
-  const supabase = await createClient();
-  const [usage, { data: pricing }, { data: fx }] = await Promise.all([
+  const [usage, pricing, usdToInr] = await Promise.all([
     getAiUsageSummary(from),
-    supabase.from("ai_model_pricing").select("*").order("model_name"),
-    supabase.from("app_settings").select("value").eq("key", "usd_to_inr").maybeSingle(),
+    listModelPricing(ctx, actor),
+    getExchangeRate(ctx, actor),
   ]);
 
   const tokens = usage.input_tokens + usage.output_tokens;
@@ -125,7 +124,7 @@ export default async function AiUsagePage({ searchParams }: PageProps<"/admin/ai
         description="USD per million tokens, converted at the exchange rate below. Costs are computed by the database from these values, so changing them affects new calls only."
         className="mt-6"
       >
-        <PricingTable models={pricing ?? []} usdToInr={Number(fx?.value ?? 0)} />
+        <PricingTable models={pricing} usdToInr={usdToInr} />
       </Panel>
     </>
   );

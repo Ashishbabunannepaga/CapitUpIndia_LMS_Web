@@ -3,34 +3,30 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { MonthCalendar, type CalendarEntry } from "@/components/calendar/month-calendar";
 import { QuickTaskForm } from "@/components/my-day/my-day-widgets";
-import { isAdmin, requireProfile } from "@/lib/auth";
+import { isAdmin, requireSession } from "@/lib/auth";
 import { addDays, businessDateOf, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
 import { getTeam } from "@/lib/leads";
-import { createClient } from "@/lib/supabase/server";
+import { listEvents } from "@/server/data/events";
 
 export const metadata: Metadata = { title: "Calendar" };
 
 export default async function CalendarPage() {
-  const profile = await requireProfile();
+  const { ctx, actor: profile } = await requireSession();
   const admin = isAdmin(profile);
   const today = todayInBusinessTz();
-  const supabase = await createClient();
 
   // Three months around today: enough to page a month back and forward.
-  const [{ data: events }, team] = await Promise.all([
-    supabase
-      .from("events")
-      .select("*")
-      .eq("is_background_reminder", false)
-      .gte("event_timestamp", startOfBusinessDay(addDays(today, -45)))
-      .lte("event_timestamp", startOfBusinessDay(addDays(today, 75)))
-      .order("event_timestamp")
-      .limit(1000),
+  const [events, team] = await Promise.all([
+    listEvents(ctx, profile, {
+      from: startOfBusinessDay(addDays(today, -45)),
+      to: startOfBusinessDay(addDays(today, 75)),
+      limit: 1000,
+    }),
     admin ? getTeam() : Promise.resolve([]),
   ]);
 
   const names = new Map(team.map((member) => [member.id, member.full_name]));
-  const entries: CalendarEntry[] = (events ?? []).map((event) => ({
+  const entries: CalendarEntry[] = events.map((event) => ({
     id: event.id,
     title: event.title,
     date: businessDateOf(event.event_timestamp),

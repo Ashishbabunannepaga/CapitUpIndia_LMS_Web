@@ -5,10 +5,11 @@ import { AiRateLimitError, AiUnavailableError, generate, MODELS, parseJsonObject
 import { cleanExtractedLead, type ExtractedLead } from "@/lib/ai/lead-cleanup";
 import { leadIntakePrompt, visitingCardPrompt } from "@/lib/ai/prompts";
 import { leadSchema } from "@/lib/ai/schemas";
-import { requireProfile } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { todayInBusinessTz } from "@/lib/dates";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
-import { sniffImage, uploadCard } from "@/lib/visiting-cards";
+import { sniffImage } from "@/lib/visiting-cards";
+import { uploadCard } from "@/server/data/cards";
 
 export type ExtractionResult =
   | {
@@ -24,10 +25,13 @@ export type ExtractionResult =
   | { ok: false; error: string };
 
 const MAX_TEXT = 8000;
+const SIGNED_OUT = { ok: false, error: "Your session has ended. Sign in again." } as const;
 
 /** AI lead intake from typed or dictated notes. Nothing is saved; the result pre-fills the lead form. */
 export async function extractLeadFromText(input: string): Promise<ExtractionResult> {
-  const profile = await requireProfile();
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  const { ctx, actor: profile } = session;
   const text = String(input ?? "").trim();
   if (!text) return { ok: false, error: "Type or dictate some notes first." };
   if (text.length > MAX_TEXT) return { ok: false, error: `Keep notes under ${MAX_TEXT} characters.` };
@@ -35,6 +39,7 @@ export async function extractLeadFromText(input: string): Promise<ExtractionResu
 
   try {
     const { value } = await generate({
+      ctx,
       user: profile,
       feature: "lead_intake",
       models: MODELS.text,
@@ -62,7 +67,9 @@ export async function extractLeadFromText(input: string): Promise<ExtractionResu
 
 /** Visiting card OCR. Stores the image privately and returns the fields for review. */
 export async function scanVisitingCard(formData: FormData): Promise<ExtractionResult> {
-  const profile = await requireProfile();
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  const { ctx, actor: profile } = session;
   const file = formData.get("card");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose a photo of the card." };
   if (file.size > MAX_UPLOAD_BYTES) return { ok: false, error: `The photo is larger than ${MAX_UPLOAD_LABEL}.` };
@@ -75,7 +82,7 @@ export async function scanVisitingCard(formData: FormData): Promise<ExtractionRe
   let cardPath: string | undefined;
   let notice: string | undefined;
   try {
-    cardPath = await uploadCard(profile.id, bytes, image);
+    cardPath = await uploadCard(ctx, profile, bytes);
   } catch (error) {
     console.error("Visiting card upload failed", error);
     notice = "The card photo could not be stored, so it won't be attached to the lead.";
@@ -83,6 +90,7 @@ export async function scanVisitingCard(formData: FormData): Promise<ExtractionRe
 
   try {
     const { value } = await generate({
+      ctx,
       user: profile,
       feature: "card_ocr",
       models: MODELS.vision,

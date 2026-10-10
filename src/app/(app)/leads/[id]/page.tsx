@@ -17,14 +17,13 @@ import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { isAdmin, requireProfile } from "@/lib/auth";
+import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
 import { formatDateTime, formatNoteTimestamp, nowMs } from "@/lib/dates";
 import { CLOSED_STATUSES } from "@/lib/domain";
 import { findSimilarLeads, getLead, getLeadEvents, getLeadNotes, getTeam } from "@/lib/leads";
-import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
-import { signedCardUrl } from "@/lib/visiting-cards";
+import { unreadLeadNotes } from "@/server/data/leads";
 
 export const metadata: Metadata = { title: "Lead" };
 
@@ -128,7 +127,7 @@ function PocCard({
 }
 
 export default async function LeadPage({ params, searchParams }: PageProps<"/leads/[id]">) {
-  const profile = await requireProfile();
+  const { ctx, actor: profile } = await requireSession();
   const admin = isAdmin(profile);
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
@@ -136,16 +135,16 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
   const lead = await getLead(id);
   if (!lead) notFound();
 
-  const supabase = await createClient();
   const [notes, events, team, similar, unread] = await Promise.all([
     getLeadNotes(id),
     getLeadEvents(id),
     admin ? getTeam() : Promise.resolve([]),
     findSimilarLeads(lead.client_name, id),
-    supabase.rpc("unread_lead_notes", { p_limit: 200 }),
+    unreadLeadNotes(ctx, profile, 200),
   ]);
-  const cardUrl = lead.visiting_card_path ? await signedCardUrl(lead.visiting_card_path) : null;
-  const unreadIds = new Set((unread.data ?? []).filter((n) => n.lead_id === id).map((n) => n.id));
+  // Served from the private bucket by ./card/route.ts, which checks access again.
+  const cardUrl = lead.visiting_card_path ? `/leads/${id}/card` : null;
+  const unreadIds = new Set(unread.filter((n) => n.lead_id === id).map((n) => n.id));
   const saved = (await searchParams).saved;
   const savedMessage = typeof saved === "string" ? SAVED_MESSAGES[saved] : undefined;
 
@@ -348,7 +347,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
 
           {cardUrl ? (
             <Panel title="Visiting card">
-              {/* eslint-disable-next-line @next/next/no-img-element -- signed, short-lived Supabase Storage URL */}
+              {/* eslint-disable-next-line @next/next/no-img-element -- same-origin route that checks access */}
               <img
                 src={cardUrl}
                 alt={`Visiting card for ${lead.client_name}`}

@@ -1,10 +1,13 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { safeNextPath } from "@/lib/safe-redirect";
-import { createClient } from "@/lib/supabase/server";
+import { applyAuthCookies, currentRequestInfo } from "@/lib/auth-cookies";
+import { getDataContext } from "@/server/data/context";
+import { signInWithPassword } from "@/server/data/sessions";
 
 const credentialsSchema = z.object({
   email: z.email("Enter a valid email address.").trim().toLowerCase(),
@@ -25,22 +28,22 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
     return { error: parsed.error.issues[0]?.message ?? "Check your details.", email };
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: parsed.data.email,
-    password: parsed.data.password,
-  });
-  if (error || !data.user) {
-    // Same message for unknown email and wrong password.
-    return { error: "Incorrect email or password.", email };
+  const ctx = await getDataContext();
+  const result = await signInWithPassword(
+    ctx,
+    { email: parsed.data.email, password: parsed.data.password },
+    await currentRequestInfo(),
+  );
+  switch (result.status) {
+    case "invalid":
+      // Same message for unknown email and wrong password.
+      return { error: "Incorrect email or password.", email };
+    case "rate-limited":
+      return { error: "Too many sign-in attempts. Wait a minute and try again.", email };
+    case "inactive":
+      return { error: "Your account is disabled. Contact your administrator.", email };
   }
 
-  // Deactivated accounts can authenticate with Supabase but have no access here.
-  const { data: profile } = await supabase.from("profiles").select("id").eq("id", data.user.id).maybeSingle();
-  if (!profile) {
-    await supabase.auth.signOut();
-    return { error: "Your account is disabled. Contact your administrator.", email };
-  }
-
+  applyAuthCookies(await cookies(), result.setCookies);
   redirect(safeNextPath(parsed.data.next));
 }

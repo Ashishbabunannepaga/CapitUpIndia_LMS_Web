@@ -3,11 +3,13 @@ import "server-only";
 import { GoogleGenAI, type ContentListUnion } from "@google/genai";
 
 import type { AiFeature, Profile } from "@/lib/database.types";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { aiCallsThisHour, logAiUsage } from "@/server/data/ai";
+import type { DataContext } from "@/server/data/context";
 
-// The only place the app talks to Gemini. Runs on the server with
-// GEMINI_API_KEY, tries each model in order, and logs every call's real
-// token usage (from usageMetadata) to ai_usage_logs; the database prices it.
+// The only place the app talks to Gemini. Runs on the server with the
+// GEMINI_API_KEY Worker secret, tries each model in order, and logs every
+// call's real token usage (from usageMetadata) to ai_usage_logs, priced from
+// the central pricing table.
 
 /** Model fallback chains, from the existing app. Every model needs a row in ai_model_pricing. */
 export const MODELS = {
@@ -45,33 +47,22 @@ export function isAiConfigured(): boolean {
 
 type Caller = Pick<Profile, "id" | "full_name">;
 
-async function enforceRateLimit(user: Caller, calls: number) {
-  const admin = createAdminClient();
-  const [{ data: setting }, { count }] = await Promise.all([
-    admin.from("app_settings").select("value").eq("key", "ai_hourly_limit_per_user").maybeSingle(),
-    admin
-      .from("ai_usage_logs")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()),
-  ]);
-  const limit = Number(setting?.value ?? 200);
-  if (Number.isFinite(limit) && limit > 0 && (count ?? 0) + calls > limit) throw new AiRateLimitError(limit);
+async function enforceRateLimit(ctx: DataContext, user: Caller, calls: number) {
+  const { used, limit } = await aiCallsThisHour(ctx, user.id);
+  if (Number.isFinite(limit) && limit > 0 && used + calls > limit) throw new AiRateLimitError(limit);
 }
 
-async function logUsage(user: Caller, feature: AiFeature, model: string, input: number, output: number) {
-  const { error } = await createAdminClient().from("ai_usage_logs").insert({
-    user_id: user.id,
-    agent_name: user.full_name,
-    feature_name: feature,
-    model_name: model,
-    input_tokens: input,
-    output_tokens: output,
-  });
-  if (error) console.error("Could not log AI usage", { feature, model, error: error.message });
+async function logUsage(ctx: DataContext, user: Caller, feature: AiFeature, model: string, input: number, output: number) {
+  try {
+    await logAiUsage(ctx, user, { feature, model, inputTokens: input, outputTokens: output });
+  } catch (error) {
+    console.error("Could not log AI usage", { feature, model, error: error instanceof Error ? error.message : error });
+  }
 }
 
 type GenerateOptions<T> = {
+  /** The request's data context (src/server/data), for rate limits and usage logs. */
+  ctx: DataContext;
   user: Caller;
   feature: AiFeature;
   models: readonly string[];
@@ -93,7 +84,7 @@ type GenerateOptions<T> = {
 export async function generate<T>(opts: GenerateOptions<T>): Promise<{ value: T; model: string }> {
   const ai = getClient();
   if (!ai) throw new AiUnavailableError("AI is not configured on this server (GEMINI_API_KEY is missing).");
-  await enforceRateLimit(opts.user, opts.rateLimitCalls ?? 1);
+  await enforceRateLimit(opts.ctx, opts.user, opts.rateLimitCalls ?? 1);
 
   let lastError: unknown;
   for (const model of opts.models) {
@@ -109,6 +100,7 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<{ value: T;
       });
       const usage = response.usageMetadata;
       await logUsage(
+        opts.ctx,
         opts.user,
         opts.feature,
         model,

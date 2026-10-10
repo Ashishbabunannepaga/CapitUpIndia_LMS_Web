@@ -1,132 +1,147 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
-import { searchTerms } from "@/lib/lead-filters";
+import { uploadCard } from "@/server/data/cards";
+import { createLead } from "@/server/data/leads";
+import { setActive } from "@/server/data/users";
 
-import { adminClient, anonClient, userClient, userId } from "./fixtures";
+import {
+  actor,
+  BASE_URL,
+  clientAddress,
+  execute,
+  openLocalDb,
+  PASSWORD,
+  queryFirst,
+  retrying,
+  USERS,
+  type LocalDb,
+  type UserKey,
+} from "./fixtures";
 
-// Someone with a valid login can skip the app and call the database API
-// directly with the publishable key from the browser. These tests do exactly
-// that, through the real auth and API services, and check that the database
-// rules hold.
+// Someone can skip the screens and call the Worker's endpoints directly:
+// the sign-in API, the card route and every page with any cookie they like.
+// These tests do exactly that, over HTTP, and check the rules hold.
 
 test.describe.configure({ mode: "serial" });
 
-let amitLead: number;
+let db: LocalDb;
 let nehaLead: number;
 
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46]);
+
+async function signInApi(request: APIRequestContext, email: string, password: string, ip = clientAddress(), origin = BASE_URL) {
+  return request.post("/api/auth/sign-in/email", {
+    headers: { origin, "cf-connecting-ip": ip },
+    data: { email, password },
+    maxRedirects: 0,
+  });
+}
+
+/** A session cookie for a user, as a browser would hold it. */
+async function sessionCookie(request: APIRequestContext, user: UserKey): Promise<string> {
+  const response = await signInApi(request, USERS[user].email, PASSWORD);
+  expect(response.status()).toBe(200);
+  return response
+    .headersArray()
+    .filter((h) => h.name.toLowerCase() === "set-cookie")
+    .map((h) => h.value.split(";")[0])
+    .join("; ");
+}
+
 test.beforeAll(async () => {
-  const admin = adminClient();
-  await admin.from("leads").delete().like("client_name", "API %");
-  const [amit, neha] = await Promise.all([userId("amit"), userId("neha")]);
-  const { data, error } = await admin
-    .from("leads")
-    .insert([
-      { client_name: "API Amit Co", assigned_agent_id: amit, poc_name: "Ravi", notes: "" },
-      { client_name: "API Neha Co", assigned_agent_id: neha, poc_name: "Sita", notes: "Neha's secret notes" },
-    ])
-    .select("id, client_name");
-  if (error) throw error;
-  amitLead = data.find((l) => l.client_name === "API Amit Co")!.id;
-  nehaLead = data.find((l) => l.client_name === "API Neha Co")!.id;
+  db = await openLocalDb();
+  await execute(db, "delete from leads where client_name like 'API %'");
+  const neha = await actor(db, "neha");
+  const card = await uploadCard(db.ctx, neha, JPEG);
+  nehaLead = await retrying(() =>
+    createLead(db.ctx, neha, { client_name: "API Neha Co", notes: "Neha's secret notes", visiting_card_path: card }),
+  );
 });
 
-test("sign-up is closed and anonymous callers see nothing", async () => {
-  const anon = anonClient();
-  const signUp = await anon.auth.signUp({ email: "intruder@e2e.test", password: "intruder-Password-1" });
-  expect(signUp.error).not.toBeNull();
-
-  const { data, error } = await anon.from("leads").select("id");
-  expect(error ?? data?.length === 0).toBeTruthy();
-  const rpc = await anon.rpc("pipeline_analytics");
-  expect(rpc.error).not.toBeNull();
+test.afterAll(async () => {
+  await db?.dispose();
 });
 
-test("an agent cannot read another agent's lead, even by id", async () => {
-  const amit = await userClient("amit");
-  const { data } = await amit.from("leads").select("id, client_name");
-  expect(data?.map((l) => l.client_name)).toContain("API Amit Co");
-  expect(data?.map((l) => l.client_name)).not.toContain("API Neha Co");
-
-  const byId = await amit.from("leads").select("*").eq("id", nehaLead).maybeSingle();
-  expect(byId.data).toBeNull();
+test("sign-up is closed", async ({ request }) => {
+  const response = await request.post("/api/auth/sign-up/email", {
+    headers: { origin: BASE_URL, "cf-connecting-ip": clientAddress() },
+    data: { email: "intruder@e2e.test", password: "intruder-Password-1", name: "Intruder" },
+  });
+  expect(response.ok()).toBe(false);
+  const row = await queryFirst(db, "select id from user where email = 'intruder@e2e.test'");
+  expect(row).toBeNull();
 });
 
-test("an agent's writes to another agent's lead change nothing", async () => {
-  const amit = await userClient("amit");
-  const update = await amit.from("leads").update({ notes: "hijacked" }).eq("id", nehaLead).select();
-  expect(update.data ?? []).toHaveLength(0);
-  const del = await amit.from("leads").delete().eq("id", nehaLead).select();
-  expect(del.data ?? []).toHaveLength(0);
-  const note = await amit.from("lead_notes").insert({ lead_id: nehaLead, content: "spy", agent_name: "x" });
-  expect(note.error).not.toBeNull();
-
-  const { data } = await adminClient().from("leads").select("notes").eq("id", nehaLead).single();
-  expect(data?.notes).toBe("Neha's secret notes");
+test("a sign-in from another site is refused", async ({ request }) => {
+  const response = await signInApi(request, USERS.amit.email, PASSWORD, clientAddress(), "https://evil.example");
+  expect(response.status()).toBe(403);
+  expect(response.headers()["set-cookie"]).toBeUndefined();
 });
 
-test("an agent cannot take over or forge ownership fields", async () => {
-  const amit = await userClient("amit");
-  const neha = await userId("neha");
-
-  const forOther = await amit.from("leads").insert({ client_name: "API Gift Co", assigned_agent_id: neha });
-  expect(forOther.error).not.toBeNull();
-
-  const reassign = await amit.from("leads").update({ assigned_agent_id: neha }).eq("id", amitLead);
-  expect(reassign.error).not.toBeNull();
-  const dupFlag = await amit.from("leads").update({ is_duplicate: true }).eq("id", amitLead);
-  expect(dupFlag.error).not.toBeNull();
-
-  const promote = await amit.from("profiles").update({ role: "ADMIN" }).eq("id", await userId("amit"));
-  expect(promote.error).not.toBeNull();
-
-  const job = await amit.rpc("deliver_due_reminders");
-  expect(job.error).not.toBeNull();
-  const roundRobin = await amit.rpc("next_round_robin_agents", { p_count: 1 });
-  expect(roundRobin.error).not.toBeNull();
+test("password guessing is stopped after five tries a minute", async ({ request }) => {
+  const ip = clientAddress();
+  for (let i = 0; i < 5; i++) {
+    expect((await signInApi(request, USERS.amit.email, "guess-" + i, ip)).status()).toBe(401);
+  }
+  expect((await signInApi(request, USERS.amit.email, PASSWORD, ip)).status()).toBe(429);
+  // Other people keep signing in.
+  expect((await signInApi(request, USERS.amit.email, PASSWORD)).status()).toBe(200);
 });
 
-test("notes are signed by the server, not by whatever the client sends", async () => {
-  const amit = await userClient("amit");
-  const { data, error } = await amit
-    .from("lead_notes")
-    // agent_id is not writable in the app's types; send it anyway, as an attacker would.
-    .insert({ lead_id: amitLead, content: "Quote sent", agent_name: "The CEO", agent_id: await userId("neha") } as never)
-    .select("agent_name, agent_id")
-    .single();
-  expect(error).toBeNull();
-  expect(data).toEqual({ agent_name: "Amit E2E", agent_id: await userId("amit") });
+test("signed-out and forged sessions see nothing", async ({ request }) => {
+  const anonymous = await request.get(`/leads/${nehaLead}`, { maxRedirects: 0 });
+  expect(anonymous.status()).toBe(307);
+  expect(anonymous.headers().location).toContain("/login");
+
+  const forged = await request.get(`/leads/${nehaLead}`, {
+    headers: { cookie: "better-auth.session_token=forged.value" },
+    maxRedirects: 0,
+  });
+  expect([303, 307, 308]).toContain(forged.status());
+  expect(await forged.text()).not.toContain("Neha's secret notes");
+
+  const card = await request.get(`/leads/${nehaLead}/card`, { maxRedirects: 0 });
+  expect(card.status()).toBe(307);
 });
 
-test("search input cannot widen the filter", async () => {
-  const amit = await userClient("amit");
-  const malicious = "x%,client_name.ilike.%API Neha%,(id.gt.0)";
-  const terms = searchTerms(malicious);
-  const filter = terms.map((t) => `client_name.ilike.%${t}%`).join(",");
-  const { data, error } = await amit.from("leads").select("client_name").or(filter);
-  expect(error).toBeNull();
-  expect(data ?? []).toHaveLength(0);
+test("an agent cannot open another agent's lead or visiting card", async ({ request }) => {
+  const cookie = await sessionCookie(request, "amit");
+  const page = await request.get(`/leads/${nehaLead}`, { headers: { cookie } });
+  expect(page.status()).toBe(404);
+  expect(await page.text()).not.toContain("Neha's secret notes");
+  const card = await request.get(`/leads/${nehaLead}/card`, { headers: { cookie } });
+  expect(card.status()).toBe(404);
 });
 
-test("a deactivated agent's still-open session is shut out", async () => {
-  const amit = await userClient("amit");
-  const admin = adminClient();
-  const id = await userId("amit");
-  await admin.from("profiles").update({ is_active: false }).eq("id", id);
+test("the owner gets the card as an image that cannot run as a page", async ({ request }) => {
+  const cookie = await sessionCookie(request, "neha");
+  const card = await request.get(`/leads/${nehaLead}/card`, { headers: { cookie } });
+  expect(card.status()).toBe(200);
+  expect(card.headers()["content-type"]).toBe("image/jpeg");
+  expect(card.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(new Uint8Array(await card.body())).toEqual(JPEG);
+});
+
+test("a deactivated agent's still-open session is shut out", async ({ request }) => {
+  const cookie = await sessionCookie(request, "amit");
+  const admin = await actor(db, "admin");
+  const amit = await actor(db, "amit");
+  await retrying(() => setActive(db.ctx, admin, amit.id, false));
   try {
-    const leads = await amit.from("leads").select("id");
-    expect(leads.data ?? []).toHaveLength(0);
-    const similar = await amit.rpc("find_similar_leads", { p_client_name: "API Neha Co" });
-    expect(similar.error?.code).toBe("42501");
-    const create = await amit.from("leads").insert({ client_name: "API Late Co", assigned_agent_id: id });
-    expect(create.error).not.toBeNull();
+    const response = await request.get("/my-day", { headers: { cookie }, maxRedirects: 0 });
+    expect([303, 307, 308]).toContain(response.status());
+    // Deactivating ends the session itself, so the cookie is now worthless.
+    expect(response.headers().location).toMatch(/\/(login|auth\/signout\?reason=inactive)/);
+    expect(await response.text()).not.toContain(USERS.amit.name);
+    const sessions = await queryFirst<{ n: number }>(db, "select count(*) as n from session where user_id = ?", amit.id);
+    expect(sessions?.n).toBe(0);
   } finally {
-    await admin.from("profiles").update({ is_active: true }).eq("id", id);
+    await retrying(() => setActive(db.ctx, admin, amit.id, true));
   }
 });
 
-test("duplicate warnings work through the API for active agents", async () => {
-  const amit = await userClient("amit");
-  const { data, error } = await amit.rpc("find_similar_leads", { p_client_name: "API Neha Company Pvt Ltd" });
-  expect(error).toBeNull();
-  expect(data?.[0]).toMatchObject({ lead_id: nehaLead, assigned_agent_name: "Neha E2E" });
+test("the reminder cron runs inside the Worker", async ({ request }) => {
+  // wrangler dev --test-scheduled exposes the Cron Trigger for testing.
+  const response = await request.get("/__scheduled?cron=*+*+*+*+*");
+  expect(response.ok()).toBe(true);
 });

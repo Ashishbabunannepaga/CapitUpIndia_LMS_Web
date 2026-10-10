@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "capitup-lms",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true },
+  // worker.ts imports server code that starts with `import "server-only"`.
+  "alias": { "server-only": "./src/worker/server-only-stub.ts" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "capitup-lms-prod",
+      "database_id": "8b91cecb-2d26-460f-8e01-bcd31dee3d48",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "CARDS",
+      "bucket_name": "capitup-lms-visiting-cards"
+    }
+  ],
+  // Renewal reminders: deliver anything due, every minute (UTC).
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    "APP_TIMEZONE": "Asia/Kolkata"
+  }
+  // Secrets (dashboard or `wrangler secret put`, never in this file):
+  //   BETTER_AUTH_SECRET, BETTER_AUTH_URL, GEMINI_API_KEY, and SETUP_CODE until the first admin exists
+}

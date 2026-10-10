@@ -3,36 +3,33 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/client";
+const INTERVAL_MS = 60_000;
 
 /**
- * Re-renders the current page when leads, notes, events or notifications change, so
- * assignments, status changes and new notes from teammates show up without a
- * reload. Supabase Realtime applies RLS, so each user only hears about rows
- * they can see. Bursts of changes are collapsed into one refresh.
+ * Re-renders the current page every minute while the tab is visible, and when
+ * the user comes back to it, so assignments, status changes, new notes and
+ * reminders from teammates show up without a reload. router.refresh() keeps
+ * what the user is typing.
  */
 export function RealtimeRefresh() {
   const router = useRouter();
 
   useEffect(() => {
-    const supabase = createClient();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let last = Date.now();
     const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), 750);
+      if (document.visibilityState !== "visible") return;
+      last = Date.now();
+      router.refresh();
     };
-
-    const channel = supabase
-      .channel("workspace-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "lead_notes" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refresh)
-      .subscribe();
-
+    const timer = setInterval(refresh, INTERVAL_MS);
+    // Coming back to the tab after a while: refresh straight away.
+    const onVisible = () => {
+      if (Date.now() - last > INTERVAL_MS / 2) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearTimeout(timer);
-      void supabase.removeChannel(channel);
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [router]);
 

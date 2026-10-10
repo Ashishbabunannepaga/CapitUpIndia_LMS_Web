@@ -11,28 +11,16 @@ import {
 } from "@/components/leads/lead-detail-actions";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { getTeam, withAgentNames, type LeadWithAgent } from "@/lib/leads";
-import { createClient } from "@/lib/supabase/server";
+import { requireSession } from "@/lib/auth";
+import { listDuplicateGroups } from "@/server/data/leads";
 
 export const metadata: Metadata = { title: "Duplicates" };
 
-// The admin layout already requires an admin; RLS gives admins every lead.
+// The admin layout already requires an admin; listDuplicateGroups checks again.
 export default async function DuplicatesPage() {
-  const supabase = await createClient();
-  const { data: flagged, error } = await supabase
-    .from("leads")
-    .select("client_name_normalized")
-    .eq("is_duplicate", true)
-    .limit(500);
-  if (error) throw error;
-
-  const names = [...new Set(flagged.map((l) => l.client_name_normalized))];
-  const [{ data: related }, team] = await Promise.all([
-    names.length
-      ? supabase.from("leads").select("*").in("client_name_normalized", names).order("created_at")
-      : Promise.resolve({ data: [] }),
-    getTeam(),
-  ]);
-  const leads = await withAgentNames(related ?? []);
+  const { ctx, actor } = await requireSession();
+  const [related, team] = await Promise.all([listDuplicateGroups(ctx, actor), getTeam()]);
+  const leads = await withAgentNames(related);
 
   const groups = new Map<string, LeadWithAgent[]>();
   for (const lead of leads) {

@@ -1,6 +1,8 @@
 -- Minimal stand-in for the parts of a Supabase database the migrations rely
 -- on (auth schema, API roles, default grants), so migrations and RLS tests can
 -- run against plain PostgreSQL in CI. Not used in real Supabase projects.
+-- Still needed by migration/firebase/test/sql-load.sh until the Firebase
+-- importer targets D1.
 
 create role anon nologin noinherit;
 create role authenticated nologin noinherit;

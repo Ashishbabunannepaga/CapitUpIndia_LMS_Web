@@ -2,15 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireProfile } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth";
+import { markNotificationsRead as markRead } from "@/server/data/notifications";
 
-/** Marks one notification, or all of the user's, as read. RLS limits this to their own. */
+/** Marks one notification, or all of the user's, as read. Only ever their own. */
 export async function markNotificationsRead(id?: number): Promise<void> {
-  await requireProfile();
-  const supabase = await createClient();
-  let query = supabase.from("notifications").update({ read_at: new Date().toISOString() }).is("read_at", null);
-  if (id !== undefined) query = query.eq("id", id);
-  await query;
+  const session = await getSession();
+  if (!session) return;
+  await markRead(session.ctx, session.actor, id);
   revalidatePath("/", "layout");
 }

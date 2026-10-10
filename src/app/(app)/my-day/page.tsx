@@ -19,8 +19,8 @@ import { DuplicateBadge, StatusBadge } from "@/components/leads/lead-badges";
 import { AssignAgentSelect } from "@/components/leads/lead-detail-actions";
 import { MarkAllReadButton, QuickTaskForm, TaskList, type TaskItem } from "@/components/my-day/my-day-widgets";
 import { Button } from "@/components/ui/button";
-import { isAdmin, requireProfile } from "@/lib/auth";
-import type { LeadEvent, LeadStatus } from "@/lib/database.types";
+import { isAdmin, requireSession } from "@/lib/auth";
+import type { LeadEvent } from "@/lib/database.types";
 import {
   addDays,
   businessDateOf,
@@ -29,18 +29,16 @@ import {
   formatDateTime,
   formatNoteTimestamp,
   formatTime,
-  nowMs,
   startOfBusinessDay,
   todayInBusinessTz,
 } from "@/lib/dates";
 import { leadsHref } from "@/lib/lead-filters";
 import { getTeam, withAgentNames, type LeadWithAgent } from "@/lib/leads";
-import { createClient } from "@/lib/supabase/server";
+import { myDay } from "@/server/data/my-day";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "My Day" };
 
-const OPEN_STATUSES = '("Closed Won","Closed Lost")';
 
 function greeting(): string {
   const hour = Number(
@@ -171,119 +169,35 @@ function toTask(event: LeadEvent, today: string): TaskItem {
 }
 
 export default async function MyDayPage() {
-  const profile = await requireProfile();
+  const { ctx, actor: profile } = await requireSession();
   const admin = isAdmin(profile);
-  const supabase = await createClient();
 
   const today = todayInBusinessTz();
   const weekEnd = addDays(today, 7);
-  const monthEnd = addDays(today, 30);
   const todayStart = startOfBusinessDay(today);
   const tomorrowStart = startOfBusinessDay(addDays(today, 1));
-  const weekEndStart = startOfBusinessDay(addDays(today, 8));
-  const sevenDaysAgo = new Date(nowMs() - 7 * 86_400_000).toISOString();
 
-  const count = (status: LeadStatus) =>
-    supabase.from("leads").select("id", { count: "exact", head: true }).eq("status", status);
-
-  const [
-    activeClients,
-    quoted,
-    followUps,
-    renewalsResult,
-    overdueRenewalsResult,
-    overdueRenewalCount,
-    openTasksResult,
-    doneTodayResult,
-    recentResult,
-    unassignedResult,
-    unreadResult,
-    unreadCountResult,
-    team,
-  ] = await Promise.all([
-    count("Active Client"),
-    count("Quoted"),
-    count("Follow-up"),
-    supabase
-      .from("leads")
-      .select("*")
-      .gte("renewal_date", today)
-      .lte("renewal_date", monthEnd)
-      .not("status", "in", OPEN_STATUSES)
-      .order("renewal_date")
-      .limit(60),
-    supabase
-      .from("leads")
-      .select("*")
-      .lt("renewal_date", today)
-      .gte("renewal_date", addDays(today, -30))
-      .not("status", "in", OPEN_STATUSES)
-      .order("renewal_date", { ascending: false })
-      .limit(10),
-    // Every overdue renewal, like the list the KPI links to; the panel shows the last 30 days.
-    supabase
-      .from("leads")
-      .select("id", { count: "exact", head: true })
-      .lt("renewal_date", today)
-      .not("status", "in", OPEN_STATUSES),
-    supabase
-      .from("events")
-      .select("*")
-      .eq("assigned_agent_id", profile.id)
-      .eq("is_background_reminder", false)
-      .eq("is_completed", false)
-      .lt("event_timestamp", weekEndStart)
-      .order("event_timestamp")
-      .limit(100),
-    supabase
-      .from("events")
-      .select("*")
-      .eq("assigned_agent_id", profile.id)
-      .eq("is_background_reminder", false)
-      .eq("is_completed", true)
-      .gte("completed_at", todayStart)
-      .order("completed_at", { ascending: false })
-      .limit(20),
-    (admin
-      ? supabase.from("leads").select("*").not("assigned_agent_id", "is", null)
-      : supabase.from("leads").select("*").eq("assigned_agent_id", profile.id)
-    )
-      .gte("assigned_at", sevenDaysAgo)
-      .order("assigned_at", { ascending: false })
-      .limit(8),
-    admin
-      ? supabase
-          .from("leads")
-          .select("*", { count: "exact" })
-          .is("assigned_agent_id", null)
-          .order("created_at", { ascending: false })
-          .limit(8)
-      : Promise.resolve(null),
-    supabase.rpc("unread_lead_notes", { p_limit: 8 }),
-    supabase.rpc("count_unread_lead_notes"),
-    getTeam(),
-  ]);
-
-  const renewals = await withAgentNames(renewalsResult.data ?? []);
-  const overdueRenewals = await withAgentNames(overdueRenewalsResult.data ?? []);
-  const recent = await withAgentNames(recentResult.data ?? []);
-  const unassigned = unassignedResult?.data ?? [];
-  const unread = unreadResult.data ?? [];
-  const unreadCount = unreadCountResult.data ?? 0;
+  const [day, team] = await Promise.all([myDay(ctx, profile), getTeam()]);
+  const renewals = await withAgentNames(day.renewals);
+  const overdueRenewals = await withAgentNames(day.overdueRenewals);
+  const recent = await withAgentNames(day.recentlyAssigned);
+  const unassigned = day.unassigned?.leads ?? [];
+  const unread = day.unreadNotes;
+  const unreadCount = day.unreadNoteCount;
   const agents = team.filter((m) => m.is_active);
 
   const renewalsToday = renewals.filter((l) => l.renewal_date === today);
   const renewalsWeek = renewals.filter((l) => l.renewal_date! > today && l.renewal_date! <= weekEnd);
   const renewalsMonth = renewals.filter((l) => l.renewal_date! > weekEnd);
 
-  const openEvents = openTasksResult.data ?? [];
+  const openEvents = day.openTasks;
   const at = (e: LeadEvent) => Date.parse(e.event_timestamp);
   const overdueTasks = openEvents.filter((e) => at(e) < Date.parse(todayStart)).map((e) => toTask(e, today));
   const todayTasks = openEvents
     .filter((e) => at(e) >= Date.parse(todayStart) && at(e) < Date.parse(tomorrowStart))
     .map((e) => toTask(e, today));
   const laterTasks = openEvents.filter((e) => at(e) >= Date.parse(tomorrowStart)).map((e) => toTask(e, today));
-  const doneToday = (doneTodayResult.data ?? []).map((e) => toTask(e, today));
+  const doneToday = day.doneToday.map((e) => toTask(e, today));
 
   const firstName = profile.full_name.split(/\s+/)[0];
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -299,7 +213,7 @@ export default async function MyDayPage() {
             : `Today: ${plural(renewalsToday.length, "renewal")} due, ${plural(todayTasks.length, "task")}${
                 overdueTasks.length ? `, ${overdueTasks.length} overdue` : ""
               }.`
-        } ${plural(followUps.count ?? 0, "follow-up")} and ${plural(quoted.count ?? 0, "quote")} open in the pipeline.`}
+        } ${plural(day.counts.followUps, "follow-up")} and ${plural(day.counts.quoted, "quote")} open in the pipeline.`}
         actions={
           <Button asChild>
             <Link href="/leads/new">
@@ -320,7 +234,7 @@ export default async function MyDayPage() {
         />
         <Kpi
           label="Overdue renewals"
-          value={overdueRenewalCount.count ?? 0}
+          value={day.counts.overdueRenewals}
           href={leadsHref({ renewal: "overdue", sort: "renewal_desc" })}
           icon={AlarmClock}
           tone="urgent"
@@ -328,15 +242,15 @@ export default async function MyDayPage() {
         <Kpi label="Overdue tasks" value={overdueTasks.length} href="#tasks" icon={AlarmClock} tone="urgent" />
         <Kpi
           label="Follow-ups"
-          value={followUps.count ?? 0}
+          value={day.counts.followUps}
           href={leadsHref({ status: "Follow-up" })}
           icon={PhoneCall}
           tone="warning"
         />
-        <Kpi label="Quoted" value={quoted.count ?? 0} href={leadsHref({ status: "Quoted" })} icon={FileText} />
+        <Kpi label="Quoted" value={day.counts.quoted} href={leadsHref({ status: "Quoted" })} icon={FileText} />
         <Kpi
           label="Active clients"
-          value={activeClients.count ?? 0}
+          value={day.counts.activeClients}
           href={leadsHref({ status: "Active Client" })}
           icon={BadgeCheck}
           tone="success"
@@ -387,7 +301,7 @@ export default async function MyDayPage() {
           {admin ? (
             <Panel
               title="Unassigned leads"
-              count={unassignedResult?.count ?? 0}
+              count={day.unassigned?.count ?? 0}
               actions={
                 <Link
                   href={leadsHref({ agent: "unassigned" })}
