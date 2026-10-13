@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dry run of the Firebase -> Supabase migration.
+// Dry run of the Firebase -> Cloudflare D1 migration.
 //
 //   node migration/firebase/cli.mjs --input export.json [--input leads.json ...]
 //        [--agents agents.json] [--out migration/firebase/out]
@@ -12,7 +12,7 @@
 //   out/check.sql   read-only readiness check (agent accounts, migrations)
 //   out/undo.sql    removes exactly what import.sql created, straight afterwards
 //
-// It never connects to Firebase or Supabase. From /users it reads only the
+// It never connects to Firebase or Cloudflare. From /users it reads only the
 // user names: the values are plaintext passwords and are never read into the
 // output, printed or migrated.
 

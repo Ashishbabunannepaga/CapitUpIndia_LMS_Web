@@ -6,54 +6,39 @@
 -- imported leads (edited a lead, added a note or a calendar event), because that
 -- work would be deleted too.
 --
--- Run as the database owner, like import.sql:
---   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f undo.sql
--- or paste it into the Supabase SQL editor. Everything happens in one transaction.
+--   npx wrangler d1 execute DB --remote --file undo.sql
+--
+-- If any statement fails, D1 puts the database back as it was.
 
-begin;
+drop table if exists _firebase_import_undo_guard;
+create table _firebase_import_undo_guard (
+  imported integer constraint "There is no Firebase import to undo" check (imported is null or imported),
+  untouched integer constraint "People have worked on the imported leads since the import (edited a lead, added a note or a calendar event); undoing would delete that work, so fix what is wrong in the app instead" check (untouched is null or untouched)
+);
+insert into _firebase_import_undo_guard (imported)
+  select exists (select 1 from app_settings where key = 'firebase_import')
+     and (select count(*) from sqlite_master where type = 'table' and name in ('firebase_import_leads', 'firebase_import_events')) = 2;
 
-do $$
-declare
-  v_marker jsonb;
-  v_at timestamptz;
-  v_leads bigint[];
-  v_events bigint[];
-  v_edited integer;
-  v_notes integer;
-  v_work_events integer;
-  v_deleted_leads integer;
-  v_deleted_events integer;
-begin
-  select value into v_marker from public.app_settings where key = 'firebase_import' for update;
-  if v_marker is null then
-    raise exception 'There is no Firebase import to undo (app_settings.firebase_import is missing)';
-  end if;
-  if not (v_marker ? 'lead_ids') then
-    raise exception 'This import was made by an older import.sql that did not record what it created, so it cannot be undone automatically';
-  end if;
+insert into _firebase_import_undo_guard (untouched)
+  select not exists (
+    select 1 from leads l join firebase_import_leads m on m.lead_id = l.id
+    where l.updated_at > (select json_extract(value, '$.imported_at') from app_settings where key = 'firebase_import')
+  ) and not exists (
+    select 1 from lead_notes n join firebase_import_leads m on m.lead_id = n.lead_id
+    where n.created_at > (select json_extract(value, '$.imported_at') from app_settings where key = 'firebase_import')
+  ) and not exists (
+    select 1 from events e
+    where not e.is_system_generated
+      and e.updated_at > (select json_extract(value, '$.imported_at') from app_settings where key = 'firebase_import')
+      and (e.lead_id in (select lead_id from firebase_import_leads) or e.id in (select event_id from firebase_import_events))
+  );
 
-  v_at := (v_marker ->> 'imported_at')::timestamptz;
-  v_leads := array(select jsonb_array_elements_text(v_marker -> 'lead_ids')::bigint);
-  v_events := array(select jsonb_array_elements_text(coalesce(v_marker -> 'event_ids', '[]'))::bigint);
+-- What is about to be removed.
+select (select count(*) from firebase_import_leads) as leads_removed, (select count(*) from firebase_import_events) as events_removed;
 
-  select count(*) into v_edited from public.leads l where l.id = any (v_leads) and l.updated_at > v_at;
-  select count(*) into v_notes from public.lead_notes n where n.lead_id = any (v_leads) and n.created_at > v_at;
-  select count(*) into v_work_events from public.events e
-  where not e.is_system_generated and e.updated_at > v_at and (e.lead_id = any (v_leads) or e.id = any (v_events));
-  if v_edited + v_notes + v_work_events > 0 then
-    raise exception 'People have worked on the imported data since the import (% leads edited, % notes added, % calendar events added or changed); undoing would delete that work',
-      v_edited, v_notes, v_work_events
-      using hint = 'Undo is only for straight after the import. Fix what is wrong in the app instead.';
-  end if;
-
-  delete from public.events e where e.id = any (v_events);
-  get diagnostics v_deleted_events = row_count;
-  delete from public.leads l where l.id = any (v_leads);
-  get diagnostics v_deleted_leads = row_count;
-  delete from public.app_settings where key = 'firebase_import';
-
-  raise notice 'Removed % imported leads and % imported calendar events. The import can be run again.',
-    v_deleted_leads, v_deleted_events;
-end $$;
-
-commit;
+delete from events where id in (select event_id from firebase_import_events);
+delete from leads where id in (select lead_id from firebase_import_leads);
+delete from app_settings where key = 'firebase_import';
+drop table firebase_import_leads;
+drop table firebase_import_events;
+drop table _firebase_import_undo_guard;

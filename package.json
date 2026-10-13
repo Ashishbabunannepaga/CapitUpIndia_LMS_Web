@@ -10,7 +10,7 @@
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "migrate:firebase": "node migration/firebase/cli.mjs",
-    "migrate:firebase:test": "node --test migration/firebase/test/*.test.mjs && migration/firebase/test/sql-load.sh",
+    "migrate:firebase:test": "node --test migration/firebase/test/*.test.mjs && node migration/firebase/test/d1-load.mjs",
     "test:e2e": "scripts/e2e.sh",
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",

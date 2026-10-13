@@ -2,7 +2,7 @@
 //
 // Pure functions only: no file or network access, so the rules are easy to test.
 // Field rules follow spec/parity-spec.md §3 and §12 and the schema in
-// supabase/migrations. Anything that cannot be carried over cleanly is kept
+// src/server/db/schema.ts. Anything that cannot be carried over cleanly is kept
 // (usually appended to the lead's notes) and reported as a flag; nothing is
 // silently dropped.
 
@@ -30,7 +30,7 @@ const PRODUCT_SYNONYMS = [
   [/^life\s*(insurance)?$/i, "Life"],
 ];
 
-// Mirrors public.normalize_company_name() in the core schema migration.
+// Mirrors normalizeCompanyName() in src/lib/company-name.ts.
 export function normalizeCompanyName(name) {
   const lowered = String(name ?? "").toLowerCase();
   const normalized = lowered

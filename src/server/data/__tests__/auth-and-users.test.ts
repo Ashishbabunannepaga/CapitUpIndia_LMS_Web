@@ -17,7 +17,7 @@ import {
 import { PASSWORD, signIn, signInFrom, testWorld } from "./helpers";
 
 // Sign-in, sessions and team accounts on D1. These replace the profile and
-// auth cases in supabase/tests (access_control and edge_cases).
+// auth cases from the old Supabase SQL tests (access_control and edge_cases).
 
 let world: Awaited<ReturnType<typeof testWorld>>;
 
