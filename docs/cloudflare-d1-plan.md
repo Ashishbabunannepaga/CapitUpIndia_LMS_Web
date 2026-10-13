@@ -44,7 +44,7 @@ the app gets one:
 - SQLite triggers still do what needs no user context: `updated_at`, audit log
   rows, and blocking deletion of the last admin.
 
-The existing 70+ database tests (`supabase/tests/*.sql`) are rewritten as
+The old 70+ Supabase database tests are rewritten as
 Vitest tests that run against a real in-memory D1 (`freshD1()` in
 `src/server/db/test-d1.ts`, the same SQLite build as production), one test per rule, plus the forged-field and
 cross-agent cases. The Playwright suite keeps running against the built Worker
@@ -84,9 +84,10 @@ app's routes and actions directly".
    people and resets passwords; `/setup` creates the first admin. Supabase,
    Inngest and the Vercel config are removed. Playwright runs against the
    built Worker on a local D1 (21 browser and HTTP tests).
-8. **Firebase import**: the migration thread's importer re-targeted to emit D1
-   SQL instead of Postgres SQL, dry run against a local D1 first. Until then
-   `supabase/migrations` stays only because that importer's tests load it.
+8. **Firebase import** (done): `migration/firebase` now writes D1 SQL
+   (`import.sql`, `check.sql`, `undo.sql`) that runs with
+   `wrangler d1 execute DB --remote --file`, tested against a local D1 with the
+   real migrations. The Supabase migrations are removed.
 9. **Cut-over**: follow [deploy.md](deploy.md): create the D1 database and R2
    bucket, connect the repo with Workers Builds, add secrets, create the first
    admin at `/setup`, add the team, run the import.

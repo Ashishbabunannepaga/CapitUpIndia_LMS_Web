@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-// D1 (SQLite) schema. Ported from supabase/migrations; the comments there
-// still explain the business rules. Differences from Postgres:
+// D1 (SQLite) schema. Ported from the old Supabase migrations (see git history
+// before the Cloudflare move); their comments explained the business rules. Differences from Postgres:
 //   * Enums are text columns with CHECK constraints.
 //   * Timestamps are ISO-8601 UTC strings ("2026-10-09T10:00:00.000Z"), the
 //     same shape the app already passes around, and they sort correctly.

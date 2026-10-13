@@ -36,6 +36,7 @@ then set:
 
 | Setting | Value |
 | --- | --- |
+| Worker name | `capitup-lms-web` (the account already has an older, unrelated Worker called `capitup-lms`; don't reuse it) |
 | Production branch | `main` |
 | Build command | `npm run cf:build` |
 | Deploy command | `npx wrangler d1 migrations apply DB --remote && npx wrangler deploy` |

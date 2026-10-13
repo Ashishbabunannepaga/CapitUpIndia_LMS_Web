@@ -138,9 +138,8 @@ test("text from the export never becomes executable SQL", () => {
   const meta = { sourceLabel: "export.json\ndrop table public.leads;", generatedAt: "2026-10-06T00:00:00Z\n\\! touch pwned" };
   for (const sql of [buildImportSql(result, meta), buildCheckSql(result, meta)]) {
     const code = executable(sql);
-    assert.doesNotMatch(code, /drop table|\\!|pwned/i);
+    assert.doesNotMatch(code, /drop table (public\.)?leads|drop table x|\\!|pwned/i);
   }
   const sql = buildImportSql(result, meta);
-  assert.match(sql, /^do \$firebase_import_\$$/m, "the dollar-quote tag avoids text in the data");
   assert.match(sql, /^-- legacy "9\\n\\\\! touch pwned\\ndrop table public\.leads; -- select 1"$/m);
 });

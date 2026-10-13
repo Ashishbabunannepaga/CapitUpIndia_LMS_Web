@@ -4,35 +4,24 @@ on:
   pull_request:
     paths:
       - "migration/firebase/**"
-      - "supabase/**"
+      - "migrations/**"
+      - "wrangler.jsonc"
       - ".github/workflows/firebase-migration.yml"
   push:
     branches: [main]
     paths:
       - "migration/firebase/**"
-      - "supabase/**"
+      - "migrations/**"
 
 jobs:
   import:
-    name: Import mapping and SQL load
+    name: Import mapping and D1 load
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npm run migrate:firebase:test
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres

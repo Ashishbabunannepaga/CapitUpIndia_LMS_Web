@@ -31,7 +31,7 @@ import { setActive } from "../users";
 import { testWorld } from "./helpers";
 
 // Leads, notes, contacts, duplicates, renewal reminders and tasks on D1:
-// the cases from supabase/tests/access_control.test.sql and edge_cases.test.sql.
+// the cases from the old Supabase SQL tests (access_control and edge_cases).
 
 let w: Awaited<ReturnType<typeof testWorld>>;
 const filters = (q: Record<string, string> = {}) => parseLeadFilters(q);
