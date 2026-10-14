@@ -51,9 +51,13 @@ Worker > **Settings > Variables and Secrets**, type **Secret**:
 | Name | Value |
 | --- | --- |
 | `BETTER_AUTH_SECRET` | A random string of 32+ characters (a password manager can generate one). Changing it later signs everyone out. |
-| `BETTER_AUTH_URL` | The public address, e.g. `https://lms.capitupindia.com` |
 | `GEMINI_API_KEY` | The rotated Google AI Studio key, never the one in the old APK |
 | `SETUP_CODE` | Any 12+ character code you make up; used once in step 6 |
+
+Add each one with type **Secret**: a deploy replaces plain dashboard variables
+with what `wrangler.jsonc` says, so anything added as a plain Variable is wiped.
+The public address (`BETTER_AUTH_URL`) is not secret and lives in
+`wrangler.jsonc` under `vars`.
 
 Redeploy after adding them (Deployments > latest > Retry deployment).
 
@@ -61,7 +65,7 @@ Redeploy after adding them (Deployments > latest > Retry deployment).
 
 Worker > **Settings > Domains & Routes > Add > Custom domain**, e.g.
 `lms.capitupindia.com`. The DNS record is created for you because the zone is on
-Cloudflare. Make sure `BETTER_AUTH_URL` matches it.
+Cloudflare. Then change `BETTER_AUTH_URL` in `wrangler.jsonc` to it and merge.
 
 ## 6. First admin and the team
 
