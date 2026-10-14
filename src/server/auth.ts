@@ -15,7 +15,7 @@ import * as schema from "./db/schema";
 // a valid session until it is revoked, so always go through getActor()
 // (src/server/data/actor.ts), which also checks the profile.
 
-export type AuthEnv = Pick<CloudflareEnv, "BETTER_AUTH_SECRET"> & Partial<Pick<CloudflareEnv, "BETTER_AUTH_URL">>;
+export type AuthEnv = Pick<CloudflareEnv, "BETTER_AUTH_SECRET" | "BETTER_AUTH_URL">;
 
 export function createAuth(d1: D1Database, env: AuthEnv) {
   if (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32) {
