@@ -6,7 +6,7 @@ import { addDays, businessDateTimeToIso, todayInBusinessTz } from "@/lib/dates";
 
 import { resolveActor } from "../actor";
 import { AccessDeniedError } from "../errors";
-import { createTask, setEventDone } from "../events";
+import { createTask, listCalendarEvents, setEventDone } from "../events";
 import { addLeadNote, createLead, listDuplicateGroups } from "../leads";
 import { myDay } from "../my-day";
 import { signInWithPassword, signOutSession } from "../sessions";
@@ -75,6 +75,41 @@ describe("My Day", () => {
     expect(day.unassigned?.count).toBe(1);
     expect(day.unassigned?.leads.map((l) => l.client_name)).toEqual(["Day Nobody"]);
     expect(day.recentlyAssigned.map((l) => l.client_name)).not.toContain("Day Nobody");
+  });
+});
+
+describe("calendar colours", () => {
+  const today = todayInBusinessTz();
+  const range = { from: businessDateTimeToIso(addDays(today, -1), "00:00"), to: businessDateTimeToIso(addDays(today, 40), "23:59") };
+
+  beforeAll(async () => {
+    await createLead(w.ctx, w.amit, { client_name: "Cal Corporate", renewal_date: addDays(today, 30) });
+    await createLead(w.ctx, w.amit, { client_name: "Cal Motor", renewal_date: addDays(today, 31), policy_product: "Motor" });
+    await createLead(w.ctx, w.amit, {
+      client_name: "Cal Retail Active",
+      renewal_date: addDays(today, 32),
+      business_type: "Retail",
+      status: "Active Client",
+    });
+    const active = await createLead(w.ctx, w.amit, { client_name: "Cal Active", status: "Active Client" });
+    await createTask(w.ctx, w.amit, { title: "Cal visit", event_timestamp: businessDateTimeToIso(addDays(today, 33), "11:00"), lead_id: active });
+    await createTask(w.ctx, w.amit, { title: "Cal plain task", event_timestamp: businessDateTimeToIso(addDays(today, 34), "11:00") });
+    await createTask(w.ctx, w.neha, { title: "Cal Neha task", event_timestamp: businessDateTimeToIso(addDays(today, 34), "12:00") });
+  });
+
+  it("each entry gets the Android app's colours, and agents still see only their own", async () => {
+    const events = await listCalendarEvents(w.ctx, w.amit, range);
+    const byTitle = new Map(events.map((e) => [e.title, e.categories]));
+    expect(byTitle.get("Renewal due: Cal Corporate (Health)")).toEqual(["gmc_renewal"]);
+    expect(byTitle.get("Renewal due: Cal Motor (Motor)")).toEqual(["retail_renewal"]);
+    expect(byTitle.get("Renewal due: Cal Retail Active (Health)")).toEqual(["retail_renewal", "active_client"]);
+    expect(byTitle.get("Cal visit")).toEqual(["active_client"]);
+    expect(byTitle.get("Cal plain task")).toEqual(["task"]);
+    expect(byTitle.has("Cal Neha task")).toBe(false);
+    expect(events.every((e) => e.assigned_agent_id === w.amit.id && !e.is_background_reminder)).toBe(true);
+
+    const all = await listCalendarEvents(w.ctx, w.admin, range);
+    expect(all.map((e) => e.title)).toContain("Cal Neha task");
   });
 });
 

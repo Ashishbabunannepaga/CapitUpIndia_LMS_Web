@@ -6,7 +6,7 @@ import { QuickTaskForm } from "@/components/my-day/my-day-widgets";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { addDays, businessDateOf, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
 import { getTeam } from "@/lib/leads";
-import { listEvents } from "@/server/data/events";
+import { listCalendarEvents } from "@/server/data/events";
 
 export const metadata: Metadata = { title: "Calendar" };
 
@@ -17,7 +17,7 @@ export default async function CalendarPage() {
 
   // Three months around today: enough to page a month back and forward.
   const [events, team] = await Promise.all([
-    listEvents(ctx, profile, {
+    listCalendarEvents(ctx, profile, {
       from: startOfBusinessDay(addDays(today, -45)),
       to: startOfBusinessDay(addDays(today, 75)),
       limit: 1000,
@@ -33,6 +33,7 @@ export default async function CalendarPage() {
     timestamp: event.event_timestamp,
     leadId: event.lead_id,
     isRenewal: event.is_system_generated,
+    categories: event.categories,
     isCompleted: event.is_completed,
     isSystem: event.is_system_generated,
     agentName: event.assigned_agent_id ? (names.get(event.assigned_agent_id) ?? null) : null,
