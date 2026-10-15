@@ -7,6 +7,12 @@ import { CalendarClock, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-r
 import { TaskList, type TaskItem } from "@/components/my-day/my-day-widgets";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatTime } from "@/lib/dates";
+import {
+  CALENDAR_CATEGORIES,
+  CALENDAR_CATEGORY_LABELS,
+  CALENDAR_CATEGORY_STYLES,
+  type CalendarCategory,
+} from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
 export type CalendarEntry = {
@@ -17,10 +23,14 @@ export type CalendarEntry = {
   timestamp: string;
   leadId: number | null;
   isRenewal: boolean;
+  /** Its colours: GMC or retail renewal, active client, task. */
+  categories: CalendarCategory[];
   isCompleted: boolean;
   isSystem: boolean;
   agentName?: string | null;
 };
+
+type Filter = "all" | CalendarCategory;
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -49,6 +59,20 @@ function gridDays(month: string): string[] {
   });
 }
 
+/** Short label for a day cell, e.g. "2 GMC" or "1 task"; the full name is in its tooltip. */
+function cellLabel(category: CalendarCategory, n: number): string {
+  switch (category) {
+    case "gmc_renewal":
+      return "GMC";
+    case "retail_renewal":
+      return "retail";
+    case "active_client":
+      return "active";
+    case "task":
+      return n === 1 ? "task" : "tasks";
+  }
+}
+
 /** Month grid of renewals and tasks, with the selected day's list beside it. */
 export function MonthCalendar({
   entries,
@@ -64,8 +88,17 @@ export function MonthCalendar({
   const [month, setMonth] = useState(initialMonth);
   const [selected, setSelected] = useState(today.startsWith(initialMonth) ? today : `${initialMonth}-01`);
 
-  const byDay = new Map<string, CalendarEntry[]>();
+  const [filter, setFilter] = useState<Filter>("all");
+
+  const totals = new Map<CalendarCategory, number>();
   for (const entry of entries) {
+    if (!entry.date.startsWith(month)) continue;
+    for (const c of entry.categories) totals.set(c, (totals.get(c) ?? 0) + 1);
+  }
+  const shown = filter === "all" ? entries : entries.filter((e) => e.categories.includes(filter));
+
+  const byDay = new Map<string, CalendarEntry[]>();
+  for (const entry of shown) {
     byDay.set(entry.date, [...(byDay.get(entry.date) ?? []), entry]);
   }
   const days = gridDays(month);
@@ -102,6 +135,38 @@ export function MonthCalendar({
           </div>
         </header>
 
+        <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Calendar filter">
+          {(["all", ...CALENDAR_CATEGORIES] as const).map((option) => {
+            const active = filter === option;
+            const count = option === "all" ? undefined : (totals.get(option) ?? 0);
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setFilter(option)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  active
+                    ? option === "all"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : CALENDAR_CATEGORY_STYLES[option].chip
+                    : "bg-card text-foreground hover:bg-accent",
+                )}
+              >
+                {option === "all" ? null : (
+                  <span
+                    className={cn("size-2 rounded-full", active ? "bg-white" : CALENDAR_CATEGORY_STYLES[option].dot)}
+                    aria-hidden="true"
+                  />
+                )}
+                {option === "all" ? "All" : CALENDAR_CATEGORY_LABELS[option]}
+                {count !== undefined ? <span className="tabular-nums opacity-75">{count}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="grid grid-cols-7 gap-px text-center text-xs font-medium text-muted-foreground">
           {WEEKDAYS.map((day) => (
             <div key={day} className="py-1">
@@ -112,8 +177,9 @@ export function MonthCalendar({
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border bg-border">
           {days.map((day) => {
             const items = byDay.get(day) ?? [];
-            const renewalCount = items.filter((i) => i.isRenewal).length;
-            const taskCount = items.length - renewalCount;
+            const counts = CALENDAR_CATEGORIES.map((c) => [c, items.filter((i) => i.categories.includes(c)).length] as const).filter(
+              ([c, n]) => n > 0 && (filter === "all" || filter === c),
+            );
             const inMonth = day.startsWith(month);
             return (
               <button
@@ -136,21 +202,35 @@ export function MonthCalendar({
                   {Number(day.slice(8))}
                 </span>
                 <span className="mt-1 flex flex-col gap-0.5">
-                  {renewalCount > 0 ? (
-                    <span className="truncate rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-900">
-                      {renewalCount} renewal{renewalCount === 1 ? "" : "s"}
+                  {counts.map(([c, n]) => (
+                    <span
+                      key={c}
+                      title={CALENDAR_CATEGORY_LABELS[c]}
+                      className={cn(
+                        "flex items-center gap-1 truncate rounded px-1 text-[10px] font-medium",
+                        CALENDAR_CATEGORY_STYLES[c].pill,
+                      )}
+                    >
+                      <span className={cn("size-1.5 shrink-0 rounded-full", CALENDAR_CATEGORY_STYLES[c].dot)} aria-hidden="true" />
+                      <span className="truncate tabular-nums">
+                        {n}
+                        <span className="hidden sm:inline"> {cellLabel(c, n)}</span>
+                      </span>
                     </span>
-                  ) : null}
-                  {taskCount > 0 ? (
-                    <span className="truncate rounded bg-accent px-1 text-[10px] font-medium text-accent-foreground">
-                      {taskCount} task{taskCount === 1 ? "" : "s"}
-                    </span>
-                  ) : null}
+                  ))}
                 </span>
               </button>
             );
           })}
         </div>
+        <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" aria-label="Colour key">
+          {CALENDAR_CATEGORIES.map((c) => (
+            <li key={c} className="flex items-center gap-1.5">
+              <span className={cn("size-2.5 rounded-full", CALENDAR_CATEGORY_STYLES[c].dot)} aria-hidden="true" />
+              {CALENDAR_CATEGORY_LABELS[c]}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="rounded-2xl border bg-card shadow-card">
@@ -171,6 +251,11 @@ export function MonthCalendar({
                     ) : (
                       <CalendarClock className="mt-0.5 size-4 shrink-0 text-warning" />
                     )}
+                    <span className="mt-1.5 flex shrink-0 gap-0.5" aria-hidden="true">
+                      {entry.categories.map((c) => (
+                        <span key={c} className={cn("size-2 rounded-full", CALENDAR_CATEGORY_STYLES[c].dot)} />
+                      ))}
+                    </span>
                     <div className="min-w-0">
                       {entry.leadId ? (
                         <Link href={`/leads/${entry.leadId}`} className="font-medium hover:text-primary hover:underline">
@@ -180,7 +265,7 @@ export function MonthCalendar({
                         <span className="font-medium">{entry.title}</span>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        {formatTime(entry.timestamp)}
+                        {entry.categories.map((c) => CALENDAR_CATEGORY_LABELS[c]).join(" · ")} · {formatTime(entry.timestamp)}
                         {showAgent && entry.agentName ? ` · ${entry.agentName}` : ""}
                       </p>
                     </div>

@@ -92,3 +92,43 @@ export function isLeadStatus(value: unknown): value is LeadStatus {
 export function isPolicyProduct(value: unknown): value is PolicyProduct {
   return typeof value === "string" && (POLICY_PRODUCTS as readonly string[]).includes(value);
 }
+
+// Calendar colours, as in the Android app's planner: renewals split into GMC
+// (corporate) and retail, entries for active clients, and everything else as
+// tasks. One entry can carry two colours (a renewal for an active client).
+export const CALENDAR_CATEGORIES = ["gmc_renewal", "retail_renewal", "active_client", "task"] as const;
+export type CalendarCategory = (typeof CALENDAR_CATEGORIES)[number];
+
+export const CALENDAR_CATEGORY_LABELS: Record<CalendarCategory, string> = {
+  gmc_renewal: "GMC Renewal",
+  retail_renewal: "Retail Renewal",
+  active_client: "Active Clients",
+  task: "Tasks",
+};
+
+/** Tailwind classes per calendar colour: a pill for day cells, a dot for lists and the legend. */
+export const CALENDAR_CATEGORY_STYLES: Record<CalendarCategory, { pill: string; dot: string; chip: string }> = {
+  gmc_renewal: { pill: "bg-indigo-100 text-indigo-900", dot: "bg-indigo-600", chip: "border-indigo-300 bg-indigo-600 text-white" },
+  retail_renewal: { pill: "bg-rose-100 text-rose-900", dot: "bg-rose-500", chip: "border-rose-300 bg-rose-500 text-white" },
+  active_client: { pill: "bg-brand-100 text-brand-900", dot: "bg-brand-500", chip: "border-brand-300 bg-brand-600 text-white" },
+  task: { pill: "bg-orange-100 text-orange-900", dot: "bg-orange-500", chip: "border-orange-300 bg-orange-500 text-white" },
+};
+
+/**
+ * The colours of one calendar entry. A renewal is retail when its lead is a
+ * retail account or a motor policy (the old app also treated 2- and
+ * 4-wheeler and motor entries as retail), otherwise GMC. Entries for an
+ * active client also get that colour; anything else that is not a renewal
+ * is a task.
+ */
+export function calendarCategories(
+  isRenewal: boolean,
+  lead: { business_type: BusinessType; policy_product: PolicyProduct; status: LeadStatus } | null,
+): CalendarCategory[] {
+  const active = lead?.status === "Active Client";
+  if (isRenewal) {
+    const retail = lead?.business_type === "Retail" || lead?.policy_product === "Motor";
+    return [retail ? "retail_renewal" : "gmc_renewal", ...(active ? (["active_client"] as const) : [])];
+  }
+  return [active ? "active_client" : "task"];
+}

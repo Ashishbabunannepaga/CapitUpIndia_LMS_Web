@@ -2,6 +2,8 @@ import "server-only";
 
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 
+import { calendarCategories, type CalendarCategory } from "@/lib/domain";
+
 import { events, leads, profiles } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
 import type { DataContext } from "./context";
@@ -42,6 +44,45 @@ export async function listEvents(
     )
     .orderBy(asc(events.event_timestamp))
     .limit(Math.min(range.limit ?? 1000, 2000));
+}
+
+export type CalendarEventWithCategories = CalendarEvent & { categories: CalendarCategory[] };
+
+/**
+ * The same events as listEvents, each with its calendar colours (GMC or
+ * retail renewal, active client, task), worked out from its lead.
+ */
+export async function listCalendarEvents(
+  ctx: DataContext,
+  actor: Actor,
+  range: { from: string; to: string; limit?: number },
+): Promise<CalendarEventWithCategories[]> {
+  const rows = await ctx.db
+    .select({
+      event: events,
+      business_type: leads.business_type,
+      policy_product: leads.policy_product,
+      status: leads.status,
+    })
+    .from(events)
+    .leftJoin(leads, eq(leads.id, events.lead_id))
+    .where(
+      and(
+        scope(actor),
+        eq(events.is_background_reminder, false),
+        gte(events.event_timestamp, range.from),
+        lte(events.event_timestamp, range.to),
+      ),
+    )
+    .orderBy(asc(events.event_timestamp))
+    .limit(Math.min(range.limit ?? 1000, 2000));
+  return rows.map(({ event, business_type, policy_product, status }) => ({
+    ...event,
+    categories: calendarCategories(
+      event.is_system_generated,
+      business_type && policy_product && status ? { business_type, policy_product, status } : null,
+    ),
+  }));
 }
 
 export type NewTask = {
