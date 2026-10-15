@@ -7,7 +7,7 @@ import { generateFollowUp } from "@/app/(app)/leads/follow-up-actions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FOLLOW_UP_TONES, type FollowUpTone } from "@/lib/ai/prompts";
-import { mailtoHref, whatsappHref } from "@/lib/contact-links";
+import { draftMailtoHref, gmailComposeHref, whatsappHref } from "@/lib/contact-links";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -43,7 +43,10 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
 
   const subject = `${clientName}: ${product} insurance`;
   const wa = draft ? whatsappHref(phone, draft) : null;
-  const mail = draft ? mailtoHref(email, subject, draft) : null;
+  // Email is always offered: with no POC email the agent types the address in their mail app.
+  const mail = draft ? draftMailtoHref(email, subject, draft) : null;
+  const gmail = draft ? gmailComposeHref(email, subject, draft) : null;
+  const hasEmail = email.includes("@");
 
   return (
     <div className="space-y-3">
@@ -107,6 +110,14 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
                 </a>
               </Button>
             ) : null}
+            {gmail ? (
+              <Button asChild size="sm" variant="outline">
+                <a href={gmail} target="_blank" rel="noreferrer">
+                  <Mail />
+                  Gmail
+                </a>
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -121,8 +132,10 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
-          {!wa && !mail ? (
-            <p className="text-xs text-muted-foreground">Add a phone or email to the primary POC to send it from here.</p>
+          {!hasEmail ? (
+            <p className="text-xs text-muted-foreground">
+              This contact has no email yet, so add the address in the mail window, or save it on the lead with Edit.
+            </p>
           ) : null}
         </>
       ) : (
