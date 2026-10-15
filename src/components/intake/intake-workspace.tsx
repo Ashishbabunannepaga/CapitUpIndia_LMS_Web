@@ -236,7 +236,7 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured }
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="flex flex-col rounded-xl border bg-card p-5 shadow-sm">
+        <section className="flex flex-col rounded-2xl border bg-card p-5 shadow-card">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <h2 className="font-semibold">Notes or dictation</h2>
@@ -273,7 +273,7 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured }
           </div>
         </section>
 
-        <section className="flex flex-col rounded-xl border bg-card p-5 shadow-sm">
+        <section className="flex flex-col rounded-2xl border bg-card p-5 shadow-card">
           <div className="mb-3">
             <h2 className="font-semibold">Visiting card</h2>
             <p className="text-sm text-muted-foreground">Drop a photo, upload one, or use your camera.</p>

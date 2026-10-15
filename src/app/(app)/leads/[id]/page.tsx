@@ -45,7 +45,7 @@ function Panel({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-xl border bg-card shadow-sm", className)}>
+    <section className={cn("rounded-2xl border bg-card shadow-card", className)}>
       <header className="flex items-center justify-between gap-2 border-b px-5 py-3">
         <h2 className="text-sm font-semibold">{title}</h2>
         {actions}

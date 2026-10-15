@@ -17,6 +17,7 @@ export default async function ImportPage() {
   return (
     <div className="mx-auto max-w-[1400px]">
       <PageHeader
+        eyebrow="Admin"
         title="Bulk Import"
         description="Paste or upload a sheet, check every row, then create the leads and distribute them."
       />

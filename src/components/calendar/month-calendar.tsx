@@ -86,7 +86,7 @@ export function MonthCalendar({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-      <section className="rounded-xl border bg-card p-4 shadow-sm">
+      <section className="rounded-2xl border bg-card p-4 shadow-card">
         <header className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">{monthLabel(month)}</h2>
           <div className="flex items-center gap-1">
@@ -153,7 +153,7 @@ export function MonthCalendar({
         </div>
       </section>
 
-      <section className="rounded-xl border bg-card shadow-sm">
+      <section className="rounded-2xl border bg-card shadow-card">
         <header className="border-b px-5 py-3">
           <h2 className="text-sm font-semibold">{formatDate(selected)}</h2>
         </header>

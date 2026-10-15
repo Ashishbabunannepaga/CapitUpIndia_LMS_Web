@@ -162,7 +162,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
       ) : null}
 
       {!rows ? (
-        <section className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+        <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-card">
           <div>
             <h2 className="font-semibold">Paste or upload the sheet</h2>
             <p className="text-sm text-muted-foreground">
@@ -224,7 +224,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
       ) : null}
 
       {rows ? (
-        <section className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+        <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-card">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-semibold">
