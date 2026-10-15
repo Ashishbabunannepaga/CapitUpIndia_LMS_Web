@@ -100,6 +100,17 @@ describe("heuristicMapRow", () => {
     expect(map("Client name,Date of renewal\nAcme,46300").renewal_date).toBe("2026-10-05");
   });
 
+  it("reads the contact from a bare Contact or POC column", () => {
+    const lead = map("Company\tProduct\tContact\tPhone\tEmail\nAcme\tHealth\tRavi\t9876500001\travi@acme.in");
+    expect(lead).toMatchObject({ client_name: "Acme", poc_name: "Ravi", poc_contact_number: "9876500001" });
+    expect(map("Client name,POC,Email\nAcme,Sita (Director),sita@acme.in")).toMatchObject({ poc_name: "Sita", poc_designation: "Director" });
+  });
+
+  it("never takes the company name column as the contact", () => {
+    expect(map("Company name,Email\nAcme Pvt Ltd,ops@acme.in").poc_name).toBe("");
+    expect(map("Name of the client,Contact name,Email\nAcme,Priya,p@acme.in").poc_name).toBe("Priya");
+  });
+
   it("leaves an empty client cell empty instead of guessing", () => {
     expect(map("Client name,Contact person,Remarks\n,Priya,very long remark about the account").client_name).toBe("");
   });

@@ -153,7 +153,7 @@ export function heuristicMapRow(sheet: ParsedSheet, row: SheetRow, today: string
             !EMAIL.test(c) &&
             !/^\+?[\d\s\-()]+$/.test(c) &&
             !parseLooseDate(c, today) &&
-            c !== cellFor("contact person", "poc name", "name"),
+            c !== cellFor("contact person", "poc name", "contact name", "name"),
         )
         .sort((a, b) => b.length - a.length)[0] ?? "";
   }
@@ -171,7 +171,14 @@ export function heuristicMapRow(sheet: ParsedSheet, row: SheetRow, today: string
     serialDate ?? parseLooseDate(dateCell, today) ?? parseLooseDate(remarks, today) ?? headerlessDate ?? "";
 
   const policyText = cellFor("type of policy", "policy", "product", "cover");
-  const contactCell = cellFor("contact person", "poc name", "name") || "";
+  // The contact column: a named one first, then a bare "Contact" or "POC"
+  // header, and only then any "name" column that is not the client's.
+  const contactIndex = [
+    headers.findIndex((h) => ["contact person", "poc name", "contact name"].some((w) => h.includes(w))),
+    headers.findIndex((h) => /^(contact|poc|spoc|primary poc|poc ?1)$/.test(h.trim())),
+    headers.findIndex((h) => h.includes("name") && !clientWords.some((w) => h.includes(w))),
+  ].find((index) => index >= 0);
+  const contactCell = contactIndex === undefined ? "" : (row.cells[contactIndex] ?? "");
   const { name, designation } = splitNameAndDesignation(contactCell.replace(EMAIL, "").replace(/\+?\d[\d\s-]{6,}\d/g, ""));
 
   const location = cellFor("location", "vertical", "address");
