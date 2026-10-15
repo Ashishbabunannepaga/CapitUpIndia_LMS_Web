@@ -44,6 +44,12 @@ then set:
 Every merge to `main` then applies any new D1 migrations and deploys. Migrations only
 add to the schema; they never run on their own outside a merge.
 
+On the **Previews Base** tab, leave **Builds for Preview branches** off. Its default build
+command (`npm run build`) doesn't produce the Worker, so every pull request would get a
+red "Workers Builds" check. GitHub Actions already builds and tests each pull request.
+To turn previews on later, set its build command to `npm run cf:build` and its preview
+command to `npx wrangler versions upload`.
+
 ## 4. Secrets and settings
 
 Worker > **Settings > Variables and Secrets**, type **Secret**:

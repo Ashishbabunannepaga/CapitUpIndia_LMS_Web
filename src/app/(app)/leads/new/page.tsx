@@ -15,6 +15,7 @@ export default async function NewLeadPage() {
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
+        eyebrow="Pipeline"
         title="New lead"
         description={
           admin

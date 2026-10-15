@@ -55,7 +55,7 @@ export function EmptyLeads({ filtered }: { filtered: boolean }) {
 
 export function LeadsTable({ leads, showAgent }: { leads: LeadWithAgent[]; showAgent: boolean }) {
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-2xl border bg-card shadow-card">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50 text-left text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -125,7 +125,7 @@ export function LeadCards({ leads, showAgent }: { leads: LeadWithAgent[]; showAg
         <div
           key={lead.id}
           className={cn(
-            "flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md",
+            "flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-card lift hover:border-brand-200",
             lead.is_duplicate && "border-red-200",
           )}
         >

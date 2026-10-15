@@ -37,6 +37,7 @@ export default async function AiUsagePage({ searchParams }: PageProps<"/admin/ai
   return (
     <>
       <PageHeader
+        eyebrow="Admin"
         title="AI Usage"
         description={`Every Gemini call, its tokens and its cost in rupees, since ${formatDate(from.toISOString().slice(0, 10))}.`}
         actions={
@@ -81,7 +82,7 @@ export default async function AiUsagePage({ searchParams }: PageProps<"/admin/ai
               label: AI_FEATURE_LABELS[row.feature_name] ?? row.feature_name,
               value: Number(row.cost_inr),
               valueLabel: `${formatInr(Number(row.cost_inr))} · ${plural(row.calls, "call")}`,
-              colorClass: "bg-indigo-500",
+              colorClass: "bg-gradient-to-r from-gold-500 to-gold-300",
             }))}
             emptyText="No AI usage in this period."
           />

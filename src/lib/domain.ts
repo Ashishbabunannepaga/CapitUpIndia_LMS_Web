@@ -68,11 +68,21 @@ export const CLOSED_STATUSES: readonly LeadStatus[] = ["Closed Won", "Closed Los
 /** Tailwind classes per status, shared by badges, Kanban columns and charts. */
 export const STATUS_STYLES: Record<LeadStatus, { badge: string; dot: string }> = {
   Prospect: { badge: "border-slate-200 bg-slate-100 text-slate-700", dot: "bg-slate-400" },
-  Quoted: { badge: "border-indigo-200 bg-indigo-50 text-indigo-700", dot: "bg-indigo-500" },
-  "Active Client": { badge: "border-emerald-200 bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
+  Quoted: { badge: "border-sky-200 bg-sky-50 text-sky-700", dot: "bg-sky-500" },
+  "Active Client": { badge: "border-brand-200 bg-brand-50 text-brand-800", dot: "bg-brand-500" },
   "Follow-up": { badge: "border-amber-200 bg-amber-50 text-amber-800", dot: "bg-amber-500" },
   "Closed Won": { badge: "border-green-300 bg-green-100 text-green-800", dot: "bg-green-600" },
   "Closed Lost": { badge: "border-rose-200 bg-rose-50 text-rose-700", dot: "bg-rose-500" },
+};
+
+/** The same status hues as hex, for SVG charts. */
+export const STATUS_COLORS: Record<LeadStatus, string> = {
+  Prospect: "#94a3b8",
+  Quoted: "#0ea5e9",
+  "Active Client": "#1aab93",
+  "Follow-up": "#f59e0b",
+  "Closed Won": "#16a34a",
+  "Closed Lost": "#f43f5e",
 };
 
 export function isLeadStatus(value: unknown): value is LeadStatus {

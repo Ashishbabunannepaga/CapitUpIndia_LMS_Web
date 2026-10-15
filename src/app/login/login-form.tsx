@@ -45,7 +45,7 @@ export function LoginForm({ next, initialError }: { next?: string; initialError?
           {state.error}
         </p>
       ) : null}
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" size="lg" disabled={pending} className="w-full">
         {pending ? <Loader2 className="animate-spin" /> : null}
         Sign in
       </Button>

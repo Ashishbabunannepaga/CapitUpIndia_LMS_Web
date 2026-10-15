@@ -32,6 +32,7 @@ export default async function DuplicatesPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Admin"
         title="Duplicates"
         description="Companies with more than one record. Keep one owner per company: reassign, delete the extra record, or mark the warning resolved if both are legitimate."
       />
@@ -52,7 +53,7 @@ export default async function DuplicatesPage() {
           {[...groups.entries()].map(([key, records]) => {
             const owners = new Set(records.map((r) => r.agent_name ?? "Unassigned"));
             return (
-              <section key={key} className="rounded-xl border bg-card shadow-sm">
+              <section key={key} className="rounded-2xl border bg-card shadow-card">
                 <header className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3">
                   <div>
                     <h2 className="font-semibold">{records[0].client_name}</h2>

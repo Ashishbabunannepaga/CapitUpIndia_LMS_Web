@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, Menu, ShieldCheck, X } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
+
+import { BrandLockup, BrandMark } from "@/components/brand/brand";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,19 +15,6 @@ import { SidebarNav } from "./sidebar-nav";
 
 type ShellUser = Pick<Profile, "full_name" | "email" | "role">;
 
-function Brand() {
-  return (
-    <div className="flex items-center gap-2.5 px-6">
-      <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-        <ShieldCheck className="size-4" />
-      </div>
-      <div className="leading-tight">
-        <p className="text-sm font-semibold text-sidebar-foreground">CapitUp India</p>
-        <p className="text-[11px] text-sidebar-foreground/60">Lead &amp; Renewal CRM</p>
-      </div>
-    </div>
-  );
-}
 
 type NotificationItem = Pick<AppNotification, "id" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
 
@@ -46,21 +35,21 @@ function UserPanel({
     .toUpperCase();
 
   return (
-    <div className="flex items-center gap-3 border-t border-sidebar-border px-4 py-4">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground">
+    <div className="m-3 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/[0.04] px-3 py-3">
+      <div className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 text-xs font-semibold text-gold-900 ring-2 ring-white/10">
         {initials}
+        <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-brand-400 ring-2 ring-sidebar" aria-hidden="true" />
       </div>
       <div className="min-w-0 flex-1 leading-tight">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium text-sidebar-foreground">{user.full_name}</p>
-          <Badge
-            variant="outline"
-            className="border-sidebar-border px-1.5 py-0 text-[10px] tracking-wide text-sidebar-foreground/70"
-          >
-            {user.role === "ADMIN" ? "Admin" : "Agent"}
-          </Badge>
-        </div>
-        <p className="truncate text-xs text-sidebar-foreground/60">{user.email}</p>
+        <p className="truncate text-sm font-medium text-sidebar-foreground" title={user.email}>
+          {user.full_name}
+        </p>
+        <Badge
+          variant="outline"
+          className="mt-1 border-gold-400/30 bg-gold-400/10 px-1.5 py-0 text-[10px] tracking-wide text-gold-200"
+        >
+          {user.role === "ADMIN" ? "Admin" : "Agent"}
+        </Badge>
       </div>
       <NotificationBell notifications={notifications} unread={unreadNotifications} />
       <form action="/auth/signout" method="post">
@@ -95,14 +84,22 @@ function SidebarContents({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col bg-sidebar">
-      <div className="flex h-16 shrink-0 items-center">
-        <Brand />
+    <div className="relative flex h-full flex-col overflow-hidden bg-sidebar">
+      {/* Brand glow and the logo's ring, faint, behind the navigation. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(28rem_18rem_at_0%_0%,rgb(45_197_172/0.22),transparent_60%),radial-gradient(24rem_18rem_at_100%_100%,rgb(236_203_118/0.12),transparent_60%)]"
+      />
+      <BrandMark className="pointer-events-none absolute -right-16 -bottom-10 size-56 animate-float opacity-[0.05] grayscale" />
+      <div className="relative flex h-20 shrink-0 items-center px-5">
+        <BrandLockup />
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="relative flex-1 overflow-y-auto">
         <SidebarNav role={user.role} badges={badges} onNavigate={onNavigate} />
       </div>
-      <UserPanel user={user} notifications={notifications} unreadNotifications={unreadNotifications} />
+      <div className="relative">
+        <UserPanel user={user} notifications={notifications} unreadNotifications={unreadNotifications} />
+      </div>
     </div>
   );
 }
@@ -137,7 +134,7 @@ export function AppShell({
       </aside>
 
       {/* Mobile header + drawer */}
-      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-sidebar px-4 lg:hidden">
+      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 lg:hidden">
         <Button
           variant="ghost"
           size="icon"
@@ -147,6 +144,7 @@ export function AppShell({
         >
           <Menu />
         </Button>
+        <BrandMark className="size-7" />
         <p className="text-sm font-semibold text-sidebar-foreground">CapitUp India</p>
       </header>
       <div
@@ -155,8 +153,8 @@ export function AppShell({
         aria-modal="true"
         aria-label="Navigation"
       >
-        <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-        <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw]">
+        <div className="absolute inset-0 animate-in bg-black/50 fade-in" onClick={() => setMobileOpen(false)} />
+        <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] animate-in duration-300 slide-in-from-left">
           <SidebarContents
             user={user}
             badges={badges}
@@ -176,7 +174,7 @@ export function AppShell({
         </div>
       </div>
 
-      <main className="lg:pl-64">
+      <main className="ambient min-h-svh lg:pl-64">
         <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">{children}</div>
       </main>
     </div>
