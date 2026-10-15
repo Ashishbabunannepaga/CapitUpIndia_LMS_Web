@@ -28,8 +28,12 @@
   // Renewal reminders: deliver anything due, every minute (UTC).
   "triggers": { "crons": ["* * * * *"] },
   "vars": {
-    "APP_TIMEZONE": "Asia/Kolkata"
+    "APP_TIMEZONE": "Asia/Kolkata",
+    // Public address of the app. Kept here, not in the dashboard: every deploy
+    // replaces dashboard variables with this file. Change it with the domain.
+    "BETTER_AUTH_URL": "https://capitup-lms-web.babuashish2004.workers.dev"
   }
-  // Secrets (dashboard or `wrangler secret put`, never in this file):
-  //   BETTER_AUTH_SECRET, BETTER_AUTH_URL, GEMINI_API_KEY, and SETUP_CODE until the first admin exists
+  // Secrets (dashboard or `wrangler secret put`, never in this file; they
+  // survive deploys): BETTER_AUTH_SECRET, GEMINI_API_KEY, and SETUP_CODE
+  // until the first admin exists
 }
