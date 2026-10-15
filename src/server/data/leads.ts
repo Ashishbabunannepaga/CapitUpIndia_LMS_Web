@@ -6,11 +6,11 @@ import type { BatchItem } from "drizzle-orm/batch";
 
 import { normalizeCompanyName } from "@/lib/company-name";
 import { addDays, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isLeadStatus } from "@/lib/domain";
+import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isContactChannel, isLeadStatus } from "@/lib/domain";
 import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 
-import { appSettings, events, leadNoteReads, leadNotes, leads, profiles, renewalMilestoneOffsets } from "../db/schema";
+import { appSettings, events, leadContactLogs, leadNoteReads, leadNotes, leads, profiles, renewalMilestoneOffsets } from "../db/schema";
 import { isAdmin, assertAdmin, type Actor } from "./actor";
 import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
@@ -32,6 +32,7 @@ export type Lead = typeof leads.$inferSelect;
 export type LeadWithAgent = Lead & { agent_name: string | null };
 export type LeadNote = typeof leadNotes.$inferSelect;
 export type LeadEvent = typeof events.$inferSelect;
+export type LeadContactLog = typeof leadContactLogs.$inferSelect;
 
 export const LEAD_LIST_LIMIT = 500;
 const NOT_FOUND = "That lead no longer exists or isn't yours.";
@@ -504,6 +505,39 @@ export async function deleteLeadNote(ctx: DataContext, actor: Actor, noteId: num
     ctx.db.delete(leadNotes).where(eq(leadNotes.id, noteId)),
     auditInsert(ctx, actor, "lead_notes", noteId, "DELETE", note, null),
   ]);
+}
+
+// --- Contact log ------------------------------------------------------------
+
+/** Records a Call, WhatsApp or Email press on a lead the caller can see. */
+export async function logLeadContact(
+  ctx: DataContext,
+  actor: Actor,
+  leadId: number,
+  channel: unknown,
+  withDraft = false,
+): Promise<void> {
+  if (!isContactChannel(channel)) throw new InvalidInputError("Unknown contact channel.");
+  await findVisible(ctx, actor, leadId);
+  await ctx.db
+    .insert(leadContactLogs)
+    .values({ lead_id: leadId, agent_id: actor.id, agent_name: actor.full_name, channel, with_draft: withDraft });
+}
+
+/** The latest contact presses on a lead the caller can see, newest first. */
+export async function getLeadContactLog(
+  ctx: DataContext,
+  actor: Actor,
+  leadId: number,
+  limit = 20,
+): Promise<LeadContactLog[]> {
+  await findVisible(ctx, actor, leadId);
+  return ctx.db
+    .select()
+    .from(leadContactLogs)
+    .where(eq(leadContactLogs.lead_id, leadId))
+    .orderBy(desc(leadContactLogs.created_at), desc(leadContactLogs.id))
+    .limit(limit);
 }
 
 // --- Unread notes from teammates ---------------------------------------------

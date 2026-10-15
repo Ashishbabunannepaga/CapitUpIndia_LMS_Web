@@ -132,3 +132,11 @@ export function calendarCategories(
   }
   return [active ? "active_client" : "task"];
 }
+
+/** Ways an agent can reach a POC from the lead page; each click is logged on the lead. */
+export const CONTACT_CHANNELS = ["call", "whatsapp", "email"] as const;
+export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
+export const CONTACT_CHANNEL_LABELS: Record<ContactChannel, string> = { call: "Call", whatsapp: "WhatsApp", email: "Email" };
+export function isContactChannel(value: unknown): value is ContactChannel {
+  return typeof value === "string" && (CONTACT_CHANNELS as readonly string[]).includes(value);
+}

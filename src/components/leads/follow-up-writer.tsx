@@ -4,10 +4,11 @@ import { useState, useTransition } from "react";
 import { Check, Copy, Loader2, Mail, MessageCircle, RefreshCw, Sparkles } from "lucide-react";
 
 import { generateFollowUp } from "@/app/(app)/leads/follow-up-actions";
+import { ContactLink } from "@/components/leads/contact-link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FOLLOW_UP_TONES, type FollowUpTone } from "@/lib/ai/prompts";
-import { mailtoHref, whatsappHref } from "@/lib/contact-links";
+import { draftMailtoHref, gmailComposeHref, whatsappHref } from "@/lib/contact-links";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -43,7 +44,10 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
 
   const subject = `${clientName}: ${product} insurance`;
   const wa = draft ? whatsappHref(phone, draft) : null;
-  const mail = draft ? mailtoHref(email, subject, draft) : null;
+  // Email is always offered: with no POC email the agent types the address in their mail app.
+  const mail = draft ? draftMailtoHref(email, subject, draft) : null;
+  const gmail = draft ? gmailComposeHref(email, subject, draft) : null;
+  const hasEmail = email.includes("@");
 
   return (
     <div className="space-y-3">
@@ -93,18 +97,26 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
           <div className="flex flex-wrap gap-2">
             {wa ? (
               <Button asChild size="sm" variant="outline">
-                <a href={wa} target="_blank" rel="noreferrer">
+                <ContactLink leadId={leadId} channel="whatsapp" withDraft href={wa} target="_blank" rel="noreferrer">
                   <MessageCircle />
                   WhatsApp
-                </a>
+                </ContactLink>
               </Button>
             ) : null}
             {mail ? (
               <Button asChild size="sm" variant="outline">
-                <a href={mail}>
+                <ContactLink leadId={leadId} channel="email" withDraft href={mail}>
                   <Mail />
                   Email
-                </a>
+                </ContactLink>
+              </Button>
+            ) : null}
+            {gmail ? (
+              <Button asChild size="sm" variant="outline">
+                <ContactLink leadId={leadId} channel="email" withDraft href={gmail} target="_blank" rel="noreferrer">
+                  <Mail />
+                  Gmail
+                </ContactLink>
               </Button>
             ) : null}
             <Button
@@ -121,8 +133,10 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
-          {!wa && !mail ? (
-            <p className="text-xs text-muted-foreground">Add a phone or email to the primary POC to send it from here.</p>
+          {!hasEmail ? (
+            <p className="text-xs text-muted-foreground">
+              This contact has no email yet, so add the address in the mail window, or save it on the lead with Edit.
+            </p>
           ) : null}
         </>
       ) : (
