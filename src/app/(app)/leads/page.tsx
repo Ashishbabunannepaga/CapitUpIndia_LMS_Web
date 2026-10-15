@@ -31,6 +31,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   return (
     <>
       <PageHeader
+        eyebrow="Pipeline"
         title="Leads"
         description={
           admin

@@ -43,6 +43,7 @@ export default async function CalendarPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Workspace"
         title="Calendar"
         description={
           admin
@@ -50,7 +51,7 @@ export default async function CalendarPage() {
             : "Your renewal due dates, meetings and tasks. Countdown reminders run in the background and arrive in your notifications."
         }
       />
-      <div className="mb-6 max-w-2xl rounded-xl border bg-card p-4 shadow-sm">
+      <div className="mb-6 max-w-2xl rounded-2xl border bg-card p-4 shadow-card">
         <h2 className="mb-2 text-sm font-semibold">Plan a task</h2>
         <QuickTaskForm today={today} currentUserId={profile.id} assignees={admin ? agents : undefined} />
       </div>

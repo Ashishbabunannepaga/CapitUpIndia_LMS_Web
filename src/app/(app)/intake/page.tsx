@@ -18,6 +18,7 @@ export default async function IntakePage() {
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
+        eyebrow="Workspace"
         title="AI Intake"
         description="Turn messy notes, dictation or a visiting card into a lead. You review every field before it is saved."
       />
