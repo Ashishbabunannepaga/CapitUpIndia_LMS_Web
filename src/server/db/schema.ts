@@ -231,6 +231,27 @@ export const leadNotes = sqliteTable(
   ],
 );
 
+/** Every Call, WhatsApp and Email button press on a lead, so admins can see who followed up and when. */
+export const leadContactLogs = sqliteTable(
+  "lead_contact_logs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    lead_id: integer("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    agent_id: text("agent_id").references(() => profiles.id, { onDelete: "set null" }),
+    agent_name: text("agent_name").notNull(),
+    channel: text("channel", { enum: ["call", "whatsapp", "email"] }).notNull(),
+    /** True when the message was an AI follow-up draft. */
+    with_draft: bool("with_draft").notNull().default(false),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("lead_contact_logs_lead_idx").on(t.lead_id, t.created_at),
+    check("lead_contact_logs_channel", sql`${t.channel} in ('call', 'whatsapp', 'email')`),
+  ],
+);
+
 export const leadNoteReads = sqliteTable(
   "lead_note_reads",
   {

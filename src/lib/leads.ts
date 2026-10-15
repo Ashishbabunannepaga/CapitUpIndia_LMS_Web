@@ -42,6 +42,11 @@ export async function getLead(id: number): Promise<LeadWithAgent | null> {
   return leadData.getLead(ctx, actor, id);
 }
 
+export async function getLeadContactLog(leadId: number) {
+  const { ctx, actor } = await requireSession();
+  return leadData.getLeadContactLog(ctx, actor, leadId);
+}
+
 export async function getLeadNotes(leadId: number) {
   const { ctx, actor } = await requireSession();
   return leadData.getLeadNotes(ctx, actor, leadId);

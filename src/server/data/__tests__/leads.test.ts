@@ -15,8 +15,10 @@ import {
   deleteLead,
   deleteLeadNote,
   getLead,
+  getLeadContactLog,
   getLeadEvents,
   getLeadNotes,
+  logLeadContact,
   listLeads,
   markLeadNotesRead,
   resolveDuplicate,
@@ -72,6 +74,20 @@ describe("who sees which lead", () => {
     await expect(addLeadNote(w.ctx, w.amit, nehaLead, "spy")).rejects.toThrow("isn't yours");
     await expect(addLeadContact(w.ctx, w.amit, nehaLead, { name: "Spy" })).rejects.toThrow("isn't yours");
     expect((await getLead(w.ctx, w.admin, nehaLead))?.notes).toBe("Neha's secret");
+  });
+
+  it("contact presses are logged only on leads you can see, and admins read them", async () => {
+    await logLeadContact(w.ctx, w.amit, amitLead, "whatsapp", true);
+    await logLeadContact(w.ctx, w.amit, amitLead, "call");
+    await expect(logLeadContact(w.ctx, w.amit, nehaLead, "call")).rejects.toThrow("isn't yours");
+    await expect(logLeadContact(w.ctx, w.amit, amitLead, "fax")).rejects.toThrow("Unknown contact channel");
+    await expect(getLeadContactLog(w.ctx, w.amit, nehaLead)).rejects.toThrow("isn't yours");
+    const log = await getLeadContactLog(w.ctx, w.admin, amitLead);
+    expect(log.map((c) => [c.agent_name, c.channel, c.with_draft])).toEqual([
+      ["Amit Agent", "call", false],
+      ["Amit Agent", "whatsapp", true],
+    ]);
+    expect(await getLeadContactLog(w.ctx, w.amit, amitLead)).toHaveLength(2);
   });
 
   it("a deleted lead looks the same as one you cannot see", async () => {

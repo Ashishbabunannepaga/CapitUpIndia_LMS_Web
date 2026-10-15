@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Check, Copy, Loader2, Mail, MessageCircle, RefreshCw, Sparkles } from "lucide-react";
 
 import { generateFollowUp } from "@/app/(app)/leads/follow-up-actions";
+import { ContactLink } from "@/components/leads/contact-link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FOLLOW_UP_TONES, type FollowUpTone } from "@/lib/ai/prompts";
@@ -96,26 +97,26 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
           <div className="flex flex-wrap gap-2">
             {wa ? (
               <Button asChild size="sm" variant="outline">
-                <a href={wa} target="_blank" rel="noreferrer">
+                <ContactLink leadId={leadId} channel="whatsapp" withDraft href={wa} target="_blank" rel="noreferrer">
                   <MessageCircle />
                   WhatsApp
-                </a>
+                </ContactLink>
               </Button>
             ) : null}
             {mail ? (
               <Button asChild size="sm" variant="outline">
-                <a href={mail}>
+                <ContactLink leadId={leadId} channel="email" withDraft href={mail}>
                   <Mail />
                   Email
-                </a>
+                </ContactLink>
               </Button>
             ) : null}
             {gmail ? (
               <Button asChild size="sm" variant="outline">
-                <a href={gmail} target="_blank" rel="noreferrer">
+                <ContactLink leadId={leadId} channel="email" withDraft href={gmail} target="_blank" rel="noreferrer">
                   <Mail />
                   Gmail
-                </a>
+                </ContactLink>
               </Button>
             ) : null}
             <Button
