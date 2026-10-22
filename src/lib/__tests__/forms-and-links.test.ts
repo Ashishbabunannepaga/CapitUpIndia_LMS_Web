@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { firstPhone, mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
+import { draftMailtoHref, firstPhone, gmailComposeHref, mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
 import { formatNoteLine, isLeadStatus, isPolicyProduct } from "@/lib/domain";
 import { leadsHref, parseLeadFilters, searchTerms } from "@/lib/lead-filters";
 import { contactSchema, formDataToObject, leadFormSchema } from "@/lib/lead-schema";
@@ -189,6 +189,12 @@ describe("contact links", () => {
       "mailto:a@b.co?subject=Quote%20%26%20renewal&body=Line%201%0ALine%202",
     );
     expect(mailtoHref("not-an-email")).toBeNull();
+    expect(draftMailtoHref("", "Renewal", "Hi")).toBe("mailto:?subject=Renewal&body=Hi");
+    expect(draftMailtoHref("a@b.co", "Renewal")).toBe("mailto:a@b.co?subject=Renewal");
+    expect(gmailComposeHref("a@b.co", "Quote & renewal", "Hi\nThere")).toBe(
+      "https://mail.google.com/mail/?view=cm&fs=1&to=a%40b.co&su=Quote%20%26%20renewal&body=Hi%0AThere",
+    );
+    expect(gmailComposeHref("", "S")).toBe("https://mail.google.com/mail/?view=cm&fs=1&su=S");
   });
 });
 

@@ -12,6 +12,7 @@ import {
   MarkNotesReadOnView,
   ResolveDuplicateButton,
 } from "@/components/leads/lead-detail-actions";
+import { ContactLink } from "@/components/leads/contact-link";
 import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
@@ -20,8 +21,8 @@ import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
 import { formatDateTime, formatNoteTimestamp, nowMs } from "@/lib/dates";
-import { CLOSED_STATUSES } from "@/lib/domain";
-import { findSimilarLeads, getLead, getLeadEvents, getLeadNotes, getTeam } from "@/lib/leads";
+import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS } from "@/lib/domain";
+import { findSimilarLeads, getLead, getLeadContactLog, getLeadEvents, getLeadNotes, getTeam } from "@/lib/leads";
 import { cn } from "@/lib/utils";
 import { unreadLeadNotes } from "@/server/data/leads";
 
@@ -65,12 +66,14 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function PocCard({
+  leadId,
   label,
   name,
   designation,
   phone,
   email,
 }: {
+  leadId: number;
   label: string;
   name: string;
   designation: string;
@@ -97,26 +100,26 @@ function PocCard({
           <div className="mt-3 flex flex-wrap gap-2">
             {tel ? (
               <Button asChild size="sm" variant="outline">
-                <a href={tel}>
+                <ContactLink leadId={leadId} channel="call" href={tel}>
                   <Phone />
                   Call
-                </a>
+                </ContactLink>
               </Button>
             ) : null}
             {wa ? (
               <Button asChild size="sm" variant="outline">
-                <a href={wa} target="_blank" rel="noreferrer">
+                <ContactLink leadId={leadId} channel="whatsapp" href={wa} target="_blank" rel="noreferrer">
                   <MessageCircle />
                   WhatsApp
-                </a>
+                </ContactLink>
               </Button>
             ) : null}
             {mail ? (
               <Button asChild size="sm" variant="outline">
-                <a href={mail}>
+                <ContactLink leadId={leadId} channel="email" href={mail}>
                   <Mail />
                   Email
-                </a>
+                </ContactLink>
               </Button>
             ) : null}
           </div>
@@ -135,12 +138,13 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
   const lead = await getLead(id);
   if (!lead) notFound();
 
-  const [notes, events, team, similar, unread] = await Promise.all([
+  const [notes, events, team, similar, unread, contacts] = await Promise.all([
     getLeadNotes(id),
     getLeadEvents(id),
     admin ? getTeam() : Promise.resolve([]),
     findSimilarLeads(lead.client_name, id),
     unreadLeadNotes(ctx, profile, 200),
+    getLeadContactLog(id),
   ]);
   // Served from the private bucket by ./card/route.ts, which checks access again.
   const cardUrl = lead.visiting_card_path ? `/leads/${id}/card` : null;
@@ -308,6 +312,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
           <Panel title="Points of contact" actions={null}>
             <div className="grid gap-4 md:grid-cols-2">
               <PocCard
+                leadId={lead.id}
                 label="Primary POC"
                 name={lead.poc_name}
                 designation={lead.poc_designation}
@@ -315,6 +320,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                 email={lead.poc_email_id}
               />
               <PocCard
+                leadId={lead.id}
                 label="Secondary POC"
                 name={lead.poc2_name}
                 designation={lead.poc2_designation}
@@ -383,6 +389,35 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               </ol>
             ) : (
               <p className="mt-4 text-sm text-muted-foreground">No notes yet. Notes are timestamped and visible to admins.</p>
+            )}
+          </Panel>
+
+          <Panel title="Contact history">
+            {contacts.length > 0 ? (
+              <ul className="space-y-2 text-sm">
+                {contacts.map((c) => (
+                  <li key={c.id} className="flex items-start gap-2">
+                    {c.channel === "call" ? (
+                      <Phone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    ) : c.channel === "whatsapp" ? (
+                      <MessageCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <div>
+                      <p>
+                        <span className="font-medium">{c.agent_name}</span> · {CONTACT_CHANNEL_LABELS[c.channel]}
+                        {c.with_draft ? <span className="text-muted-foreground"> (AI follow-up)</span> : null}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatDateTime(c.created_at)}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No calls, WhatsApps or emails yet. Each press of those buttons on this page is recorded here.
+              </p>
             )}
           </Panel>
 
