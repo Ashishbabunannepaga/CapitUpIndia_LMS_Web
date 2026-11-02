@@ -2,8 +2,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+import { hashPassword as hashScrypt } from "better-auth/crypto";
+import { eq } from "drizzle-orm";
+
 import { addDays, businessDateTimeToIso, todayInBusinessTz } from "@/lib/dates";
 
+import { authAccount } from "../../db/schema";
 import { resolveActor } from "../actor";
 import { AccessDeniedError } from "../errors";
 import { createTask, listCalendarEvents, setEventDone } from "../events";
@@ -128,6 +132,26 @@ describe("duplicates screen", () => {
 });
 
 describe("login form sign-in", () => {
+  it("stores new passwords as low-memory PBKDF2 and upgrades older scrypt ones on sign-in", async () => {
+    const account = () =>
+      w.ctx.db.query.authAccount.findFirst({ where: eq(authAccount.userId, w.neha.id) });
+    expect((await account())?.password).toMatch(/^pbkdf2-sha256\$100000\$[0-9a-f]{32}\$[0-9a-f]{64}$/);
+
+    // An account from before the switch still holds a scrypt hash.
+    await w.ctx.db
+      .update(authAccount)
+      .set({ password: await hashScrypt(PASSWORD) })
+      .where(eq(authAccount.userId, w.neha.id));
+    expect(await signInWithPassword(w.ctx, { email: "neha@capitup.test", password: "wrong-password" }, from())).toEqual({
+      status: "invalid",
+    });
+    expect((await account())?.password).not.toMatch(/^pbkdf2/);
+
+    expect((await signInWithPassword(w.ctx, { email: "neha@capitup.test", password: PASSWORD }, from())).status).toBe("ok");
+    expect((await account())?.password).toMatch(/^pbkdf2-sha256\$/);
+    expect((await signInWithPassword(w.ctx, { email: "neha@capitup.test", password: PASSWORD }, from())).status).toBe("ok");
+  });
+
   it("starts a session that resolves to the user", async () => {
     const result = await signInWithPassword(w.ctx, { email: "amit@capitup.test", password: PASSWORD }, from());
     expect(result.status).toBe("ok");

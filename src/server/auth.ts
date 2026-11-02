@@ -7,6 +7,7 @@ import { nextCookies } from "better-auth/next-js";
 import { drizzle } from "drizzle-orm/d1";
 
 import * as schema from "./db/schema";
+import { hashPassword, verifyPassword } from "./password";
 
 // Sign-in for the LMS: email + password, sessions stored in D1. There is no
 // public sign-up; admins create accounts (src/server/data/users.ts).
@@ -43,6 +44,8 @@ export function createAuth(d1: D1Database, env: AuthEnv) {
       minPasswordLength: 8,
       maxPasswordLength: 128,
       revokeSessionsOnPasswordReset: true,
+      // Low-memory hashing for Workers; see src/server/password.ts.
+      password: { hash: hashPassword, verify: verifyPassword },
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7,
