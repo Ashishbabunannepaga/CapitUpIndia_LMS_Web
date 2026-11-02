@@ -76,7 +76,7 @@ export function LeadsTable({ leads, showAgent }: { leads: LeadWithAgent[]; showA
                 className={cn("align-top transition-colors hover:bg-muted/40", lead.is_duplicate && "bg-red-50/40")}
               >
                 <td className="max-w-72 px-4 py-3">
-                  <Link href={`/leads/${lead.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
+                  <Link prefetch={false} href={`/leads/${lead.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
                     {lead.client_name}
                   </Link>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -131,7 +131,7 @@ export function LeadCards({ leads, showAgent }: { leads: LeadWithAgent[]; showAg
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <Link href={`/leads/${lead.id}`} className="line-clamp-2 font-semibold hover:text-primary hover:underline">
+              <Link prefetch={false} href={`/leads/${lead.id}`} className="line-clamp-2 font-semibold hover:text-primary hover:underline">
                 {lead.client_name}
               </Link>
               <p className="mt-0.5 text-xs text-muted-foreground">

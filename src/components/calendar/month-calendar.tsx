@@ -258,7 +258,7 @@ export function MonthCalendar({
                     </span>
                     <div className="min-w-0">
                       {entry.leadId ? (
-                        <Link href={`/leads/${entry.leadId}`} className="font-medium hover:text-primary hover:underline">
+                        <Link prefetch={false} href={`/leads/${entry.leadId}`} className="font-medium hover:text-primary hover:underline">
                           {entry.title}
                         </Link>
                       ) : (

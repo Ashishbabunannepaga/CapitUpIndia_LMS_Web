@@ -160,7 +160,7 @@ function DuplicatePanel({
             {canOpen(match) ? (
               <div className="flex items-center gap-2">
                 <Button asChild size="sm" variant="outline" className="bg-white dark:bg-transparent">
-                  <Link href={`/leads/${match.lead_id}`} target="_blank">
+                  <Link prefetch={false} href={`/leads/${match.lead_id}`} target="_blank">
                     <ExternalLink />
                     Open
                   </Link>
