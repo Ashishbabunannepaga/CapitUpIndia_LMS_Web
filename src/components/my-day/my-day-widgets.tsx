@@ -57,7 +57,7 @@ export function TaskList({ tasks, emptyText }: { tasks: TaskItem[]; emptyText: s
             <div className="min-w-0 flex-1">
               <p className={cn("text-sm", task.isCompleted && "text-muted-foreground line-through")}>
                 {task.leadId ? (
-                  <Link href={`/leads/${task.leadId}`} className="hover:text-primary hover:underline">
+                  <Link prefetch={false} href={`/leads/${task.leadId}`} className="hover:text-primary hover:underline">
                     {task.title}
                   </Link>
                 ) : (

@@ -138,7 +138,7 @@ function RenewalRow({ lead, today, showAgent }: { lead: LeadWithAgent; today: st
         <span className="text-[10px] opacity-80">{formatDate(lead.renewal_date)}</span>
       </div>
       <div className="min-w-0 flex-1">
-        <Link href={`/leads/${lead.id}`} className="block truncate text-sm font-medium hover:text-primary hover:underline">
+        <Link prefetch={false} href={`/leads/${lead.id}`} className="block truncate text-sm font-medium hover:text-primary hover:underline">
           {lead.client_name}
         </Link>
         <p className="truncate text-xs text-muted-foreground">
@@ -634,7 +634,7 @@ export default async function MyDayPage() {
                 <ul className="divide-y">
                   {unread.map((note) => (
                     <li key={note.id} className="py-2.5">
-                      <Link href={`/leads/${note.lead_id}`} className="group block">
+                      <Link prefetch={false} href={`/leads/${note.lead_id}`} className="group block">
                         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="size-1.5 shrink-0 rounded-full bg-gold-500" aria-hidden="true" />
                           <span className="font-medium text-foreground">{note.agent_name}</span> on{" "}
@@ -668,6 +668,7 @@ export default async function MyDayPage() {
                     <li key={lead.id} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center">
                       <div className="min-w-0 flex-1">
                         <Link
+                          prefetch={false}
                           href={`/leads/${lead.id}`}
                           className="block truncate text-sm font-medium hover:text-primary hover:underline"
                         >
@@ -701,6 +702,7 @@ export default async function MyDayPage() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <Link
+                        prefetch={false}
                         href={`/leads/${lead.id}`}
                         className="block truncate text-sm font-medium hover:text-primary hover:underline"
                       >

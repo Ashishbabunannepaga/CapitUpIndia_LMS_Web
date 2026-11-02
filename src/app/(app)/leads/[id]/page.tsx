@@ -224,7 +224,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                     {similar.map((match) => (
                       <li key={match.lead_id}>
                         {admin || match.assigned_agent_id === profile.id ? (
-                          <Link href={`/leads/${match.lead_id}`} className="font-medium underline">
+                          <Link prefetch={false} href={`/leads/${match.lead_id}`} className="font-medium underline">
                             {match.client_name}
                           </Link>
                         ) : (
@@ -257,7 +257,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               {sameCompany.map((match) => (
                 <li key={match.lead_id}>
                   {admin || match.assigned_agent_id === profile.id ? (
-                    <Link href={`/leads/${match.lead_id}`} className="font-medium underline">
+                    <Link prefetch={false} href={`/leads/${match.lead_id}`} className="font-medium underline">
                       {match.client_name}
                     </Link>
                   ) : (

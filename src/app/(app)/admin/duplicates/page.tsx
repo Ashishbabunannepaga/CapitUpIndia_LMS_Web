@@ -70,7 +70,7 @@ export default async function DuplicatesPage() {
                     <li key={lead.id} className="grid gap-3 px-5 py-3 lg:grid-cols-[1fr_auto_14rem_auto] lg:items-center">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Link href={`/leads/${lead.id}`} className="font-medium hover:text-primary hover:underline">
+                          <Link prefetch={false} href={`/leads/${lead.id}`} className="font-medium hover:text-primary hover:underline">
                             {lead.client_name}
                           </Link>
                           {lead.is_duplicate ? <DuplicateBadge label={lead.duplicate_label} /> : null}

@@ -110,6 +110,7 @@ export function LeadsKanban({
                         <GripVertical className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground" />
                         <div className="min-w-0 flex-1 space-y-1.5">
                           <Link
+                            prefetch={false}
                             href={`/leads/${lead.id}`}
                             className="line-clamp-2 font-medium hover:text-primary hover:underline"
                           >
