@@ -1,8 +1,9 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
-import { profiles } from "../db/schema";
+import { authAccount, profiles } from "../db/schema";
+import { isLegacyPasswordHash } from "../password";
 import type { DataContext } from "./context";
 
 // Signing in and out for the login form and the sign-out route. Both go
@@ -61,7 +62,27 @@ export async function signInWithPassword(
     }
     return { status: "inactive" };
   }
+  await upgradeLegacyPassword(ctx, profile.id, credentials.password);
   return { status: "ok", setCookies: response.headers.getSetCookie() };
+}
+
+/**
+ * Re-hashes an older scrypt password with the current scheme after a correct
+ * sign-in, so later sign-ins skip scrypt's 32 MB. Never blocks the sign-in.
+ */
+async function upgradeLegacyPassword(ctx: DataContext, userId: string, password: string): Promise<void> {
+  try {
+    const where = and(eq(authAccount.userId, userId), eq(authAccount.providerId, "credential"));
+    const account = await ctx.db.query.authAccount.findFirst({ where });
+    if (!account?.password || !isLegacyPasswordHash(account.password)) return;
+    const auth = await ctx.auth.$context;
+    await ctx.db
+      .update(authAccount)
+      .set({ password: await auth.password.hash(password), updatedAt: new Date() })
+      .where(where);
+  } catch (error) {
+    console.error("Password upgrade failed; sign-in continues.", error);
+  }
 }
 
 /** Ends the session in these cookies. Returns the Set-Cookie headers that clear them. */
