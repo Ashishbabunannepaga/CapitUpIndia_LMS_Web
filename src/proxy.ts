@@ -1,6 +1,8 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { proxiedClientIp } from "@/lib/client-ip";
+
 // /api/auth is the sign-in API (src/server/auth.ts) and /setup the first-run
 // page (src/server/data/setup.ts); both do their own checks.
 const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/setup"];
@@ -13,7 +15,14 @@ const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/setup"];
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  if (isPublic || getSessionCookie(request)) return NextResponse.next();
+  if (isPublic || getSessionCookie(request)) {
+    // Through CloudFront, hand the visitor's own IP to the sign-in rate limit.
+    const ip = proxiedClientIp(request.headers, process.env.ORIGIN_VERIFY_SECRET);
+    if (!ip) return NextResponse.next();
+    const headers = new Headers(request.headers);
+    headers.set("cf-connecting-ip", ip);
+    return NextResponse.next({ request: { headers } });
+  }
 
   const url = request.nextUrl.clone();
   url.pathname = "/login";
