@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
       // The default is 1 MB; keep it small since cards and sheets are
       // the only large uploads. Per-file limits live in src/lib/upload-limits.ts.
       bodySizeLimit: "4.4mb",
+      // lms.capitupindia.com reaches the Worker through AWS CloudFront, which
+      // keeps the workers.dev Host header; accept forms posted from it.
+      allowedOrigins: ["lms.capitupindia.com"],
     },
   },
 };

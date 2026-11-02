@@ -11,4 +11,9 @@ interface CloudflareEnv {
   GEMINI_API_KEY?: string;
   /** One-time code that opens /setup for the first admin; remove it after setup. */
   SETUP_CODE?: string;
+  /**
+   * Shared with the CloudFront distribution in front of lms.capitupindia.com,
+   * which sends it as x-origin-verify; see src/lib/client-ip.ts.
+   */
+  ORIGIN_VERIFY_SECRET?: string;
 }
