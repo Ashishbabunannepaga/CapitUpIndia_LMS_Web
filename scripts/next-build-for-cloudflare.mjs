@@ -11,7 +11,9 @@ import path from "node:path";
 
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: "inherit", env: { NEXT_TELEMETRY_DISABLED: "1", ...process.env } });
 
-run("npx", ["next", "build"]);
+// Next's own bin through this Node, not `npx`: on Windows npx is npx.cmd,
+// which execFileSync cannot start without a shell.
+run(process.execPath, [path.join("node_modules", "next", "dist", "bin", "next"), "build"]);
 
 const nftPath = ".next/server/middleware.js.nft.json";
 const esmDir = "node_modules/@opentelemetry/api/build/esm";
