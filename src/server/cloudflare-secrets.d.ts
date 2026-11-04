@@ -16,4 +16,13 @@ interface CloudflareEnv {
    * which sends it as x-origin-verify; see src/lib/client-ip.ts.
    */
   ORIGIN_VERIFY_SECRET?: string;
+  /**
+   * The read-only capitupindia.com/office account the Office portal page
+   * signs in with; see src/server/office/portal.ts. Optional: without them
+   * the page only links to the portal.
+   */
+  OFFICE_EMAIL?: string;
+  OFFICE_PASSWORD?: string;
+  /** Not a secret (a var): the office site's address, default https://capitupindia.com. */
+  OFFICE_PORTAL_URL?: string;
 }
