@@ -40,7 +40,7 @@ export function LeadFiltersBar({
 
   const apply = (patch: Partial<LeadFilters>) => {
     startTransition(() => {
-      router.replace(leadsHref({ ...filters, ...patch }), { scroll: false });
+      router.replace(leadsHref({ ...filters, page: 1, ...patch }), { scroll: false });
     });
   };
 
@@ -82,7 +82,7 @@ export function LeadFiltersBar({
               key={view}
               role="tab"
               aria-selected={filters.view === view}
-              href={leadsHref({ ...filters, view })}
+              href={leadsHref({ ...filters, view, page: 1 })}
               scroll={false}
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",

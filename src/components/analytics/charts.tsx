@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 
 export type Tone = "default" | "urgent" | "warning" | "success" | "brand" | "gold";
 
+const monthShortFormat = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" });
+
 const TONE_ICON: Record<Tone, string> = {
   default: "bg-muted text-muted-foreground",
   brand: "bg-brand-50 text-brand-700 ring-brand-100",
@@ -177,8 +179,7 @@ export function MonthBars({
   colorClass?: string;
 }) {
   const max = Math.max(1, ...data.map((d) => d.count));
-  const label = (month: string) =>
-    new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`));
+  const label = (month: string) => monthShortFormat.format(new Date(`${month}-01T00:00:00Z`));
   return (
     <div className="flex items-end gap-1.5" role="img" aria-label={data.map((d) => `${label(d.month)}: ${d.count}`).join(", ")}>
       {data.map((item, i) => (

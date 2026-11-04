@@ -17,7 +17,8 @@ export type TeamMember = Pick<Profile, "id" | "full_name" | "role" | "is_active"
 
 export type LeadWithAgent = leadData.LeadWithAgent;
 
-export const LEAD_LIST_LIMIT = leadData.LEAD_LIST_LIMIT;
+export const LEAD_PAGE_SIZE = leadData.LEAD_PAGE_SIZE;
+export const KANBAN_COLUMN_LIMIT = leadData.KANBAN_COLUMN_LIMIT;
 
 /** The whole team (every active user can see it). */
 export const getTeam = cache(async (): Promise<TeamMember[]> => {

@@ -36,6 +36,8 @@ export type LeadFilters = {
   renewal: RenewalWindow | null;
   duplicates: boolean;
   sort: LeadSort;
+  /** 1-based page of the table and card views. */
+  page: number;
 };
 
 type RawParams = Record<string, string | string[] | undefined>;
@@ -64,7 +66,15 @@ export function parseLeadFilters(params: RawParams): LeadFilters {
     renewal: Object.hasOwn(RENEWAL_WINDOWS, renewal) ? (renewal as RenewalWindow) : null,
     duplicates: one(params, "duplicates") === "1",
     sort: Object.hasOwn(LEAD_SORTS, sort) ? (sort as LeadSort) : "updated",
+    page: parsePage(one(params, "page")),
   };
+}
+
+const MAX_PAGE = 10_000;
+
+function parsePage(value: string): number {
+  const page = /^\d{1,5}$/.test(value) ? Number(value) : 1;
+  return Math.min(Math.max(page, 1), MAX_PAGE);
 }
 
 /** Builds a /leads URL from filters, dropping defaults. */
@@ -79,6 +89,7 @@ export function leadsHref(filters: Partial<LeadFilters>): string {
   if (filters.renewal) params.set("renewal", filters.renewal);
   if (filters.duplicates) params.set("duplicates", "1");
   if (filters.sort && filters.sort !== "updated") params.set("sort", filters.sort);
+  if (filters.page && filters.page > 1 && filters.view !== "kanban") params.set("page", String(filters.page));
   const query = params.toString();
   return query ? `/leads?${query}` : "/leads";
 }

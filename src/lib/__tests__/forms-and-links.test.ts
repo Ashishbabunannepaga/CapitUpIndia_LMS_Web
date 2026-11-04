@@ -90,6 +90,7 @@ describe("parseLeadFilters", () => {
       renewal: null,
       duplicates: false,
       sort: "updated",
+      page: 1,
     });
   });
 

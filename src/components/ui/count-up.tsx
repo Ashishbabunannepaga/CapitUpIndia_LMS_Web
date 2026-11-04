@@ -2,8 +2,17 @@
 
 import { useEffect, useRef } from "react";
 
-const format = (n: number, decimals: number) =>
-  n.toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+// One formatter per precision: creating them is the costly part (on the server
+// every stat card renders through this).
+const formats = new Map<number, Intl.NumberFormat>();
+const format = (n: number, decimals: number) => {
+  let f = formats.get(decimals);
+  if (!f) {
+    f = new Intl.NumberFormat("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    formats.set(decimals, f);
+  }
+  return f.format(n);
+};
 
 /**
  * A number that rolls up from zero when it first appears. The server renders

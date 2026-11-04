@@ -11,7 +11,11 @@ import path from "node:path";
 
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: "inherit", env: { NEXT_TELEMETRY_DISABLED: "1", ...process.env } });
 
-run("npx", ["next", "build"]);
+// Webpack, not Turbopack: Turbopack copies shared server code (Better Auth,
+// Zod, the Gemini SDK) into a chunk per route and pulls in the next/og WASM,
+// which put the Worker at 4.9 MB gzipped, over the Workers Free plan's 3 MB
+// limit. Webpack shares those chunks (with wrangler's minify: 2.7 MB).
+run("npx", ["next", "build", "--webpack"]);
 
 const nftPath = ".next/server/middleware.js.nft.json";
 const esmDir = "node_modules/@opentelemetry/api/build/esm";

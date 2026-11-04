@@ -52,10 +52,17 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "My Day" };
 
 
+const hourFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hourCycle: "h23" });
+const longDateFormat = new Intl.DateTimeFormat("en-IN", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "Asia/Kolkata",
+});
+
 function greeting(): string {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hourCycle: "h23" }).format(new Date()),
-  );
+  const hour = Number(hourFormat.format(new Date()));
   if (hour < 12) return "Good morning";
   if (hour < 17) return "Good afternoon";
   return "Good evening";
@@ -437,13 +444,7 @@ export default async function MyDayPage() {
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
     .slice(0, 12);
 
-  const longDate = new Intl.DateTimeFormat("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Asia/Kolkata",
-  }).format(new Date());
+  const longDate = longDateFormat.format(new Date());
 
   return (
     <>
