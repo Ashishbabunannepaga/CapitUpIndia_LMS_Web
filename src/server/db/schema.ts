@@ -144,11 +144,15 @@ export const leads = sqliteTable(
     duplicate_resolved_at: text("duplicate_resolved_at"),
     duplicate_resolved_by: text("duplicate_resolved_by").references(() => profiles.id, { onDelete: "set null" }),
     visiting_card_path: text("visiting_card_path"),
+    /** The capitupindia.com/office call request this lead was handed over from, if any. */
+    office_lead_id: text("office_lead_id"),
     created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
   (t) => [
+    // One LMS lead per office call request (NULLs do not clash).
+    uniqueIndex("leads_office_lead_id_idx").on(t.office_lead_id),
     index("leads_client_name_normalized_idx").on(t.client_name_normalized),
     index("leads_renewal_date_idx").on(t.renewal_date),
     index("leads_assigned_status_idx").on(t.assigned_agent_id, t.status),
