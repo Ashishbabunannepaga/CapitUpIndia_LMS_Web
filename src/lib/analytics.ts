@@ -19,13 +19,21 @@ export async function getAiUsageSummary(from: Date): Promise<AiUsageSummary> {
 }
 
 /** "₹1,234.56" */
+const inrFormats = new Map<number, Intl.NumberFormat>();
+const countFormat = new Intl.NumberFormat("en-IN");
+
 export function formatInr(value: number, fractionDigits = 2): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: fractionDigits,
-    minimumFractionDigits: fractionDigits,
-  }).format(value);
+  let format = inrFormats.get(fractionDigits);
+  if (!format) {
+    format = new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: fractionDigits,
+      minimumFractionDigits: fractionDigits,
+    });
+    inrFormats.set(fractionDigits, format);
+  }
+  return format.format(value);
 }
 
 /** "1 call" / "4 calls" */
@@ -34,7 +42,7 @@ export function plural(count: number, word: string): string {
 }
 
 export function formatCount(value: number): string {
-  return new Intl.NumberFormat("en-IN").format(value);
+  return countFormat.format(value);
 }
 
 export const AI_FEATURE_LABELS: Record<string, string> = {

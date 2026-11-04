@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, asc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNotNull, lt, ne, sql } from "drizzle-orm";
 
-import { addDays, businessDateOf, todayInBusinessTz } from "@/lib/dates";
+import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
 import { CLOSED_STATUSES } from "@/lib/domain";
 
 import { appSettings, leads, profiles } from "../db/schema";
@@ -57,41 +57,85 @@ function shiftMonth(month: string, by: number): string {
   return d.toISOString().slice(0, 7);
 }
 
+// Everything is counted by D1 (GROUP BY), not by loading every lead into the
+// Worker: Workers bill CPU per request, and reading 1,000+ rows to tally them
+// in JavaScript cost far more than the 10 ms the Free plan allows.
 export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Date = new Date()): Promise<PipelineAnalytics> {
-  const [rows, team] = await Promise.all([
-    ctx.db
-      .select({
-        status: leads.status,
-        policy_product: leads.policy_product,
-        type: leads.type,
-        business_type: leads.business_type,
-        assigned_agent_id: leads.assigned_agent_id,
-        renewal_date: leads.renewal_date,
-        created_at: leads.created_at,
-        is_duplicate: leads.is_duplicate,
-      })
-      .from(leads)
-      .where(isAdmin(actor) ? undefined : eq(leads.assigned_agent_id, actor.id)),
-    ctx.db.select({ id: profiles.id, full_name: profiles.full_name }).from(profiles),
-  ]);
-  const names = new Map(team.map((p) => [p.id, p.full_name]));
   const today = todayInBusinessTz(now);
   const month = today.slice(0, 7);
-  const tally = (key: (r: (typeof rows)[number]) => string) =>
-    rows.reduce<Record<string, number>>((acc, r) => ((acc[key(r)] = (acc[key(r)] ?? 0) + 1), acc), {});
+  const scope = isAdmin(actor) ? sql`1 = 1` : sql`${leads.assigned_agent_id} = ${actor.id}`;
+  const open = sql`${leads.status} not in (${sql.join(
+    CLOSED_STATUSES.map((s) => sql`${s}`),
+    sql`, `,
+  )})`;
+  const in7 = addDays(today, 7);
+  const in30 = addDays(today, 30);
+  const in90 = addDays(today, 90);
+  const firstRenewalMonth = `${month}-01`;
+  const afterRenewalMonths = `${shiftMonth(month, 12)}-01`;
+  // created_at is a UTC ISO timestamp; +330 minutes gives the IST calendar month.
+  const createdFrom = startOfBusinessDay(`${shiftMonth(month, -5)}-01`);
+  const createdMonth = sql<string>`strftime('%Y-%m', ${leads.created_at}, '+330 minutes')`;
+  const renewalMonth = sql<string>`substr(${leads.renewal_date}, 1, 7)`;
+  const flag = (condition: ReturnType<typeof sql>) => sql<number>`coalesce(sum(case when ${condition} then 1 else 0 end), 0)`;
 
-  const open = rows.filter((r) => !CLOSED_STATUSES.includes(r.status));
-  const dated = open.filter((r) => r.renewal_date !== null) as ((typeof rows)[number] & { renewal_date: string })[];
-  const within = (days: number) => dated.filter((r) => r.renewal_date >= today && r.renewal_date <= addDays(today, days)).length;
+  const [byAgentStatus, byProduct, byType, byBusiness, renewalTotals, renewalMonths, createdMonths, team] = await ctx.db.batch([
+    ctx.db
+      .select({
+        agent: leads.assigned_agent_id,
+        status: leads.status,
+        n: count(),
+        duplicates: flag(sql`${leads.is_duplicate} = 1`).as("duplicates"),
+        overdue: flag(sql`${open} and ${leads.renewal_date} < ${today}`).as("overdue"),
+        due30: flag(sql`${open} and ${leads.renewal_date} >= ${today} and ${leads.renewal_date} <= ${in30}`).as("due30"),
+      })
+      .from(leads)
+      .where(scope)
+      .groupBy(leads.assigned_agent_id, leads.status),
+    ctx.db.select({ key: leads.policy_product, n: count() }).from(leads).where(scope).groupBy(leads.policy_product),
+    ctx.db.select({ key: leads.type, n: count() }).from(leads).where(scope).groupBy(leads.type),
+    ctx.db.select({ key: leads.business_type, n: count() }).from(leads).where(scope).groupBy(leads.business_type),
+    ctx.db
+      .select({
+        overdue: flag(sql`${leads.renewal_date} < ${today}`).as("overdue"),
+        today: flag(sql`${leads.renewal_date} = ${today}`).as("due_today"),
+        week: flag(sql`${leads.renewal_date} >= ${today} and ${leads.renewal_date} <= ${in7}`).as("due_week"),
+        month: flag(sql`${leads.renewal_date} >= ${today} and ${leads.renewal_date} <= ${in30}`).as("due_month"),
+        upcoming: flag(sql`${leads.renewal_date} >= ${today} and ${leads.renewal_date} <= ${in90}`).as("due_upcoming"),
+      })
+      .from(leads)
+      .where(and(scope, open, isNotNull(leads.renewal_date))),
+    ctx.db
+      .select({ month: renewalMonth, n: count() })
+      .from(leads)
+      .where(and(scope, open, gte(leads.renewal_date, firstRenewalMonth), lt(leads.renewal_date, afterRenewalMonths)))
+      .groupBy(renewalMonth),
+    ctx.db
+      .select({ month: createdMonth, n: count() })
+      .from(leads)
+      .where(and(scope, gte(leads.created_at, createdFrom)))
+      .groupBy(createdMonth),
+    ctx.db.select({ id: profiles.id, full_name: profiles.full_name }).from(profiles),
+  ]);
 
+  const names = new Map(team.map((p) => [p.id, p.full_name]));
+  const tally = (rows: { key: string; n: number }[]) => Object.fromEntries(rows.map((r) => [r.key, r.n]));
+  const byStatus: Record<string, number> = {};
   const agents = new Map<string, AgentPipeline>();
-  for (const r of rows) {
-    const key = r.assigned_agent_id ?? "";
+  let total = 0;
+  let duplicates = 0;
+  let unassigned = 0;
+  for (const r of byAgentStatus) {
+    total += r.n;
+    duplicates += r.duplicates;
+    if (r.agent === null) unassigned += r.n;
+    byStatus[r.status] = (byStatus[r.status] ?? 0) + r.n;
+    const key = r.agent ?? "";
     const agent =
       agents.get(key) ??
       ({
-        agent_id: r.assigned_agent_id,
-        agent_name: r.assigned_agent_id ? (names.get(r.assigned_agent_id) ?? "Unassigned") : "Unassigned",
+        agent_id: r.agent,
+        agent_name: r.agent ? (names.get(r.agent) ?? "Unassigned") : "Unassigned",
         total: 0,
         prospect: 0,
         quoted: 0,
@@ -102,38 +146,39 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
         overdue_renewals: 0,
         renewals_30d: 0,
       } satisfies AgentPipeline);
-    agent.total += 1;
-    agent[STATUS_KEYS[r.status]] += 1;
-    if (!CLOSED_STATUSES.includes(r.status) && r.renewal_date) {
-      if (r.renewal_date < today) agent.overdue_renewals += 1;
-      else if (r.renewal_date <= addDays(today, 30)) agent.renewals_30d += 1;
-    }
+    agent.total += r.n;
+    agent[STATUS_KEYS[r.status]] += r.n;
+    agent.overdue_renewals += r.overdue;
+    agent.renewals_30d += r.due30;
     agents.set(key, agent);
   }
+  const renewalCounts = new Map(renewalMonths.map((r) => [r.month, r.n]));
+  const createdCounts = new Map(createdMonths.map((r) => [r.month, r.n]));
+  const totals = renewalTotals[0];
 
   return {
     today,
-    total: rows.length,
-    duplicates: rows.filter((r) => r.is_duplicate).length,
-    unassigned: rows.filter((r) => r.assigned_agent_id === null).length,
-    by_status: tally((r) => r.status),
-    by_product: tally((r) => r.policy_product),
-    by_type: tally((r) => r.type),
-    by_business: tally((r) => r.business_type),
+    total,
+    duplicates,
+    unassigned,
+    by_status: byStatus,
+    by_product: tally(byProduct),
+    by_type: tally(byType),
+    by_business: tally(byBusiness),
     renewals: {
-      overdue: dated.filter((r) => r.renewal_date < today).length,
-      today: dated.filter((r) => r.renewal_date === today).length,
-      week: within(7),
-      month: within(30),
-      upcoming: within(90),
+      overdue: totals?.overdue ?? 0,
+      today: totals?.today ?? 0,
+      week: totals?.week ?? 0,
+      month: totals?.month ?? 0,
+      upcoming: totals?.upcoming ?? 0,
     },
     renewals_by_month: Array.from({ length: 12 }, (_, i) => {
       const m = shiftMonth(month, i);
-      return { month: m, count: open.filter((r) => r.renewal_date?.startsWith(m)).length };
+      return { month: m, count: renewalCounts.get(m) ?? 0 };
     }),
     created_by_month: Array.from({ length: 6 }, (_, i) => {
       const m = shiftMonth(month, i - 5);
-      return { month: m, count: rows.filter((r) => businessDateOf(r.created_at).startsWith(m)).length };
+      return { month: m, count: createdCounts.get(m) ?? 0 };
     }),
     agents: [...agents.values()].sort((a, b) => b.total - a.total || a.agent_name.localeCompare(b.agent_name)),
   };

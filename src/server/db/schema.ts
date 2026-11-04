@@ -359,3 +359,14 @@ export const auditLogs = sqliteTable(
     index("audit_logs_created_idx").on(t.created_at),
   ],
 );
+
+/**
+ * One row: the unix second of the last change to anything a screen shows.
+ * SQLite triggers (migrations/0003) bump it, at most once a second, so open
+ * tabs can ask "did anything change?" by reading one row instead of
+ * re-rendering the page every minute.
+ */
+export const changeVersion = sqliteTable("change_version", {
+  id: integer("id").primaryKey(),
+  version: integer("version").notNull().default(0),
+});

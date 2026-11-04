@@ -44,21 +44,21 @@ export const RENEWAL_MILESTONES = [
 
 export const BUSINESS_TIMEZONE = "Asia/Kolkata";
 
+let noteLineFormat: Intl.DateTimeFormat | undefined;
+
 /** Renders a note as "[Agent Name - DD MMM YYYY, HH:mm]: Note" in business time. */
 export function formatNoteLine(agentName: string, createdAt: string | Date, content: string): string {
-  const date = new Date(createdAt);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: BUSINESS_TIMEZONE,
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(date)
-      .find((p) => p.type === type)?.value ?? "";
+  noteLineFormat ??= new Intl.DateTimeFormat("en-GB", {
+    timeZone: BUSINESS_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = noteLineFormat.formatToParts(new Date(createdAt));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `[${agentName} - ${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}]: ${content}`;
 }
 

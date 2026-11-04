@@ -46,12 +46,19 @@ export async function markNotificationsRead(ctx: DataContext, actor: Actor, id?:
 }
 
 /**
+ * Due reminders handled per cron run. The cron runs every minute, so a
+ * backlog (say after an import) drains over a few minutes instead of one run
+ * blowing the Worker's CPU limit and sending nothing.
+ */
+export const REMINDER_BATCH = 100;
+
+/**
  * Sends due renewal reminders. Marks every due background reminder as sent;
  * for each open lead, the latest due milestone becomes one notification for
  * its agent, or for every active admin when the lead has no active agent.
  * Safe to run again: a reminder is sent once. Returns notifications created.
  */
-export async function deliverDueReminders(ctx: DataContext, at: Date = new Date(), limit = 1000): Promise<number> {
+export async function deliverDueReminders(ctx: DataContext, at: Date = new Date(), limit = REMINDER_BATCH): Promise<number> {
   const stamp = at.toISOString();
   const due = await ctx.db
     .select({

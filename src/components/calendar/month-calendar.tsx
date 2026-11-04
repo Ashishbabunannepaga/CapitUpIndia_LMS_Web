@@ -34,10 +34,10 @@ type Filter = "all" | CalendarCategory;
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+const monthLabelFormat = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+
 function monthLabel(month: string): string {
-  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(`${month}-01T00:00:00Z`),
-  );
+  return monthLabelFormat.format(new Date(`${month}-01T00:00:00Z`));
 }
 
 function shiftMonth(month: string, by: number): string {

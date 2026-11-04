@@ -9,6 +9,9 @@
     "binding": "ASSETS"
   },
   "observability": { "enabled": true },
+  // Keeps the upload under the Workers Free plan's 3 MB (gzipped) limit; see
+  // scripts/next-build-for-cloudflare.mjs. Check with `npx wrangler deploy --dry-run`.
+  "minify": true,
   // worker.ts imports server code that starts with `import "server-only"`.
   "alias": { "server-only": "./src/worker/server-only-stub.ts" },
   "d1_databases": [

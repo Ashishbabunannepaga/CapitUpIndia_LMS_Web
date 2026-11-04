@@ -1,10 +1,14 @@
 import { AppShell } from "@/components/app-shell/app-shell";
 import { RealtimeRefresh } from "@/components/app-shell/realtime-refresh";
-import { requireProfile } from "@/lib/auth";
+import { requireSession } from "@/lib/auth";
 import { getRecentNotifications, getUnreadNoteCount } from "@/lib/leads";
+import { changeStamp } from "@/server/data/changes";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
-  const profile = await requireProfile();
+  const { ctx, actor: profile } = await requireSession();
+  // The stamp is read first so a change made while the page renders still
+  // counts as new on the next poll.
+  const stamp = await changeStamp(ctx, profile);
   const [unreadNotes, notifications] = await Promise.all([getUnreadNoteCount(), getRecentNotifications()]);
 
   return (
@@ -14,7 +18,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       notifications={notifications.items}
       unreadNotifications={notifications.unread}
     >
-      <RealtimeRefresh />
+      <RealtimeRefresh stamp={stamp} />
       {children}
     </AppShell>
   );
