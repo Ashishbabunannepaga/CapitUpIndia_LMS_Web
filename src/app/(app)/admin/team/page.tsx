@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { KeyRound, ShieldAlert, ShieldCheck, UserCheck, UserPlus, Users, UserX } from "lucide-react";
+import { KeyRound, ShieldAlert, UserPlus } from "lucide-react";
 
 import { AddMemberForm, MemberControls } from "@/components/admin/team-controls";
 import { StatCard } from "@/components/analytics/charts";
@@ -58,13 +58,12 @@ export default async function TeamPage() {
         description="Agents and admins who can sign in. Only admins add people; there is no public sign-up."
       />
       <div className="stagger mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="People" value={members.length} icon={Users} tone="brand" />
-        <StatCard label="Active" value={active.length} icon={UserCheck} tone="success" />
-        <StatCard label="Admins" value={active.filter((m) => m.role === "ADMIN").length} icon={ShieldCheck} tone="gold" />
+        <StatCard label="People" value={members.length} tone="brand" />
+        <StatCard label="Active" value={active.length} tone="success" />
+        <StatCard label="Admins" value={active.filter((m) => m.role === "ADMIN").length} tone="gold" />
         <StatCard
           label="Disabled"
           value={members.length - active.length}
-          icon={UserX}
           tone="urgent"
           quiet={members.length === active.length}
         />
@@ -86,7 +85,7 @@ export default async function TeamPage() {
         <CardContent className="px-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b bg-muted/60 text-left text-[11px] tracking-wide text-muted-foreground uppercase">
+              <thead className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Email</th>
@@ -112,8 +111,8 @@ export default async function TeamPage() {
                             !member.is_active
                               ? "bg-muted text-muted-foreground"
                               : member.role === "ADMIN"
-                                ? "bg-gradient-to-br from-gold-200 to-gold-400 text-gold-900"
-                                : "bg-gradient-to-br from-brand-100 to-brand-300 text-brand-900",
+                                ? "bg-gold-200 text-gold-900"
+                                : "bg-brand-100 text-brand-900",
                           )}
                         >
                           {initials(member.full_name)}
@@ -187,7 +186,7 @@ export default async function TeamPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b bg-muted/60 text-left text-[11px] tracking-wide text-muted-foreground uppercase">
+                <thead className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">When</th>
                     <th className="px-4 py-3 font-medium">Email tried</th>

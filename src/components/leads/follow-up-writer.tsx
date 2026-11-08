@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Copy, Loader2, Mail, MessageCircle, RefreshCw, Sparkles } from "lucide-react";
+import { Check, Copy, Loader2, Mail, MessageCircle, PenLine, RefreshCw } from "lucide-react";
 
 import { generateFollowUp } from "@/app/(app)/leads/follow-up-actions";
 import { ContactLink } from "@/components/leads/contact-link";
@@ -71,7 +71,7 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
 
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" onClick={() => run(false)} disabled={pending}>
-          {pending ? <Loader2 className="animate-spin" /> : <Sparkles />}
+          {pending ? <Loader2 className="animate-spin" /> : <PenLine />}
           {draft ? "New draft" : "Write follow-up"}
         </Button>
         {draft ? (

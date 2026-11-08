@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  AlarmClock,
   CalendarClock,
   ExternalLink,
   FileText,
@@ -10,7 +9,8 @@ import {
   PhoneCall,
   RefreshCw,
   ShieldAlert,
-  Sparkles,
+  Info,
+  PlugZap,
   Users,
 } from "lucide-react";
 
@@ -142,7 +142,7 @@ export default async function OfficePage({ searchParams }: PageProps<"/office">)
       {admin && connected ? <Tabs current={tab} overview={overview} /> : null}
 
       {overview.state === "not-configured" ? (
-        <Panel title="The office portal is not connected yet" icon={Sparkles} className="mb-6">
+        <Panel title="The office portal is not connected yet" icon={PlugZap} className="mb-6">
           <p className="text-sm text-muted-foreground">
             {admin
               ? "To work call requests, renewals and gap reports here, add the office account the LMS signs in with as Worker secrets OFFICE_EMAIL and OFFICE_PASSWORD (see docs/office-portal.md). Until then, use the button above."
@@ -216,7 +216,6 @@ function Overview({ data, admin }: { data: OfficeOverview; admin: boolean }) {
           label="Waiting for a call"
           value={waiting}
           hint={waiting ? "Nobody has handled these yet" : "Everyone has been contacted"}
-          icon={PhoneCall}
           tone="urgent"
           quiet={waiting === 0}
           href={admin ? "/office?tab=requests&filter=new" : undefined}
@@ -225,7 +224,6 @@ function Overview({ data, admin }: { data: OfficeOverview; admin: boolean }) {
           label="Call requests"
           value={stats.leads.total}
           hint={trend(stats.leads.week, stats.leads.previous_week)}
-          icon={PhoneCall}
           tone="brand"
           href={admin ? "/office?tab=requests" : undefined}
         />
@@ -233,7 +231,6 @@ function Overview({ data, admin }: { data: OfficeOverview; admin: boolean }) {
           label="Renewals due in 30 days"
           value={stats.renewals_due}
           hint="Not yet contacted"
-          icon={AlarmClock}
           tone="warning"
           quiet={stats.renewals_due === 0}
           href={admin ? "/office?tab=renewals" : undefined}
@@ -242,7 +239,6 @@ function Overview({ data, admin }: { data: OfficeOverview; admin: boolean }) {
           label="Policies uploaded"
           value={stats.policies.total}
           hint={trend(stats.policies.week, stats.policies.previous_week)}
-          icon={FileText}
           tone="brand"
           href={admin ? "/office?tab=policies" : undefined}
         />
@@ -250,11 +246,10 @@ function Overview({ data, admin }: { data: OfficeOverview; admin: boolean }) {
           label="Reports with a high gap"
           value={stats.gaps.reports_with_high}
           hint={`of ${formatCount(stats.reports)} gap reports`}
-          icon={ShieldAlert}
           tone="warning"
           quiet={stats.gaps.reports_with_high === 0}
         />
-        <StatCard label="Protection games saved" value={stats.games} icon={Gamepad2} href={admin ? "/office?tab=games" : undefined} />
+        <StatCard label="Protection games saved" value={stats.games} href={admin ? "/office?tab=games" : undefined} />
       </div>
 
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
@@ -316,7 +311,7 @@ function Overview({ data, admin }: { data: OfficeOverview; admin: boolean }) {
             ]}
           />
         </Panel>
-        <Panel title="Where call requests come from" icon={Sparkles}>
+        <Panel title="Where call requests come from" icon={Info}>
           <BarList data={bars(stats.leads.by_source, OFFICE_SOURCE)} />
         </Panel>
       </div>

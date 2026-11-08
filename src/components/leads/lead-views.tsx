@@ -58,7 +58,7 @@ export function LeadsTable({ leads, showAgent }: { leads: LeadWithAgent[]; showA
     <div className="overflow-hidden rounded-2xl border bg-card shadow-card">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="border-b bg-muted/50 text-left text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          <thead className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Client / company</th>
               <th className="px-4 py-3">Product</th>

@@ -77,8 +77,8 @@ export function LeadsKanban({
                   if (id) move(id, status);
                 }}
                 className={cn(
-                  "flex min-h-[420px] animate-rise flex-col overflow-hidden rounded-2xl border bg-muted/50 transition-all duration-200",
-                  dragOver === status && "scale-[1.01] border-brand-400 bg-accent shadow-lift",
+                  "flex min-h-[420px] flex-col overflow-hidden rounded-2xl border bg-muted/50 transition-colors duration-150",
+                  dragOver === status && "border-brand-400 bg-accent",
                 )}
                 style={{ animationDelay: `${LEAD_STATUSES.indexOf(status) * 60}ms` }}
               >
@@ -102,7 +102,7 @@ export function LeadsKanban({
                         event.dataTransfer.effectAllowed = "move";
                       }}
                       className={cn(
-                        "group relative cursor-grab rounded-xl border bg-card p-3 text-sm shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-lift active:scale-[0.98] active:cursor-grabbing",
+                        "group relative cursor-grab rounded-xl border bg-card p-3 text-sm shadow-xs transition-[border-color,transform] duration-150 hover:border-brand-200 active:scale-[0.98] active:cursor-grabbing",
                         lead.is_duplicate && "border-red-200 bg-red-50/40",
                       )}
                     >

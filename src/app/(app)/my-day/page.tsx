@@ -4,26 +4,20 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlarmClock,
   ArrowRight,
-  BadgeCheck,
-  CalendarClock,
-  CalendarRange,
   CircleDot,
-  FileText,
   ListChecks,
   MessageSquareText,
-  PhoneCall,
   PieChart,
   Plus,
   Radar,
   RefreshCw,
-  Sparkles,
+  ScanText,
   UserCheck,
   Users,
   UserX,
 } from "lucide-react";
 
 import { Donut, ProgressRing, StatCard } from "@/components/analytics/charts";
-import { BrandMark } from "@/components/brand/brand";
 import { CountUp } from "@/components/ui/count-up";
 import { DuplicateBadge, StatusBadge } from "@/components/leads/lead-badges";
 import { AssignAgentSelect } from "@/components/leads/lead-detail-actions";
@@ -52,7 +46,6 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "My Day" };
 
 
-const hourFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hourCycle: "h23" });
 const longDateFormat = new Intl.DateTimeFormat("en-IN", {
   weekday: "long",
   day: "numeric",
@@ -60,13 +53,6 @@ const longDateFormat = new Intl.DateTimeFormat("en-IN", {
   year: "numeric",
   timeZone: "Asia/Kolkata",
 });
-
-function greeting(): string {
-  const hour = Number(hourFormat.format(new Date()));
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
 
 function Panel({
   title,
@@ -87,28 +73,15 @@ function Panel({
 }) {
   return (
     <section className={cn("surface overflow-hidden", className)}>
-      <header className="flex items-center justify-between gap-2 border-b px-5 py-3">
-        <h2 className="flex items-center gap-2.5 text-sm font-semibold">
-          {Icon ? (
-            <span
-              className={cn(
-                "flex size-6 items-center justify-center rounded-md",
-                tone === "brand" && "bg-brand-50 text-brand-700",
-                tone === "gold" && "bg-gold-50 text-gold-700",
-                tone === "urgent" && "bg-red-50 text-urgent",
-              )}
-            >
-              <Icon className="size-3.5" />
-            </span>
-          ) : null}
+      <header className="flex h-12 items-center justify-between gap-2 border-b px-5">
+        <h2 className="flex items-center gap-2.5 text-sm font-medium">
+          {Icon ? <Icon className={cn("size-4", tone === "urgent" ? "text-urgent" : "text-muted-foreground")} /> : null}
           {title}
-          {count !== undefined ? (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">{count}</span>
-          ) : null}
+          {count !== undefined ? <span className="font-mono text-xs text-muted-foreground tabular-nums">{count}</span> : null}
         </h2>
         {actions}
       </header>
-      <div className="px-5 py-3">{children}</div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   );
 }
@@ -117,9 +90,9 @@ function PanelLink({ href, children }: { href: string; children: React.ReactNode
   return (
     <Link
       href={href}
-      className="group inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary"
+      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:text-primary"
     >
-      {children} <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+      {children} <ArrowRight className="size-3" />
     </Link>
   );
 }
@@ -129,20 +102,15 @@ function RenewalRow({ lead, today, showAgent }: { lead: LeadWithAgent; today: st
   const label =
     days < 0 ? `${-days}d overdue` : days === 0 ? "Today" : days === 1 ? "Tomorrow" : `in ${days} days`;
   return (
-    <li className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-muted/60">
+    <li className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors duration-150 hover:bg-muted/60">
       <div
         className={cn(
-          "relative flex w-20 shrink-0 flex-col items-center rounded-lg border px-2 py-1 text-center",
+          "flex w-20 shrink-0 flex-col items-center rounded-md border px-2 py-1 text-center tabular-nums",
           days <= 0 ? "border-red-200 bg-red-50 text-urgent" : days <= 7 ? "border-amber-200 bg-amber-50 text-warning" : "bg-card",
         )}
       >
-        {days <= 0 ? (
-          <span aria-hidden="true" className="absolute -top-1 -right-1 size-2 rounded-full bg-urgent">
-            <span className="absolute inset-0 animate-ping-soft rounded-full bg-urgent" />
-          </span>
-        ) : null}
-        <span className="text-xs font-semibold">{label}</span>
-        <span className="text-[10px] opacity-80">{formatDate(lead.renewal_date)}</span>
+        <span className="text-xs font-medium">{label}</span>
+        <span className="text-[11px] whitespace-nowrap opacity-80">{formatDate(lead.renewal_date)}</span>
       </div>
       <div className="min-w-0 flex-1">
         <Link prefetch={false} href={`/leads/${lead.id}`} className="block truncate text-sm font-medium hover:text-primary hover:underline">
@@ -224,38 +192,33 @@ function UpcomingTimeline({ items, today }: { items: Upcoming[]; today: string }
         <li key={group.date}>
           <p
             className={cn(
-              "mb-1.5 text-[11px] font-semibold tracking-wide uppercase",
+              "mb-2 text-xs font-medium",
               group.date === today ? "text-brand-700" : "text-muted-foreground",
             )}
           >
             {dayHeading(group.date, today)}
           </p>
-          <ul className="relative space-y-1 border-l border-dashed border-border pl-4">
+          <ul className="relative space-y-1 border-l border-border pl-4">
             {group.items.map((item) => {
               const body = (
                 <>
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "absolute top-2.5 -left-[21px] size-2.5 rounded-full ring-4 ring-card",
+                      "absolute top-2.5 -left-5 size-2 rounded-full ring-4 ring-card",
                       item.kind === "renewal" ? "bg-gold-500" : "bg-brand-500",
                     )}
                   />
                   <span className="flex items-center gap-1.5">
-                    {item.kind === "renewal" ? (
-                      <RefreshCw className="size-3 shrink-0 text-gold-600" />
-                    ) : (
-                      <ListChecks className="size-3 shrink-0 text-brand-600" />
-                    )}
                     <span className="truncate text-sm font-medium group-hover:text-primary">{item.title}</span>
                   </span>
-                  <span className="block truncate pl-[18px] text-xs text-muted-foreground">{item.detail}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
                 </>
               );
               return (
                 <li key={item.key} className="relative">
                   {item.href ? (
-                    <Link href={item.href} className="group -mx-2 block rounded-md px-2 py-1 transition-colors hover:bg-muted/70">
+                    <Link href={item.href} className="group -mx-2 block rounded-md px-2 py-1 transition-colors duration-150 hover:bg-muted/70">
                       {body}
                     </Link>
                   ) : (
@@ -278,28 +241,28 @@ function RenewalRadar({
   counts: { overdue: number; today: number; week: number; month: number; upcoming: number };
 }) {
   const rows = [
-    { label: "Overdue", value: counts.overdue, bar: "bg-red-500", href: leadsHref({ renewal: "overdue", sort: "renewal_desc" }) },
-    { label: "Due today", value: counts.today, bar: "bg-orange-500", href: leadsHref({ renewal: "7", sort: "renewal_asc" }) },
-    { label: "Next 7 days", value: counts.week, bar: "bg-amber-400", href: leadsHref({ renewal: "7", sort: "renewal_asc" }) },
-    { label: "Next 30 days", value: counts.month, bar: "bg-gold-400", href: leadsHref({ renewal: "30", sort: "renewal_asc" }) },
-    { label: "Next 90 days", value: counts.upcoming, bar: "bg-brand-400", href: leadsHref({ renewal: "90", sort: "renewal_asc" }) },
+    { label: "Overdue", value: counts.overdue, bar: "bg-urgent", href: leadsHref({ renewal: "overdue", sort: "renewal_desc" }) },
+    { label: "Due today", value: counts.today, bar: "bg-gold-500", href: leadsHref({ renewal: "7", sort: "renewal_asc" }) },
+    { label: "Next 7 days", value: counts.week, bar: "bg-foreground/45", href: leadsHref({ renewal: "7", sort: "renewal_asc" }) },
+    { label: "Next 30 days", value: counts.month, bar: "bg-foreground/30", href: leadsHref({ renewal: "30", sort: "renewal_asc" }) },
+    { label: "Next 90 days", value: counts.upcoming, bar: "bg-foreground/20", href: leadsHref({ renewal: "90", sort: "renewal_asc" }) },
   ];
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
-    <ul className="space-y-2.5">
+    <ul className="space-y-3">
       {rows.map((row, i) => (
         <li key={row.label}>
           <Link href={row.href} className="group grid grid-cols-[88px_minmax(0,1fr)_36px] items-center gap-3 text-xs">
             <span className="text-muted-foreground group-hover:text-foreground">{row.label}</span>
-            <span className="h-2.5 overflow-hidden rounded-full bg-muted">
+            <span className="h-2 overflow-hidden rounded-full bg-muted">
               <span
                 className={cn("block h-full origin-left animate-grow-x rounded-full", row.bar)}
-                style={{ width: `${row.value === 0 ? 0 : Math.max(4, Math.round((row.value / max) * 100))}%`, animationDelay: `${i * 80}ms` }}
+                style={{ width: `${row.value === 0 ? 0 : Math.max(4, Math.round((row.value / max) * 100))}%`, animationDelay: `${i * 50}ms` }}
               />
             </span>
             <CountUp
               value={row.value}
-              className={cn("text-right font-semibold", row.label === "Overdue" && row.value > 0 && "text-urgent")}
+              className={cn("text-right font-mono tabular-nums", row.label === "Overdue" && row.value > 0 && "text-urgent")}
             />
           </Link>
         </li>
@@ -321,7 +284,7 @@ const STATUS_FIELDS: Record<LeadStatus, keyof AgentPipeline> = {
 function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
   if (agents.length === 0) return <p className="py-2 text-sm text-muted-foreground">No leads yet.</p>;
   return (
-    <ul className="space-y-3.5">
+    <ul className="space-y-3">
       {agents.map((agent, i) => {
         const initials = agent.agent_name
           .split(/\s+/)
@@ -339,7 +302,7 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
               <div className="flex items-center gap-2.5">
                 <span
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+                    "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-medium",
                     agent.agent_id ? "bg-brand-100 text-brand-800" : "bg-amber-100 text-amber-800",
                   )}
                 >
@@ -347,13 +310,11 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium group-hover:text-primary">{agent.agent_name}</span>
                 {agent.overdue_renewals > 0 ? (
-                  <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-urgent">
-                    {agent.overdue_renewals} overdue
-                  </span>
+                  <span className="text-xs text-urgent tabular-nums">{agent.overdue_renewals} overdue</span>
                 ) : null}
-                <span className="text-sm font-semibold tabular-nums">{agent.total}</span>
+                <span className="font-mono text-sm tabular-nums">{agent.total}</span>
               </div>
-              <div className="mt-1.5 ml-9.5 flex h-2 overflow-hidden rounded-full bg-muted">
+              <div className="mt-2 ml-9.5 flex h-2 overflow-hidden rounded-full bg-muted">
                 {LEAD_STATUSES.map((status) => {
                   const n = agent[STATUS_FIELDS[status]] as number;
                   return n > 0 ? (
@@ -361,12 +322,12 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
                       key={status}
                       title={`${status}: ${n}`}
                       className="h-full origin-left animate-grow-x"
-                      style={{ width: `${(n / agent.total) * 100}%`, background: STATUS_COLORS[status], animationDelay: `${i * 90}ms` }}
+                      style={{ width: `${(n / agent.total) * 100}%`, background: STATUS_COLORS[status], animationDelay: `${Math.min(i, 5) * 50}ms` }}
                     />
                   ) : null;
                 })}
               </div>
-              <p className="mt-1 ml-9.5 text-[11px] text-muted-foreground">
+              <p className="mt-1 ml-9.5 text-xs text-muted-foreground">
                 {agent.renewals_30d} renewals in 30 days · {agent.quoted} quoted
                 {winRate !== null ? ` · ${winRate}% win rate` : ""}
               </p>
@@ -411,7 +372,6 @@ export default async function MyDayPage() {
   const laterTasks = openEvents.filter((e) => at(e) >= Date.parse(tomorrowStart)).map((e) => toTask(e, today));
   const doneToday = day.doneToday.map((e) => toTask(e, today));
 
-  const firstName = profile.full_name.split(/\s+/)[0];
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const todaysWork = renewalsToday.length + overdueTasks.length + todayTasks.length;
   const checklistTotal = overdueTasks.length + todayTasks.length + doneToday.length;
@@ -449,17 +409,11 @@ export default async function MyDayPage() {
   return (
     <>
       {/* Hero: who, what today, how far through the checklist. */}
-      <section className="hero-band relative mb-6 overflow-hidden rounded-2xl px-6 py-6 text-white shadow-lift sm:px-8">
-        <div aria-hidden="true" className="grid-texture absolute inset-0" />
-        <BrandMark className="pointer-events-none absolute -top-10 right-40 hidden size-52 animate-float opacity-[0.08] md:block" />
-        <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <section className="hero-band mb-6 rounded-2xl px-6 py-6 text-white sm:px-8">
+        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0 space-y-2">
-            <p className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] text-gold-200 uppercase">
-              <CalendarRange className="size-3.5" /> {longDate} · {admin ? "Team overview" : "Your workspace"}
-            </p>
-            <h1 className="text-[28px] leading-tight font-semibold tracking-tight">
-              {greeting()}, <span className="text-gold-gradient">{firstName}</span>
-            </h1>
+            <p className="text-sm text-white/60">{admin ? "My Day · team overview" : "My Day"}</p>
+            <h1 className="text-[28px] leading-tight font-medium tracking-tight">{longDate}</h1>
             <p className="max-w-2xl text-sm text-white/75">
               {todaysWork === 0
                 ? "Nothing due today."
@@ -468,8 +422,8 @@ export default async function MyDayPage() {
                   }.`}{" "}
               {plural(day.counts.followUps, "follow-up")} and {plural(day.counts.quoted, "quote")} open in the pipeline.
             </p>
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button asChild className="bg-none bg-white text-brand-800 shadow-none hover:bg-gold-50 hover:from-transparent hover:to-transparent">
+            <div className="flex flex-wrap gap-2 pt-4">
+              <Button asChild className="bg-white text-brand-800 shadow-none hover:bg-gold-50">
                 <Link href="/leads/new">
                   <Plus />
                   New lead
@@ -477,13 +431,13 @@ export default async function MyDayPage() {
               </Button>
               <Button asChild variant="ghost" className="text-white ring-1 ring-white/20 hover:bg-white/10 hover:text-white">
                 <Link href="/intake">
-                  <Sparkles className="text-gold-300" />
+                  <ScanText />
                   AI intake
                 </Link>
               </Button>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-4 rounded-2xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/10 backdrop-blur-sm">
+          <div className="flex shrink-0 items-center gap-4 rounded-xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/10">
             <ProgressRing
               value={doneToday.length}
               max={checklistTotal}
@@ -493,12 +447,12 @@ export default async function MyDayPage() {
               barClassName="stroke-gold-300"
               label={`${doneToday.length} of ${checklistTotal} checklist items done today`}
             >
-              <span className="text-lg leading-none font-semibold">
+              <span className="text-lg leading-none font-medium tabular-nums">
                 {checklistTotal === 0 ? "—" : `${Math.round((doneToday.length / checklistTotal) * 100)}%`}
               </span>
             </ProgressRing>
             <div className="text-sm leading-snug">
-              <p className="font-semibold">Today&apos;s checklist</p>
+              <p className="font-medium">Today&apos;s checklist</p>
               <p className="text-white/70">
                 {doneToday.length} of {checklistTotal} done
               </p>
@@ -514,12 +468,11 @@ export default async function MyDayPage() {
         </div>
       </section>
 
-      <div className="stagger mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="stagger mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <StatCard
           label="Renewals this week"
           value={renewalsToday.length + renewalsWeek.length}
           href={leadsHref({ renewal: "7", sort: "renewal_asc" })}
-          icon={CalendarClock}
           tone="warning"
           quiet={renewalsToday.length + renewalsWeek.length === 0}
         />
@@ -527,24 +480,21 @@ export default async function MyDayPage() {
           label="Overdue renewals"
           value={day.counts.overdueRenewals}
           href={leadsHref({ renewal: "overdue", sort: "renewal_desc" })}
-          icon={AlarmClock}
           tone="urgent"
           quiet={day.counts.overdueRenewals === 0}
         />
-        <StatCard label="Overdue tasks" value={overdueTasks.length} href="#tasks" icon={ListChecks} tone="urgent" quiet={overdueTasks.length === 0} />
+        <StatCard label="Overdue tasks" value={overdueTasks.length} href="#tasks" tone="urgent" quiet={overdueTasks.length === 0} />
         <StatCard
           label="Pending follow-ups"
           value={day.counts.followUps}
           href={leadsHref({ status: "Follow-up" })}
-          icon={PhoneCall}
           tone="gold"
         />
-        <StatCard label="Quoted" value={day.counts.quoted} href={leadsHref({ status: "Quoted" })} icon={FileText} tone="brand" />
+        <StatCard label="Quoted" value={day.counts.quoted} href={leadsHref({ status: "Quoted" })} tone="brand" />
         <StatCard
           label="Active clients"
           value={day.counts.activeClients}
           href={leadsHref({ status: "Active Client" })}
-          icon={BadgeCheck}
           tone="success"
         />
       </div>
@@ -573,7 +523,7 @@ export default async function MyDayPage() {
                     <div key={group.title}>
                       <h3
                         className={cn(
-                          "pt-1 text-[11px] font-semibold tracking-wide uppercase",
+                          "pb-1 text-xs font-medium",
                           group.title === "Overdue" ? "text-urgent" : "text-muted-foreground",
                         )}
                       >
@@ -606,17 +556,17 @@ export default async function MyDayPage() {
                 />
                 {overdueTasks.length > 0 ? (
                   <div>
-                    <h3 className="text-xs font-semibold tracking-wide text-urgent uppercase">Overdue</h3>
+                    <h3 className="text-xs font-medium text-urgent">Overdue</h3>
                     <TaskList tasks={overdueTasks} emptyText="" />
                   </div>
                 ) : null}
                 <div>
-                  <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Today</h3>
+                  <h3 className="text-xs font-medium text-muted-foreground">Today</h3>
                   <TaskList tasks={[...todayTasks, ...doneToday]} emptyText="Nothing planned for today." />
                 </div>
                 {laterTasks.length > 0 ? (
                   <div>
-                    <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">This week</h3>
+                    <h3 className="text-xs font-medium text-muted-foreground">This week</h3>
                     <TaskList tasks={laterTasks} emptyText="" />
                   </div>
                 ) : null}
@@ -634,7 +584,7 @@ export default async function MyDayPage() {
               ) : (
                 <ul className="divide-y">
                   {unread.map((note) => (
-                    <li key={note.id} className="py-2.5">
+                    <li key={note.id} className="py-2">
                       <Link prefetch={false} href={`/leads/${note.lead_id}`} className="group block">
                         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="size-1.5 shrink-0 rounded-full bg-gold-500" aria-hidden="true" />
@@ -666,7 +616,7 @@ export default async function MyDayPage() {
               ) : (
                 <ul className="divide-y">
                   {unassigned.map((lead) => (
-                    <li key={lead.id} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center">
+                    <li key={lead.id} className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center">
                       <div className="min-w-0 flex-1">
                         <Link
                           prefetch={false}
@@ -697,10 +647,7 @@ export default async function MyDayPage() {
             ) : (
               <ul className="divide-y">
                 {recent.map((lead) => (
-                  <li key={lead.id} className="flex items-center gap-3 py-2.5">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
-                      <UserCheck className="size-3.5" />
-                    </span>
+                  <li key={lead.id} className="flex items-center gap-3 py-2">
                     <div className="min-w-0 flex-1">
                       <Link
                         prefetch={false}
@@ -742,11 +689,11 @@ export default async function MyDayPage() {
               />
               <div className="mt-4 grid grid-cols-3 gap-2 border-t pt-3 text-center">
                 <div>
-                  <CountUp value={openLeads} className="block text-base font-semibold" />
-                  <span className="text-[11px] text-muted-foreground">Open</span>
+                  <CountUp value={openLeads} className="block text-base font-medium" />
+                  <span className="text-xs text-muted-foreground">Open</span>
                 </div>
                 <div>
-                  <span className="block text-base font-semibold tabular-nums">
+                  <span className="block text-base font-medium tabular-nums">
                     {(pipeline.by_status["Closed Won"] ?? 0) + (pipeline.by_status["Closed Lost"] ?? 0) === 0
                       ? "—"
                       : `${Math.round(
@@ -755,14 +702,14 @@ export default async function MyDayPage() {
                             100,
                         )}%`}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">Win rate</span>
+                  <span className="text-xs text-muted-foreground">Win rate</span>
                 </div>
                 <div>
                   <CountUp
                     value={pipeline.duplicates}
-                    className={cn("block text-base font-semibold", pipeline.duplicates > 0 && "text-urgent")}
+                    className={cn("block text-base font-medium", pipeline.duplicates > 0 && "text-urgent")}
                   />
-                  <span className="text-[11px] text-muted-foreground">Duplicates</span>
+                  <span className="text-xs text-muted-foreground">Duplicates</span>
                 </div>
               </div>
             </div>

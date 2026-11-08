@@ -45,14 +45,14 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
       >
         <Bell />
         {unread > 0 ? (
-          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-white">
+          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-destructive text-[11px] font-medium text-white tabular-nums">
             {unread > 9 ? "9+" : unread}
           </span>
         ) : null}
       </Button>
 
       {open ? (
-        <div className="absolute bottom-full left-0 z-50 mb-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg">
+        <div className="absolute bottom-full left-0 z-50 mb-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lift">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <p className="text-sm font-semibold">Renewal reminders</p>
             {unread > 0 ? (

@@ -7,7 +7,7 @@ import {
   Globe,
   IndianRupee,
   KanbanSquare,
-  Sparkles,
+  ScanText,
   Sun,
   Users,
 } from "lucide-react";
@@ -53,7 +53,7 @@ export const NAV_SECTIONS: NavSection[] = [
       {
         title: "AI Intake",
         href: "/intake",
-        icon: Sparkles,
+        icon: ScanText,
         description: "Turn notes, speech or a visiting card photo into a structured lead.",
       },
       {
