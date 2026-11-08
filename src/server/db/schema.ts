@@ -105,6 +105,8 @@ export const profiles = sqliteTable(
     full_name: text("full_name").notNull(),
     role: text("role", { enum: USER_ROLES }).notNull().default("AGENT"),
     is_active: bool("is_active").notNull().default(true),
+    /** Set when an admin creates the account or resets its password; the user must pick their own before anything else. */
+    must_change_password: bool("must_change_password").notNull().default(false),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
@@ -343,6 +345,31 @@ export const aiUsageLogs = sqliteTable(
     index("ai_usage_logs_created_idx").on(t.created_at),
     check("ai_usage_logs_feature", sql`${t.feature_name} in (${inList(AI_FEATURES)})`),
     check("ai_usage_logs_tokens", sql`${t.input_tokens} >= 0 and ${t.output_tokens} >= 0 and ${t.cost_inr} >= 0`),
+  ],
+);
+
+/**
+ * Failed sign-ins (wrong password, unknown email, disabled account), for the
+ * admins' Team page and the failed sign-in alert (src/server/data/sign-in-failures.ts).
+ * Attempts the rate limit already blocked are only logged, not stored, so a
+ * flood cannot fill the table.
+ */
+export const signInFailures = sqliteTable(
+  "sign_in_failures",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    ip: text("ip"),
+    user_agent: text("user_agent"),
+    reason: text("reason", { enum: ["invalid", "inactive"] }).notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("sign_in_failures_created_idx").on(t.created_at),
+    index("sign_in_failures_email_idx").on(t.email, t.created_at),
+    index("sign_in_failures_ip_idx").on(t.ip, t.created_at),
+    check("sign_in_failures_reason", sql`${t.reason} in ('invalid', 'inactive')`),
+    check("sign_in_failures_email_len", sql`length(${t.email}) <= 320`),
   ],
 );
 

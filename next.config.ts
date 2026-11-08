@@ -1,7 +1,13 @@
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 import type { NextConfig } from "next";
 
+import { SECURITY_HEADERS } from "./src/lib/security-headers";
+
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+  },
   experimental: {
     serverActions: {
       // Sheet imports and visiting card photos are posted to server actions.

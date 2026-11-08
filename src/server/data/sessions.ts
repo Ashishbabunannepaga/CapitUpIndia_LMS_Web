@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { authAccount, profiles } from "../db/schema";
 import { isLegacyPasswordHash } from "../password";
 import type { DataContext } from "./context";
+import { recordSignInFailure } from "./sign-in-failures";
 
 // Signing in and out for the login form and the sign-out route. Both go
 // through Better Auth's HTTP handler (not auth.api), so the sign-in rate
@@ -48,8 +49,15 @@ export async function signInWithPassword(
   const response = await ctx.auth.handler(
     authRequest("/sign-in/email", info, { body: { ...credentials, rememberMe: true } }),
   );
-  if (response.status === 429) return { status: "rate-limited" };
-  if (!response.ok) return { status: "invalid" };
+  const failure = { email: credentials.email, ip: info.ip, userAgent: info.userAgent ?? null };
+  if (response.status === 429) {
+    await recordSignInFailure(ctx, { ...failure, reason: "rate-limited" });
+    return { status: "rate-limited" };
+  }
+  if (!response.ok) {
+    await recordSignInFailure(ctx, { ...failure, reason: "invalid" });
+    return { status: "invalid" };
+  }
 
   const body = (await response.json()) as { token?: string; user?: { id?: string } };
   const profile = body.user?.id
@@ -60,6 +68,7 @@ export async function signInWithPassword(
       const auth = await ctx.auth.$context;
       await auth.internalAdapter.deleteSession(body.token);
     }
+    await recordSignInFailure(ctx, { ...failure, reason: "inactive" });
     return { status: "inactive" };
   }
   await upgradeLegacyPassword(ctx, profile.id, credentials.password);
@@ -89,4 +98,32 @@ async function upgradeLegacyPassword(ctx: DataContext, userId: string, password:
 export async function signOutSession(ctx: DataContext, cookie: string, info: RequestInfo): Promise<string[]> {
   const response = await ctx.auth.handler(authRequest("/sign-out", info, { cookie }));
   return response.headers.getSetCookie();
+}
+
+/**
+ * Runs a request to the public Better Auth endpoint (/api/auth/*) and records
+ * failed email sign-ins made there directly, so a script that skips the login
+ * form is still logged and alerted on.
+ */
+export async function handleAuthRequest(ctx: DataContext, request: Request): Promise<Response> {
+  const isSignIn = request.method === "POST" && new URL(request.url).pathname.endsWith("/sign-in/email");
+  if (!isSignIn) return ctx.auth.handler(request);
+
+  let email = "";
+  try {
+    const body = (await request.clone().json()) as { email?: unknown };
+    if (typeof body.email === "string") email = body.email;
+  } catch {
+    // Not JSON; Better Auth will reject it.
+  }
+  const response = await ctx.auth.handler(request);
+  if ((response.status === 429 || response.status === 401) && email) {
+    await recordSignInFailure(ctx, {
+      email,
+      ip: request.headers.get("cf-connecting-ip"),
+      userAgent: request.headers.get("user-agent"),
+      reason: response.status === 429 ? "rate-limited" : "invalid",
+    });
+  }
+  return response;
 }

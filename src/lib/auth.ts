@@ -38,17 +38,30 @@ export async function requireAdmin(): Promise<Profile> {
 
 export type Session = { ctx: DataContext; actor: Actor };
 
-/** For pages: the data context and active user, or a redirect to sign in. */
+/**
+ * For pages: the data context and active user, or a redirect to sign in. A
+ * user still on a password an admin set is sent to /change-password first.
+ */
 export async function requireSession(): Promise<Session> {
+  const session = await requireSessionForPasswordChange();
+  if (session.actor.must_change_password) redirect("/change-password");
+  return session;
+}
+
+/** Like requireSession, but lets through a user who must change their password. Only for /change-password. */
+export async function requireSessionForPasswordChange(): Promise<Session> {
   const { ctx, result } = await resolveRequest();
   if (result.status === "ok") return { ctx, actor: result.actor };
   redirect(result.status === "inactive" ? "/auth/signout?reason=inactive" : "/login");
 }
 
-/** For server actions: the data context and active user, or null when signed out or inactive. */
+/**
+ * For server actions and routes: the data context and active user, or null
+ * when signed out, inactive, or still on a password an admin set.
+ */
 export async function getSession(): Promise<Session | null> {
   const { ctx, result } = await resolveRequest();
-  return result.status === "ok" ? { ctx, actor: result.actor } : null;
+  return result.status === "ok" && !result.actor.must_change_password ? { ctx, actor: result.actor } : null;
 }
 
 export function isAdmin(profile: Pick<Profile, "role">): boolean {
