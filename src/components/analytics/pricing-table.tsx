@@ -33,7 +33,7 @@ export function PricingTable({ models, usdToInr }: { models: Model[]; usdToInr: 
     <div className="space-y-5">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[620px] text-sm">
-          <thead className="text-left text-xs tracking-wide text-muted-foreground uppercase">
+          <thead className="text-left text-xs font-medium text-muted-foreground">
             <tr className="border-b">
               <th className="py-2 pr-3">Model</th>
               <th className="px-3 py-2">Input $ / 1M</th>

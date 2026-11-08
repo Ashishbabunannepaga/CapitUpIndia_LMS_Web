@@ -2,16 +2,11 @@ import type { Metadata } from "next";
 
 import { PageHeader } from "@/components/app-shell/page-header";
 import {
-  AlarmClock,
   BarChart3,
-  CalendarClock,
   CalendarRange,
   FilePlus2,
-  Layers,
   PieChart,
   Shapes,
-  Target,
-  Trophy,
   Users,
   Building2,
 } from "lucide-react";
@@ -57,11 +52,10 @@ export default async function AnalyticsPage() {
       />
 
       <div className="stagger mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="Leads" value={data.total} href={leadsHref({})} icon={Layers} tone="brand" />
+        <StatCard label="Leads" value={data.total} href={leadsHref({})} tone="brand" />
         <StatCard
           label="Renewals overdue"
           value={data.renewals.overdue}
-          icon={AlarmClock}
           tone="urgent"
           quiet={data.renewals.overdue === 0}
           href={leadsHref({ renewal: "overdue", sort: "renewal_desc" })}
@@ -69,23 +63,20 @@ export default async function AnalyticsPage() {
         <StatCard
           label="Renewals this week"
           value={data.renewals.week}
-          icon={CalendarClock}
           tone="warning"
           href={leadsHref({ renewal: "7", sort: "renewal_asc" })}
         />
-        <StatCard label="Renewals in 30 days" value={data.renewals.month} icon={CalendarRange} tone="gold" href={leadsHref({ renewal: "30", sort: "renewal_asc" })} />
+        <StatCard label="Renewals in 30 days" value={data.renewals.month} tone="gold" href={leadsHref({ renewal: "30", sort: "renewal_asc" })} />
         <StatCard
           label="Win rate"
           value={percent(won, closed)}
           hint={`${formatCount(won)} won of ${formatCount(closed)} closed`}
-          icon={Trophy}
           tone="success"
         />
         <StatCard
           label="Quote conversion"
           value={percent(won, quotedEver)}
           hint={`${formatCount(won)} of ${formatCount(quotedEver)} quoted`}
-          icon={Target}
           tone="brand"
         />
       </div>
@@ -123,7 +114,7 @@ export default async function AnalyticsPage() {
         </Panel>
 
         <Panel title="Renewals by month" description="Open leads with a renewal date in the next 12 months" icon={CalendarRange}>
-          <MonthBars data={data.renewals_by_month} colorClass="bg-gradient-to-t from-gold-600 to-gold-300" />
+          <MonthBars data={data.renewals_by_month} colorClass="bg-gold-500" />
         </Panel>
 
         <Panel title="Leads created" description="Last six months" icon={FilePlus2}>
@@ -141,7 +132,7 @@ export default async function AnalyticsPage() {
             data={BUSINESS_TYPES.map((t) => ({
               label: t,
               value: data.by_business[t] ?? 0,
-              colorClass: "bg-gradient-to-r from-gold-500 to-gold-300",
+              colorClass: "bg-gold-500",
             }))}
           />
         </Panel>
@@ -153,7 +144,7 @@ export default async function AnalyticsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
-              <thead className="text-left text-[11px] tracking-wide text-muted-foreground uppercase">
+              <thead className="text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b">
                   <th className="py-2 pr-3">Agent</th>
                   <th className="px-3 py-2 text-right">Leads</th>
