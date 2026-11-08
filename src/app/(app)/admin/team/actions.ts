@@ -30,7 +30,7 @@ export async function addTeamMember(formData: FormData): Promise<TeamResult> {
     password: formData.get("password") ?? "",
     role: formData.get("role") || "AGENT",
   };
-  return run(({ ctx, actor }) => createUser(ctx, actor, input), "Account created. Share the password with them in person.");
+  return run(({ ctx, actor }) => createUser(ctx, actor, input), "Account created. Share the password with them in person; they will choose their own when they first sign in.");
 }
 
 export async function changeMemberRole(userId: string, role: string): Promise<TeamResult> {
@@ -44,6 +44,6 @@ export async function changeMemberActive(userId: string, active: boolean): Promi
 export async function resetMemberPassword(userId: string, formData: FormData): Promise<TeamResult> {
   return run(
     ({ ctx, actor }) => resetPassword(ctx, actor, userId, formData.get("password") ?? ""),
-    "Password changed. They have been signed out everywhere.",
+    "Password changed. They have been signed out everywhere and will choose their own at next sign-in.",
   );
 }

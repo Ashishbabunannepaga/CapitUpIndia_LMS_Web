@@ -36,6 +36,13 @@
       "when": 1793788140460,
       "tag": "0004_great_lyja",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794120453628,
+      "tag": "0005_dazzling_silver_surfer",
+      "breakpoints": true
     }
   ]
 }
