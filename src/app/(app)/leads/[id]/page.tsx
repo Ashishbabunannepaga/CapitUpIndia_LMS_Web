@@ -59,7 +59,7 @@ function Panel({
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</dt>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="text-sm">{children}</dd>
     </div>
   );
@@ -86,7 +86,7 @@ function PocCard({
   const mail = mailtoHref(email);
   return (
     <div className="rounded-lg border p-4">
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       {empty ? (
         <p className="mt-2 text-sm text-muted-foreground">Empty</p>
       ) : (
@@ -381,7 +381,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                         <span className="font-medium text-foreground">{note.agent_name}</span> -{" "}
                         {formatNoteTimestamp(note.created_at)}
                       </span>
-                      {unreadIds.has(note.id) ? <Badge className="px-1.5 py-0 text-[10px]">New</Badge> : null}
+                      {unreadIds.has(note.id) ? <Badge className="px-1.5 py-0 text-[11px]">New</Badge> : null}
                     </p>
                     <p className="whitespace-pre-wrap">{note.content}</p>
                   </li>

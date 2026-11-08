@@ -6,7 +6,6 @@ import {
   ArrowRight,
   BadgeCheck,
   CalendarClock,
-  CalendarRange,
   CircleDot,
   FileText,
   ListChecks,
@@ -16,14 +15,13 @@ import {
   Plus,
   Radar,
   RefreshCw,
-  Sparkles,
+  ScanText,
   UserCheck,
   Users,
   UserX,
 } from "lucide-react";
 
 import { Donut, ProgressRing, StatCard } from "@/components/analytics/charts";
-import { BrandMark } from "@/components/brand/brand";
 import { CountUp } from "@/components/ui/count-up";
 import { DuplicateBadge, StatusBadge } from "@/components/leads/lead-badges";
 import { AssignAgentSelect } from "@/components/leads/lead-detail-actions";
@@ -52,7 +50,6 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "My Day" };
 
 
-const hourFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", hourCycle: "h23" });
 const longDateFormat = new Intl.DateTimeFormat("en-IN", {
   weekday: "long",
   day: "numeric",
@@ -60,13 +57,6 @@ const longDateFormat = new Intl.DateTimeFormat("en-IN", {
   year: "numeric",
   timeZone: "Asia/Kolkata",
 });
-
-function greeting(): string {
-  const hour = Number(hourFormat.format(new Date()));
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
 
 function Panel({
   title,
@@ -87,28 +77,17 @@ function Panel({
 }) {
   return (
     <section className={cn("surface overflow-hidden", className)}>
-      <header className="flex items-center justify-between gap-2 border-b px-5 py-3">
-        <h2 className="flex items-center gap-2.5 text-sm font-semibold">
+      <header className="flex items-center justify-between gap-2 border-b px-5 py-4">
+        <h2 className="flex items-center gap-2.5 text-sm font-medium">
           {Icon ? (
-            <span
-              className={cn(
-                "flex size-6 items-center justify-center rounded-md",
-                tone === "brand" && "bg-brand-50 text-brand-700",
-                tone === "gold" && "bg-gold-50 text-gold-700",
-                tone === "urgent" && "bg-red-50 text-urgent",
-              )}
-            >
-              <Icon className="size-3.5" />
-            </span>
+            <Icon className={cn("size-4 shrink-0", tone === "urgent" ? "text-urgent" : "text-muted-foreground")} strokeWidth={1.75} />
           ) : null}
           {title}
-          {count !== undefined ? (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">{count}</span>
-          ) : null}
+          {count !== undefined ? <span className="font-mono text-xs text-muted-foreground tabular-nums">{count}</span> : null}
         </h2>
         {actions}
       </header>
-      <div className="px-5 py-3">{children}</div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   );
 }
@@ -119,7 +98,7 @@ function PanelLink({ href, children }: { href: string; children: React.ReactNode
       href={href}
       className="group inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary"
     >
-      {children} <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+      {children} <ArrowRight className="size-3" />
     </Link>
   );
 }
@@ -136,13 +115,8 @@ function RenewalRow({ lead, today, showAgent }: { lead: LeadWithAgent; today: st
           days <= 0 ? "border-red-200 bg-red-50 text-urgent" : days <= 7 ? "border-amber-200 bg-amber-50 text-warning" : "bg-card",
         )}
       >
-        {days <= 0 ? (
-          <span aria-hidden="true" className="absolute -top-1 -right-1 size-2 rounded-full bg-urgent">
-            <span className="absolute inset-0 animate-ping-soft rounded-full bg-urgent" />
-          </span>
-        ) : null}
         <span className="text-xs font-semibold">{label}</span>
-        <span className="text-[10px] opacity-80">{formatDate(lead.renewal_date)}</span>
+        <span className="text-[11px] whitespace-nowrap tabular-nums opacity-80">{formatDate(lead.renewal_date)}</span>
       </div>
       <div className="min-w-0 flex-1">
         <Link prefetch={false} href={`/leads/${lead.id}`} className="block truncate text-sm font-medium hover:text-primary hover:underline">
@@ -224,7 +198,7 @@ function UpcomingTimeline({ items, today }: { items: Upcoming[]; today: string }
         <li key={group.date}>
           <p
             className={cn(
-              "mb-1.5 text-[11px] font-semibold tracking-wide uppercase",
+              "mb-2 text-xs font-medium",
               group.date === today ? "text-brand-700" : "text-muted-foreground",
             )}
           >
@@ -243,9 +217,9 @@ function UpcomingTimeline({ items, today }: { items: Upcoming[]; today: string }
                   />
                   <span className="flex items-center gap-1.5">
                     {item.kind === "renewal" ? (
-                      <RefreshCw className="size-3 shrink-0 text-gold-600" />
+                      <RefreshCw className="size-3 shrink-0 text-muted-foreground" />
                     ) : (
-                      <ListChecks className="size-3 shrink-0 text-brand-600" />
+                      <ListChecks className="size-3 shrink-0 text-muted-foreground" />
                     )}
                     <span className="truncate text-sm font-medium group-hover:text-primary">{item.title}</span>
                   </span>
@@ -339,7 +313,7 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
               <div className="flex items-center gap-2.5">
                 <span
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+                    "flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-medium",
                     agent.agent_id ? "bg-brand-100 text-brand-800" : "bg-amber-100 text-amber-800",
                   )}
                 >
@@ -347,7 +321,7 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium group-hover:text-primary">{agent.agent_name}</span>
                 {agent.overdue_renewals > 0 ? (
-                  <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-urgent">
+                  <span className="text-xs text-urgent tabular-nums">
                     {agent.overdue_renewals} overdue
                   </span>
                 ) : null}
@@ -366,7 +340,7 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
                   ) : null;
                 })}
               </div>
-              <p className="mt-1 ml-9.5 text-[11px] text-muted-foreground">
+              <p className="mt-1 ml-9.5 text-xs text-muted-foreground">
                 {agent.renewals_30d} renewals in 30 days · {agent.quoted} quoted
                 {winRate !== null ? ` · ${winRate}% win rate` : ""}
               </p>
@@ -449,17 +423,13 @@ export default async function MyDayPage() {
   return (
     <>
       {/* Hero: who, what today, how far through the checklist. */}
-      <section className="hero-band relative mb-6 overflow-hidden rounded-2xl px-6 py-6 text-white shadow-lift sm:px-8">
-        <div aria-hidden="true" className="grid-texture absolute inset-0" />
-        <BrandMark className="pointer-events-none absolute -top-10 right-40 hidden size-52 animate-float opacity-[0.08] md:block" />
-        <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <section className="hero-band mb-6 rounded-2xl px-6 py-6 text-white sm:px-8">
+        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0 space-y-2">
-            <p className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] text-gold-200 uppercase">
-              <CalendarRange className="size-3.5" /> {longDate} · {admin ? "Team overview" : "Your workspace"}
+            <p className="text-sm text-white/60">
+              {admin ? "Team overview" : "My Day"} · {firstName}
             </p>
-            <h1 className="text-[28px] leading-tight font-semibold tracking-tight">
-              {greeting()}, <span className="text-gold-gradient">{firstName}</span>
-            </h1>
+            <h1 className="text-[28px] leading-tight font-medium tracking-tight">{longDate}</h1>
             <p className="max-w-2xl text-sm text-white/75">
               {todaysWork === 0
                 ? "Nothing due today."
@@ -469,7 +439,7 @@ export default async function MyDayPage() {
               {plural(day.counts.followUps, "follow-up")} and {plural(day.counts.quoted, "quote")} open in the pipeline.
             </p>
             <div className="flex flex-wrap gap-2 pt-2">
-              <Button asChild className="bg-none bg-white text-brand-800 shadow-none hover:bg-gold-50 hover:from-transparent hover:to-transparent">
+              <Button asChild className="bg-white text-brand-900 hover:bg-white/90">
                 <Link href="/leads/new">
                   <Plus />
                   New lead
@@ -477,13 +447,13 @@ export default async function MyDayPage() {
               </Button>
               <Button asChild variant="ghost" className="text-white ring-1 ring-white/20 hover:bg-white/10 hover:text-white">
                 <Link href="/intake">
-                  <Sparkles className="text-gold-300" />
+                  <ScanText />
                   AI intake
                 </Link>
               </Button>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-4 rounded-2xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/10 backdrop-blur-sm">
+          <div className="flex shrink-0 items-center gap-4 rounded-xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/10">
             <ProgressRing
               value={doneToday.length}
               max={checklistTotal}
@@ -493,12 +463,12 @@ export default async function MyDayPage() {
               barClassName="stroke-gold-300"
               label={`${doneToday.length} of ${checklistTotal} checklist items done today`}
             >
-              <span className="text-lg leading-none font-semibold">
+              <span className="text-lg leading-none font-medium tabular-nums">
                 {checklistTotal === 0 ? "—" : `${Math.round((doneToday.length / checklistTotal) * 100)}%`}
               </span>
             </ProgressRing>
             <div className="text-sm leading-snug">
-              <p className="font-semibold">Today&apos;s checklist</p>
+              <p className="font-medium">Today&apos;s checklist</p>
               <p className="text-white/70">
                 {doneToday.length} of {checklistTotal} done
               </p>
@@ -573,7 +543,7 @@ export default async function MyDayPage() {
                     <div key={group.title}>
                       <h3
                         className={cn(
-                          "pt-1 text-[11px] font-semibold tracking-wide uppercase",
+                          "pt-2 text-xs font-medium",
                           group.title === "Overdue" ? "text-urgent" : "text-muted-foreground",
                         )}
                       >
@@ -606,17 +576,17 @@ export default async function MyDayPage() {
                 />
                 {overdueTasks.length > 0 ? (
                   <div>
-                    <h3 className="text-xs font-semibold tracking-wide text-urgent uppercase">Overdue</h3>
+                    <h3 className="text-xs font-medium text-urgent">Overdue</h3>
                     <TaskList tasks={overdueTasks} emptyText="" />
                   </div>
                 ) : null}
                 <div>
-                  <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Today</h3>
+                  <h3 className="text-xs font-medium text-muted-foreground">Today</h3>
                   <TaskList tasks={[...todayTasks, ...doneToday]} emptyText="Nothing planned for today." />
                 </div>
                 {laterTasks.length > 0 ? (
                   <div>
-                    <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">This week</h3>
+                    <h3 className="text-xs font-medium text-muted-foreground">This week</h3>
                     <TaskList tasks={laterTasks} emptyText="" />
                   </div>
                 ) : null}
@@ -742,11 +712,11 @@ export default async function MyDayPage() {
               />
               <div className="mt-4 grid grid-cols-3 gap-2 border-t pt-3 text-center">
                 <div>
-                  <CountUp value={openLeads} className="block text-base font-semibold" />
-                  <span className="text-[11px] text-muted-foreground">Open</span>
+                  <CountUp value={openLeads} className="block text-base font-medium tabular-nums" />
+                  <span className="text-xs text-muted-foreground">Open</span>
                 </div>
                 <div>
-                  <span className="block text-base font-semibold tabular-nums">
+                  <span className="block text-base font-medium tabular-nums">
                     {(pipeline.by_status["Closed Won"] ?? 0) + (pipeline.by_status["Closed Lost"] ?? 0) === 0
                       ? "—"
                       : `${Math.round(
@@ -755,14 +725,14 @@ export default async function MyDayPage() {
                             100,
                         )}%`}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">Win rate</span>
+                  <span className="text-xs text-muted-foreground">Win rate</span>
                 </div>
                 <div>
                   <CountUp
                     value={pipeline.duplicates}
-                    className={cn("block text-base font-semibold", pipeline.duplicates > 0 && "text-urgent")}
+                    className={cn("block text-base font-medium tabular-nums", pipeline.duplicates > 0 && "text-urgent")}
                   />
-                  <span className="text-[11px] text-muted-foreground">Duplicates</span>
+                  <span className="text-xs text-muted-foreground">Duplicates</span>
                 </div>
               </div>
             </div>

@@ -13,31 +13,15 @@ export type Tone = "default" | "urgent" | "warning" | "success" | "brand" | "gol
 
 const monthShortFormat = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" });
 
-const TONE_ICON: Record<Tone, string> = {
-  default: "bg-muted text-muted-foreground",
-  brand: "bg-brand-50 text-brand-700 ring-brand-100",
-  gold: "bg-gold-50 text-gold-700 ring-gold-100",
-  urgent: "bg-red-50 text-urgent ring-red-100",
-  warning: "bg-amber-50 text-warning ring-amber-100",
-  success: "bg-emerald-50 text-success ring-emerald-100",
-};
-
+// Stat figures stay in the text colour; only a number that needs action
+// (overdue, at risk) takes the semantic colour.
 const TONE_VALUE: Record<Tone, string> = {
   default: "",
-  brand: "text-brand-800",
-  gold: "text-gold-700",
+  brand: "",
+  gold: "",
   urgent: "text-urgent",
   warning: "text-warning",
-  success: "text-success",
-};
-
-const TONE_GLOW: Record<Tone, string> = {
-  default: "from-slate-200/0",
-  brand: "from-brand-200/50",
-  gold: "from-gold-200/60",
-  urgent: "from-red-200/50",
-  warning: "from-amber-200/50",
-  success: "from-emerald-200/50",
+  success: "",
 };
 
 export function StatCard({
@@ -45,7 +29,6 @@ export function StatCard({
   value,
   hint,
   href,
-  icon: Icon,
   tone = "default",
   quiet = false,
 }: {
@@ -53,6 +36,7 @@ export function StatCard({
   value: string | number;
   hint?: string;
   href?: string;
+  /** Accepted for older callers; stat cards show the number, not an icon. */
   icon?: LucideIcon;
   tone?: Tone;
   /** A zero that needs no attention: drop the alarm colour. */
@@ -61,30 +45,16 @@ export function StatCard({
   const t = quiet ? "default" : tone;
   const body = (
     <>
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute -top-10 -right-10 size-28 rounded-full bg-gradient-to-br to-transparent opacity-70 blur-2xl transition-opacity group-hover:opacity-100",
-          TONE_GLOW[t],
-        )}
-      />
-      <div className="relative flex items-start justify-between gap-3">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        {Icon ? (
-          <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-transparent", TONE_ICON[t])}>
-            <Icon className="size-4" />
-          </span>
-        ) : null}
-      </div>
-      <p className={cn("relative mt-2 text-[28px] leading-none font-semibold tracking-tight tabular-nums", TONE_VALUE[t])}>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className={cn("mt-3 text-[28px] leading-none font-medium tracking-tight tabular-nums", TONE_VALUE[t])}>
         {typeof value === "number" ? <CountUp value={value} /> : value}
       </p>
-      {hint ? <p className="relative mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-2 text-xs text-muted-foreground">{hint}</p> : null}
     </>
   );
-  const className = "group surface relative block overflow-hidden p-4";
+  const className = "surface block p-5";
   return href ? (
-    <Link href={href} className={cn(className, "lift hover:border-brand-200")}>
+    <Link href={href} className={cn(className, "lift hover:border-brand-200 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none")}>
       {body}
     </Link>
   ) : (
@@ -111,15 +81,11 @@ export function Panel({
 }) {
   return (
     <section className={cn("surface overflow-hidden", className)}>
-      <header className="flex items-start justify-between gap-3 border-b px-5 py-3.5">
+      <header className="flex items-start justify-between gap-3 border-b px-5 py-4">
         <div className="flex min-w-0 items-start gap-2.5">
-          {Icon ? (
-            <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700">
-              <Icon className="size-3.5" />
-            </span>
-          ) : null}
+          {Icon ? <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} /> : null}
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">{title}</h2>
+            <h2 className="text-sm font-medium">{title}</h2>
             {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
           </div>
         </div>
@@ -160,7 +126,7 @@ export function BarList({ data, emptyText = "No data yet." }: { data: BarDatum[]
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className={cn("h-full origin-left animate-grow-x rounded-full", item.colorClass ?? "bg-gradient-to-r from-brand-500 to-brand-400")}
+              className={cn("h-full origin-left animate-grow-x rounded-full", item.colorClass ?? "bg-brand-500")}
               style={{ width: `${Math.round((item.value / max) * 100)}%`, animationDelay: `${i * 70}ms` }}
             />
           </div>
@@ -173,7 +139,7 @@ export function BarList({ data, emptyText = "No data yet." }: { data: BarDatum[]
 /** Monthly columns, for renewals and leads created. */
 export function MonthBars({
   data,
-  colorClass = "bg-gradient-to-t from-brand-600 to-brand-400",
+  colorClass = "bg-brand-500",
 }: {
   data: { month: string; count: number }[];
   colorClass?: string;
@@ -184,7 +150,7 @@ export function MonthBars({
     <div className="flex items-end gap-1.5" role="img" aria-label={data.map((d) => `${label(d.month)}: ${d.count}`).join(", ")}>
       {data.map((item, i) => (
         <div key={item.month} className="group flex min-w-0 flex-1 flex-col items-center gap-1">
-          <span className="text-[10px] font-medium text-muted-foreground tabular-nums group-hover:text-foreground">
+          <span className="font-mono text-[11px] text-muted-foreground tabular-nums group-hover:text-foreground">
             {item.count || ""}
           </span>
           <div
@@ -194,7 +160,7 @@ export function MonthBars({
             )}
             style={{ height: `${Math.max(3, Math.round((item.count / max) * 110))}px`, animationDelay: `${i * 45}ms` }}
           />
-          <span className="truncate text-[10px] text-muted-foreground">{label(item.month)}</span>
+          <span className="truncate font-mono text-[11px] text-muted-foreground">{label(item.month)}</span>
         </div>
       ))}
     </div>

@@ -82,7 +82,7 @@ export default async function AiUsagePage({ searchParams }: PageProps<"/admin/ai
               label: AI_FEATURE_LABELS[row.feature_name] ?? row.feature_name,
               value: Number(row.cost_inr),
               valueLabel: `${formatInr(Number(row.cost_inr))} · ${plural(row.calls, "call")}`,
-              colorClass: "bg-gradient-to-r from-gold-500 to-gold-300",
+              colorClass: "bg-gold-500",
             }))}
             emptyText="No AI usage in this period."
           />

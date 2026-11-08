@@ -72,9 +72,7 @@ export default async function TeamPage() {
       <Card className="mb-6 animate-rise">
         <CardHeader>
           <CardTitle className="flex items-center gap-2.5 text-base">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
-              <UserPlus className="size-4" />
-            </span>
+            <UserPlus className="size-4 text-muted-foreground" strokeWidth={1.75} />
             Add a person
           </CardTitle>
         </CardHeader>
@@ -86,7 +84,7 @@ export default async function TeamPage() {
         <CardContent className="px-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b bg-muted/60 text-left text-[11px] tracking-wide text-muted-foreground uppercase">
+              <thead className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Email</th>
@@ -112,8 +110,8 @@ export default async function TeamPage() {
                             !member.is_active
                               ? "bg-muted text-muted-foreground"
                               : member.role === "ADMIN"
-                                ? "bg-gradient-to-br from-gold-200 to-gold-400 text-gold-900"
-                                : "bg-gradient-to-br from-brand-100 to-brand-300 text-brand-900",
+                                ? "bg-gold-100 text-gold-900"
+                                : "bg-brand-100 text-brand-900",
                           )}
                         >
                           {initials(member.full_name)}
@@ -172,9 +170,7 @@ export default async function TeamPage() {
       <Card className="mt-6 animate-rise overflow-hidden py-0 [animation-delay:200ms]">
         <CardHeader className="pt-6">
           <CardTitle className="flex items-center gap-2.5 text-base">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-urgent/10 text-urgent">
-              <ShieldAlert className="size-4" />
-            </span>
+            <ShieldAlert className="size-4 text-muted-foreground" strokeWidth={1.75} />
             Failed sign-ins
           </CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -187,7 +183,7 @@ export default async function TeamPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b bg-muted/60 text-left text-[11px] tracking-wide text-muted-foreground uppercase">
+                <thead className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">When</th>
                     <th className="px-4 py-3 font-medium">Email tried</th>

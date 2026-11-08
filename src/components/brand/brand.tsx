@@ -23,14 +23,14 @@ export function BrandMark({ className, priority = false }: { className?: string;
 export function BrandLockup({ tone = "light", className }: { tone?: "light" | "dark"; className?: string }) {
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      <span className="relative flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/95 shadow-lg ring-1 shadow-black/20 ring-white/40">
+      <span className="relative flex size-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-black/5">
         <BrandMark className="size-8" priority />
       </span>
       <div className="leading-tight">
-        <p className={cn("text-[15px] font-semibold tracking-tight", tone === "light" ? "text-white" : "text-foreground")}>
-          CapitUp <span className={tone === "light" ? "text-gold-gradient" : "text-gold-600"}>India</span>
+        <p className={cn("text-base font-semibold", tone === "light" ? "text-white" : "text-foreground")}>
+          CapitUp <span className={tone === "light" ? "text-gold-300" : "text-gold-600"}>India</span>
         </p>
-        <p className={cn("text-[11px]", tone === "light" ? "text-white/60" : "text-muted-foreground")}>
+        <p className={cn("text-xs", tone === "light" ? "text-white/60" : "text-muted-foreground")}>
           Lead &amp; Renewal CRM
         </p>
       </div>

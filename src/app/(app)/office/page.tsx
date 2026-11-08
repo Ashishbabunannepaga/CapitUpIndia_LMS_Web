@@ -6,11 +6,12 @@ import {
   ExternalLink,
   FileText,
   Gamepad2,
+  Info,
   LayoutDashboard,
   PhoneCall,
   RefreshCw,
   ShieldAlert,
-  Sparkles,
+  Plug,
   Users,
 } from "lucide-react";
 
@@ -142,7 +143,7 @@ export default async function OfficePage({ searchParams }: PageProps<"/office">)
       {admin && connected ? <Tabs current={tab} overview={overview} /> : null}
 
       {overview.state === "not-configured" ? (
-        <Panel title="The office portal is not connected yet" icon={Sparkles} className="mb-6">
+        <Panel title="The office portal is not connected yet" icon={Plug} className="mb-6">
           <p className="text-sm text-muted-foreground">
             {admin
               ? "To work call requests, renewals and gap reports here, add the office account the LMS signs in with as Worker secrets OFFICE_EMAIL and OFFICE_PASSWORD (see docs/office-portal.md). Until then, use the button above."
@@ -316,7 +317,7 @@ function Overview({ data, admin }: { data: OfficeOverview; admin: boolean }) {
             ]}
           />
         </Panel>
-        <Panel title="Where call requests come from" icon={Sparkles}>
+        <Panel title="Where call requests come from" icon={Info}>
           <BarList data={bars(stats.leads.by_source, OFFICE_SOURCE)} />
         </Panel>
       </div>

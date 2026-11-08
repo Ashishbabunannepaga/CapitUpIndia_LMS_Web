@@ -123,7 +123,7 @@ export default async function AnalyticsPage() {
         </Panel>
 
         <Panel title="Renewals by month" description="Open leads with a renewal date in the next 12 months" icon={CalendarRange}>
-          <MonthBars data={data.renewals_by_month} colorClass="bg-gradient-to-t from-gold-600 to-gold-300" />
+          <MonthBars data={data.renewals_by_month} colorClass="bg-gold-500" />
         </Panel>
 
         <Panel title="Leads created" description="Last six months" icon={FilePlus2}>
@@ -141,7 +141,7 @@ export default async function AnalyticsPage() {
             data={BUSINESS_TYPES.map((t) => ({
               label: t,
               value: data.by_business[t] ?? 0,
-              colorClass: "bg-gradient-to-r from-gold-500 to-gold-300",
+              colorClass: "bg-gold-500",
             }))}
           />
         </Panel>
@@ -153,7 +153,7 @@ export default async function AnalyticsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
-              <thead className="text-left text-[11px] tracking-wide text-muted-foreground uppercase">
+              <thead className="text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b">
                   <th className="py-2 pr-3">Agent</th>
                   <th className="px-3 py-2 text-right">Leads</th>

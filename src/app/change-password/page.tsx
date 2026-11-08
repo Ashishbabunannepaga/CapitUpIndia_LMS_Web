@@ -11,7 +11,7 @@ export default async function ChangePasswordPage() {
   const required = actor.must_change_password;
 
   return (
-    <main className="ambient flex min-h-svh flex-col justify-center px-6 py-10 sm:px-12">
+    <main className="flex min-h-svh flex-col justify-center px-6 py-10 sm:px-12">
       <div className="mx-auto w-full max-w-sm animate-rise">
         <div className="mb-8 flex items-center gap-3">
           <BrandMark className="size-10" priority />
@@ -22,7 +22,7 @@ export default async function ChangePasswordPage() {
             <p className="text-xs text-muted-foreground">{actor.email}</p>
           </div>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
+        <h1 className="text-2xl font-medium tracking-tight">Choose a new password</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
           {required
             ? "Your administrator set your current password. Pick one only you know before you continue."

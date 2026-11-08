@@ -77,18 +77,17 @@ export function LeadsKanban({
                   if (id) move(id, status);
                 }}
                 className={cn(
-                  "flex min-h-[420px] animate-rise flex-col overflow-hidden rounded-2xl border bg-muted/50 transition-all duration-200",
-                  dragOver === status && "scale-[1.01] border-brand-400 bg-accent shadow-lift",
+                  "flex min-h-[420px] flex-col overflow-hidden rounded-2xl border bg-muted/50 transition-colors duration-150",
+                  dragOver === status && "border-brand-400 bg-accent",
                 )}
-                style={{ animationDelay: `${LEAD_STATUSES.indexOf(status) * 60}ms` }}
               >
                 <div className="h-1 w-full" style={{ background: STATUS_COLORS[status] }} aria-hidden="true" />
                 <header className="flex items-center justify-between gap-2 border-b bg-card/60 px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
+                  <div className="flex items-center gap-2 text-sm font-medium">
                     <span className={cn("size-2 rounded-full", STATUS_STYLES[status].dot)} />
                     {status}
                   </div>
-                  <span className="rounded-full bg-background px-2 py-0.5 text-xs font-semibold text-muted-foreground tabular-nums ring-1 ring-border">
+                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
                     {total}
                   </span>
                 </header>
@@ -102,7 +101,7 @@ export function LeadsKanban({
                         event.dataTransfer.effectAllowed = "move";
                       }}
                       className={cn(
-                        "group relative cursor-grab rounded-xl border bg-card p-3 text-sm shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-lift active:scale-[0.98] active:cursor-grabbing",
+                        "group relative cursor-grab rounded-xl border bg-card p-3 text-sm shadow-xs transition-[border-color,box-shadow] duration-150 hover:border-brand-200 hover:shadow-card active:cursor-grabbing",
                         lead.is_duplicate && "border-red-200 bg-red-50/40",
                       )}
                     >

@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Merge, Sparkles, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Merge, Columns3, Trash2, Upload } from "lucide-react";
 
 import {
   commitImport,
@@ -187,7 +187,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
                 disabled={!aiConfigured}
                 onChange={(e) => setUseAi(e.target.checked)}
               />
-              <Sparkles className="size-4" />
+              <Columns3 className="size-4" />
               Use AI column mapping
               {!aiConfigured ? <span className="text-xs">(AI is not configured on this server)</span> : null}
             </label>
@@ -258,7 +258,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
 
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full min-w-[1280px] text-sm">
-              <thead className="bg-muted/50 text-left text-xs tracking-wide text-muted-foreground uppercase">
+              <thead className="bg-muted/50 text-left text-xs font-medium text-muted-foreground">
                 <tr>
                   <th className="w-10 px-3 py-2">
                     <input

@@ -45,7 +45,7 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
       >
         <Bell />
         {unread > 0 ? (
-          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-destructive text-[10px] font-semibold text-white">
+          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-destructive text-[11px] font-semibold text-white">
             {unread > 9 ? "9+" : unread}
           </span>
         ) : null}
