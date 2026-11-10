@@ -7,7 +7,6 @@ import type { LeadFilters } from "@/lib/lead-filters";
 import { requireSession } from "@/lib/auth";
 import * as leadData from "@/server/data/leads";
 import { findSimilarLeads as findSimilar } from "@/server/data/duplicates";
-import { recentNotifications } from "@/server/data/notifications";
 import { listTeam } from "@/server/data/users";
 
 // Reads for the workspace screens, as the signed-in user. The data layer
@@ -43,6 +42,12 @@ export async function getLead(id: number): Promise<LeadWithAgent | null> {
   return leadData.getLead(ctx, actor, id);
 }
 
+/** The lead screen's data in one round trip, or null when the lead is not the caller's to see. */
+export async function getLeadPage(id: number) {
+  const { ctx, actor } = await requireSession();
+  return leadData.getLeadPage(ctx, actor, id);
+}
+
 export async function getLeadContactLog(leadId: number) {
   const { ctx, actor } = await requireSession();
   return leadData.getLeadContactLog(ctx, actor, leadId);
@@ -65,17 +70,6 @@ export async function findSimilarLeads(clientName: string, excludeId?: number) {
   const { ctx, actor } = await requireSession();
   return findSimilar(ctx, actor, clientName, { excludeId });
 }
-
-/** Recent renewal reminders for the bell, and how many are unread. */
-export const getRecentNotifications = cache(async () => {
-  const { ctx, actor } = await requireSession();
-  return recentNotifications(ctx, actor, 20);
-});
-
-export const getUnreadNoteCount = cache(async (): Promise<number> => {
-  const { ctx, actor } = await requireSession();
-  return leadData.countUnreadLeadNotes(ctx, actor);
-});
 
 export async function withAgentNames<T extends Pick<LeadWithAgent, "assigned_agent_id">>(
   leads: T[],

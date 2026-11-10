@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LeadLink } from "@/components/leads/lead-link";
 import type { LucideIcon } from "lucide-react";
 import {
   AlarmClock,
@@ -113,9 +114,9 @@ function RenewalRow({ lead, today, showAgent }: { lead: LeadWithAgent; today: st
         <span className="text-[11px] whitespace-nowrap opacity-80">{formatDate(lead.renewal_date)}</span>
       </div>
       <div className="min-w-0 flex-1">
-        <Link prefetch={false} href={`/leads/${lead.id}`} className="block truncate text-sm font-medium hover:text-primary hover:underline">
+        <LeadLink href={`/leads/${lead.id}`} className="block truncate text-sm font-medium hover:text-primary hover:underline">
           {lead.client_name}
-        </Link>
+        </LeadLink>
         <p className="truncate text-xs text-muted-foreground">
           {lead.policy_product}
           {lead.poc_name ? ` · ${lead.poc_name}` : ""}
@@ -585,7 +586,7 @@ export default async function MyDayPage() {
                 <ul className="divide-y">
                   {unread.map((note) => (
                     <li key={note.id} className="py-2">
-                      <Link prefetch={false} href={`/leads/${note.lead_id}`} className="group block">
+                      <LeadLink href={`/leads/${note.lead_id}`} className="group block">
                         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="size-1.5 shrink-0 rounded-full bg-gold-500" aria-hidden="true" />
                           <span className="font-medium text-foreground">{note.agent_name}</span> on{" "}
@@ -595,7 +596,7 @@ export default async function MyDayPage() {
                           <span className="ml-auto shrink-0">{formatNoteTimestamp(note.created_at)}</span>
                         </p>
                         <p className="mt-1 line-clamp-2 text-sm">{note.content}</p>
-                      </Link>
+                      </LeadLink>
                     </li>
                   ))}
                 </ul>
@@ -618,13 +619,12 @@ export default async function MyDayPage() {
                   {unassigned.map((lead) => (
                     <li key={lead.id} className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center">
                       <div className="min-w-0 flex-1">
-                        <Link
-                          prefetch={false}
+                        <LeadLink
                           href={`/leads/${lead.id}`}
                           className="block truncate text-sm font-medium hover:text-primary hover:underline"
                         >
                           {lead.client_name}
-                        </Link>
+                        </LeadLink>
                         <p className="truncate text-xs text-muted-foreground">
                           {lead.policy_product} · {lead.type}
                           {lead.renewal_date ? ` · renews ${formatDate(lead.renewal_date)}` : ""}
@@ -649,13 +649,12 @@ export default async function MyDayPage() {
                 {recent.map((lead) => (
                   <li key={lead.id} className="flex items-center gap-3 py-2">
                     <div className="min-w-0 flex-1">
-                      <Link
-                        prefetch={false}
+                      <LeadLink
                         href={`/leads/${lead.id}`}
                         className="block truncate text-sm font-medium hover:text-primary hover:underline"
                       >
                         {lead.client_name}
-                      </Link>
+                      </LeadLink>
                       <p className="truncate text-xs text-muted-foreground">
                         {lead.policy_product}
                         {admin ? ` · ${lead.agent_name ?? "Unassigned"}` : ""} · assigned {formatDateTime(lead.assigned_at!)}

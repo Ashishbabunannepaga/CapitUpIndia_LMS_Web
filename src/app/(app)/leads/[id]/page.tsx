@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LeadLink } from "@/components/leads/lead-link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, Mail, MessageCircle, Pencil, Phone } from "lucide-react";
 
@@ -23,9 +24,8 @@ import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
 import { formatDateTime, formatNoteTimestamp, nowMs } from "@/lib/dates";
 import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS } from "@/lib/domain";
-import { findSimilarLeads, getLead, getLeadContactLog, getLeadEvents, getLeadNotes, getTeam } from "@/lib/leads";
+import { findSimilarLeads, getLeadPage } from "@/lib/leads";
 import { cn } from "@/lib/utils";
-import { unreadLeadNotes } from "@/server/data/leads";
 
 export const metadata: Metadata = { title: "Lead" };
 
@@ -131,27 +131,21 @@ function PocCard({
 }
 
 export default async function LeadPage({ params, searchParams }: PageProps<"/leads/[id]">) {
-  const { ctx, actor: profile } = await requireSession();
+  const { actor: profile } = await requireSession();
   const admin = isAdmin(profile);
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const lead = await getLead(id);
-  if (!lead) notFound();
-
-  const [notes, events, team, similar, unread, contacts] = await Promise.all([
-    getLeadNotes(id),
-    getLeadEvents(id),
-    admin ? getTeam() : Promise.resolve([]),
-    findSimilarLeads(lead.client_name, id),
-    unreadLeadNotes(ctx, profile, 200),
-    getLeadContactLog(id),
-  ]);
+  const data = await getLeadPage(id);
+  if (!data) notFound();
+  const { lead, notes, events, contacts } = data;
+  const team = admin ? data.team : [];
+  const similar = await findSimilarLeads(lead.client_name, id);
   // Served by ./card/route.ts, which checks access again. The card's file name
   // in the URL makes a replaced card a new URL, so caching stays safe.
   const cardVersion = lead.visiting_card_path?.split("/").pop()?.split(".")[0];
   const cardUrl = cardVersion ? `/leads/${id}/card?v=${cardVersion}` : null;
-  const unreadIds = new Set(unread.filter((n) => n.lead_id === id).map((n) => n.id));
+  const unreadIds = new Set(data.unreadNoteIds);
   const saved = (await searchParams).saved;
   const savedMessage = typeof saved === "string" ? SAVED_MESSAGES[saved] : undefined;
 
@@ -227,9 +221,9 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                     {similar.map((match) => (
                       <li key={match.lead_id}>
                         {admin || match.assigned_agent_id === profile.id ? (
-                          <Link prefetch={false} href={`/leads/${match.lead_id}`} className="font-medium underline">
+                          <LeadLink href={`/leads/${match.lead_id}`} className="font-medium underline">
                             {match.client_name}
-                          </Link>
+                          </LeadLink>
                         ) : (
                           <span className="font-medium">{match.client_name}</span>
                         )}{" "}
@@ -260,9 +254,9 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               {sameCompany.map((match) => (
                 <li key={match.lead_id}>
                   {admin || match.assigned_agent_id === profile.id ? (
-                    <Link prefetch={false} href={`/leads/${match.lead_id}`} className="font-medium underline">
+                    <LeadLink href={`/leads/${match.lead_id}`} className="font-medium underline">
                       {match.client_name}
-                    </Link>
+                    </LeadLink>
                   ) : (
                     <span className="font-medium">{match.client_name}</span>
                   )}{" "}

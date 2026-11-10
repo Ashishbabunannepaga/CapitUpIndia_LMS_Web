@@ -1,7 +1,7 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
-import Link from "next/link";
+import { LeadLink } from "@/components/leads/lead-link";
 import { GripVertical, User } from "lucide-react";
 
 import { setLeadStatus } from "@/app/(app)/leads/actions";
@@ -110,13 +110,12 @@ export function LeadsKanban({
                       <div className="flex items-start gap-1.5">
                         <GripVertical className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground" />
                         <div className="min-w-0 flex-1 space-y-1.5">
-                          <Link
-                            prefetch={false}
+                          <LeadLink
                             href={`/leads/${lead.id}`}
                             className="line-clamp-2 font-medium hover:text-primary hover:underline"
                           >
                             {lead.client_name}
-                          </Link>
+                          </LeadLink>
                           <p className="text-xs text-muted-foreground">
                             {lead.policy_product} · {lead.type}
                           </p>

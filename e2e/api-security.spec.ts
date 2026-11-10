@@ -107,8 +107,14 @@ test("signed-out and forged sessions see nothing", async ({ request }) => {
 test("an agent cannot open another agent's lead or visiting card", async ({ request }) => {
   const cookie = await sessionCookie(request, "amit");
   const page = await request.get(`/leads/${nehaLead}`, { headers: { cookie } });
-  expect(page.status()).toBe(404);
-  expect(await page.text()).not.toContain("Neha's secret notes");
+  // The lead page has an instant loading screen (loading.tsx), so its HTTP
+  // status is sent before the access check runs: the answer is the streamed
+  // not-found page, with nothing of the lead in it.
+  expect([200, 404]).toContain(page.status());
+  const html = await page.text();
+  expect(html).toContain("NEXT_HTTP_ERROR_FALLBACK;404");
+  expect(html).not.toContain("Neha's secret notes");
+  expect(html).not.toContain("API Neha Co");
   const card = await request.get(`/leads/${nehaLead}/card`, { headers: { cookie } });
   expect(card.status()).toBe(404);
 });

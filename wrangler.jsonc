@@ -9,12 +9,14 @@
     "binding": "ASSETS"
   },
   "observability": { "enabled": true },
-  // Runs the Worker next to the D1 database instead of next to the visitor.
-  // A page makes several database queries one after another, so each one
-  // becomes a ~1 ms hop instead of a full trip from India to the database.
-  // Cloudflare decides after watching traffic for up to 15 minutes; the
-  // cf-placement response header shows where a request ran.
-  "placement": { "mode": "smart" },
+  // Runs the Worker next to the D1 database (region APAC) instead of wherever
+  // the request lands. Requests arrive through AWS CloudFront, and Cloudflare
+  // took about half of them in Los Angeles (cf-ray ...-LAX), where every
+  // database query is a trans-Pacific round trip. Smart placement never
+  // kicked in at this traffic level (cf-placement: local-LAX / local-SIN), so
+  // the Worker is pinned near Singapore. The cf-placement response header
+  // shows where a request ran ("remote-SIN" when this works).
+  "placement": { "region": "aws:ap-southeast-1" },
   // Keeps the upload under the Workers Free plan's 3 MB (gzipped) limit; see
   // scripts/next-build-for-cloudflare.mjs. Check with `npx wrangler deploy --dry-run`.
   "minify": true,
