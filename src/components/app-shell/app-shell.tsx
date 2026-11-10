@@ -34,7 +34,7 @@ function UserPanel({
     .toUpperCase();
 
   return (
-    <div className="m-3 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/[0.04] p-3">
+    <div className="relative m-3 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/[0.04] p-3">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gold-300 text-xs font-medium text-gold-900">
         {initials}
       </div>
@@ -77,11 +77,11 @@ function SidebarContents({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-sidebar">
+    <div className="relative flex h-full flex-col bg-sidebar">
       <div className="relative flex h-16 shrink-0 items-center px-5">
         <BrandLockup />
       </div>
-      <div className="relative flex-1 overflow-y-auto">
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
         <SidebarNav role={user.role} badges={badges} onNavigate={onNavigate} />
       </div>
       <div className="relative">
