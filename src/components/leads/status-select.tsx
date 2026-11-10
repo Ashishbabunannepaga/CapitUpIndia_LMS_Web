@@ -40,7 +40,7 @@ export function StatusSelect({
         aria-label="Lead status"
         disabled={pending}
         className={cn(
-          "inline-flex h-7 w-[7.5rem] items-center justify-between gap-2 rounded-md border px-2 text-xs font-semibold shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70",
+          "group inline-flex h-7 w-[7.5rem] items-center justify-between gap-2 rounded-md border px-2 text-xs font-semibold shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70",
           STATUS_STYLES[optimistic].badge,
           className,
         )}
@@ -53,7 +53,7 @@ export function StatusSelect({
           {pending ? (
             <Loader2 aria-hidden="true" className="size-3.5 shrink-0 animate-spin opacity-70" />
           ) : (
-            <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 opacity-60 transition-transform data-[state=open]:rotate-180" />
+            <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 opacity-60 transition-transform group-data-[state=open]:rotate-180" />
           )}
         </Select.Icon>
       </Select.Trigger>
