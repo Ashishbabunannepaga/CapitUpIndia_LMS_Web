@@ -19,6 +19,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { Lead } from "@/lib/database.types";
 import { BUSINESS_TYPES, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
+import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
 type Agent = { id: string; full_name: string };
@@ -199,9 +200,17 @@ function DuplicatePanel({
 export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, prefill, card }: Props) {
   // One action for the form: "Add my contacts to this lead" buttons carry
   // merge_into and go to the merge action; everything else saves.
+  // A call that fails on the way (network, platform limit, new deploy) keeps
+  // what was typed and shows a message instead of crashing the page.
   const [state, formAction, pending] = useActionState<LeadFormState, FormData>(async (prev, formData) => {
-    if (formData.get("merge_into")) return mergeIntoExistingLead(prev, formData);
-    return mode === "edit" && lead ? updateLead(lead.id, prev, formData) : createLead(prev, formData);
+    const result = await safeAction(() => {
+      if (formData.get("merge_into")) return mergeIntoExistingLead(prev, formData);
+      return mode === "edit" && lead ? updateLead(lead.id, prev, formData) : createLead(prev, formData);
+    });
+    if (!("ok" in result)) return result;
+    const typed: Record<string, string> = {};
+    for (const [key, value] of formData) if (typeof value === "string") typed[key] = value;
+    return { error: result.error, values: { ...initialValues(lead), ...prev.values, ...typed } };
   }, {});
 
   const values = state.values ?? initialValues(lead, card ? { ...prefill, visiting_card_path: card.path } : prefill);

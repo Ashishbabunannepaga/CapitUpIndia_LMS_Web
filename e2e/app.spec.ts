@@ -101,6 +101,32 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
   expect(milestones?.n).toBe(10);
 });
 
+test("a failed save shows a message instead of crashing the page", async ({ page }) => {
+  const lead = await leadRow("UI Kaveri Textiles");
+  await signIn(page, "amit");
+  await page.goto(`/leads/${lead?.id}`);
+  const note = page.getByPlaceholder("Call notes, visit feedback or quote details");
+
+  // The network drops while the note is sent.
+  await page.route(/\/leads\//, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await note.fill("Sent while offline");
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByText("nothing was saved")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "UI Kaveri Textiles" })).toBeVisible();
+  await expect(note).toHaveValue("Sent while offline");
+  await page.unroute(/\/leads\//);
+
+  // A tab opened before a deploy calls an action the new build no longer has.
+  await page.route(/\/leads\//, (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 404, headers: { "x-nextjs-action-not-found": "1" }, body: "" })
+      : route.continue(),
+  );
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByText("The app was just updated")).toBeVisible();
+  await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
+});
+
 test("the form explains invalid input instead of saving it", async ({ page }) => {
   await signIn(page, "amit");
   await page.goto("/leads/new");
