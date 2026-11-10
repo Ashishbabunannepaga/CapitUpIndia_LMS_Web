@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { LeadLink } from "@/components/leads/lead-link";
 import { CopyCheck } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell/page-header";
@@ -70,9 +70,9 @@ export default async function DuplicatesPage() {
                     <li key={lead.id} className="grid gap-3 px-5 py-3 lg:grid-cols-[1fr_auto_14rem_auto] lg:items-center">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Link prefetch={false} href={`/leads/${lead.id}`} className="font-medium hover:text-primary hover:underline">
+                          <LeadLink href={`/leads/${lead.id}`} className="font-medium hover:text-primary hover:underline">
                             {lead.client_name}
-                          </Link>
+                          </LeadLink>
                           {lead.is_duplicate ? <DuplicateBadge label={lead.duplicate_label} /> : null}
                         </div>
                         <p className="text-xs text-muted-foreground">

@@ -82,14 +82,15 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
   await expect(page.getByText("Met Priya, quote by Friday")).toBeVisible();
   await expect(page.getByText(USERS.amit.name).first()).toBeVisible();
 
-  await page.getByLabel("Lead status").first().selectOption("Quoted");
+  await page.getByLabel("Lead status").first().click();
+  await page.getByRole("option", { name: "Quoted" }).click();
   // Check through the app, not by polling the database file the Worker is writing to.
   await expect
     .poll(async () => {
       await page.reload();
-      return page.getByLabel("Lead status").first().inputValue();
+      return page.getByLabel("Lead status").first().textContent();
     })
-    .toBe("Quoted");
+    .toContain("Quoted");
   expect((await leadRow("UI Kaveri Textiles"))?.status).toBe("Quoted");
 
   const lead = await leadRow("UI Kaveri Textiles");
@@ -160,9 +161,13 @@ test("creating a company another agent owns shows who has it", async ({ page }) 
 test("an agent cannot open another agent's lead or the admin pages", async ({ page }) => {
   await signIn(page, "amit");
   await expect(page).toHaveURL(/\/my-day/);
+  // The lead page streams (instant loading screen), so the status may be 200;
+  // what matters is that the not-found page shows and nothing of the lead.
   const response = await page.goto(`/leads/${nehaLead}`);
-  expect(response?.status()).toBe(404);
+  expect([200, 404]).toContain(response?.status());
+  await expect(page.getByText("could not be found")).toBeVisible();
   await expect(page.getByText("Rajesh")).toHaveCount(0);
+  await expect(page.getByText("UI Renee Systems")).toHaveCount(0);
 
   await page.goto("/leads");
   await expect(page.getByText("UI Kaveri Textiles").first()).toBeVisible();

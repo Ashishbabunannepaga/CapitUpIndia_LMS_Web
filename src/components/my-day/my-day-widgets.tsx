@@ -1,7 +1,7 @@
 "use client";
 
 import { useOptimistic, useRef, useState, useTransition } from "react";
-import Link from "next/link";
+import { LeadLink } from "@/components/leads/lead-link";
 import { CheckCheck, Loader2, Plus, Trash2 } from "lucide-react";
 
 import { markNotesRead } from "@/app/(app)/leads/actions";
@@ -58,9 +58,9 @@ export function TaskList({ tasks, emptyText }: { tasks: TaskItem[]; emptyText: s
             <div className="min-w-0 flex-1">
               <p className={cn("text-sm", task.isCompleted && "text-muted-foreground line-through")}>
                 {task.leadId ? (
-                  <Link prefetch={false} href={`/leads/${task.leadId}`} className="hover:text-primary hover:underline">
+                  <LeadLink href={`/leads/${task.leadId}`} className="hover:text-primary hover:underline">
                     {task.title}
-                  </Link>
+                  </LeadLink>
                 ) : (
                   task.title
                 )}

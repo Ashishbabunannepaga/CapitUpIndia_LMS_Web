@@ -16,7 +16,13 @@ import type { DataContext } from "./context";
 export type Notification = typeof notifications.$inferSelect;
 
 export async function recentNotifications(ctx: DataContext, actor: Actor, limit = 20) {
-  const [items, [unread]] = await Promise.all([
+  const [items, [unread]] = await ctx.db.batch(recentNotificationsQueries(ctx, actor, limit));
+  return { items, unread: unread?.n ?? 0 };
+}
+
+/** The two queries behind recentNotifications, for callers that batch them with others. */
+export function recentNotificationsQueries(ctx: DataContext, actor: Actor, limit = 20) {
+  return [
     ctx.db
       .select()
       .from(notifications)
@@ -24,11 +30,10 @@ export async function recentNotifications(ctx: DataContext, actor: Actor, limit 
       .orderBy(desc(notifications.created_at), desc(notifications.id))
       .limit(limit),
     ctx.db
-      .select({ n: count() })
+      .select({ n: count().as("n") })
       .from(notifications)
       .where(and(eq(notifications.user_id, actor.id), isNull(notifications.read_at))),
-  ]);
-  return { items, unread: unread?.n ?? 0 };
+  ] as const;
 }
 
 /** Marks one of the caller's notifications, or all of them, as read. */

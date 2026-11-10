@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { LeadLink } from "@/components/leads/lead-link";
 import { CalendarClock, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { TaskList, type TaskItem } from "@/components/my-day/my-day-widgets";
@@ -258,9 +258,9 @@ export function MonthCalendar({
                     </span>
                     <div className="min-w-0">
                       {entry.leadId ? (
-                        <Link prefetch={false} href={`/leads/${entry.leadId}`} className="font-medium hover:text-primary hover:underline">
+                        <LeadLink href={`/leads/${entry.leadId}`} className="font-medium hover:text-primary hover:underline">
                           {entry.title}
-                        </Link>
+                        </LeadLink>
                       ) : (
                         <span className="font-medium">{entry.title}</span>
                       )}

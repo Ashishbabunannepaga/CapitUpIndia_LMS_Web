@@ -102,17 +102,17 @@ export async function findSimilarLeads(
   const excludeId = options.excludeId ?? -1;
 
   const match = trigramMatchQuery(query);
+  // The fuzzy and exact lookups are independent: run them side by side.
+  const [fuzzy, exact] = await Promise.all([
+    match
+      ? ctx.db.all<{ id: number }>(
+          sql`select rowid as id from leads_name_fts where leads_name_fts match ${match} order by rank limit ${CANDIDATE_LIMIT}`,
+        )
+      : [],
+    ctx.db.select({ id: leads.id }).from(leads).where(eq(leads.client_name_normalized, query)),
+  ]);
   const candidateIds = new Set<number>();
-  if (match) {
-    const rows = await ctx.db.all<{ id: number }>(
-      sql`select rowid as id from leads_name_fts where leads_name_fts match ${match} order by rank limit ${CANDIDATE_LIMIT}`,
-    );
-    rows.forEach((r) => candidateIds.add(r.id));
-  }
-  const exact = await ctx.db
-    .select({ id: leads.id })
-    .from(leads)
-    .where(eq(leads.client_name_normalized, query));
+  fuzzy.forEach((r) => candidateIds.add(r.id));
   exact.forEach((r) => candidateIds.add(r.id));
   candidateIds.delete(excludeId);
   if (candidateIds.size === 0) return [];
@@ -120,22 +120,25 @@ export async function findSimilarLeads(
   // D1 allows at most 100 bound parameters per statement. The FTS search
   // can return 200 candidates (plus exact matches), so query IDs in safe chunks.
   const ids = [...candidateIds];
-  const rows = [];
-  for (let start = 0; start < ids.length; start += 100) {
-    const batchIds = ids.slice(start, start + 100);
-    const batch = await ctx.db
-      .select({
-        lead_id: leads.id,
-        client_name: leads.client_name,
-        normalized: leads.client_name_normalized,
-        assigned_agent_id: leads.assigned_agent_id,
-        assigned_agent_name: profiles.full_name,
-      })
-      .from(leads)
-      .leftJoin(profiles, eq(profiles.id, leads.assigned_agent_id))
-      .where(inArray(leads.id, batchIds));
-    rows.push(...batch);
-  }
+  const chunks: number[][] = [];
+  for (let start = 0; start < ids.length; start += 100) chunks.push(ids.slice(start, start + 100));
+  const rows = (
+    await Promise.all(
+      chunks.map((chunk) =>
+        ctx.db
+          .select({
+            lead_id: leads.id,
+            client_name: leads.client_name,
+            normalized: leads.client_name_normalized,
+            assigned_agent_id: leads.assigned_agent_id,
+            assigned_agent_name: profiles.full_name,
+          })
+          .from(leads)
+          .leftJoin(profiles, eq(profiles.id, leads.assigned_agent_id))
+          .where(inArray(leads.id, chunk)),
+      ),
+    )
+  ).flat();
 
   return rows
     .filter((r) => isSimilar(query, r.normalized))

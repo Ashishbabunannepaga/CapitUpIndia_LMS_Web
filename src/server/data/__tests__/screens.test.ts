@@ -12,7 +12,9 @@ import { resolveActor } from "../actor";
 import { AccessDeniedError } from "../errors";
 import { createTask, listCalendarEvents, setEventDone } from "../events";
 import { addLeadNote, createLead, listDuplicateGroups } from "../leads";
+import { changeStamp } from "../changes";
 import { myDay } from "../my-day";
+import { shellSummary } from "../shell";
 import { signInWithPassword, signOutSession } from "../sessions";
 import { setActive } from "../users";
 import { PASSWORD, testWorld } from "./helpers";
@@ -69,6 +71,14 @@ describe("My Day", () => {
     expect(day.unassigned).toBeNull();
     expect(day.unreadNotes.map((n) => n.content)).toEqual(["Admin looked at this"]);
     expect(day.unreadNoteCount).toBe(1);
+  });
+
+  it("the app frame's badge, bell and change stamp come from one batch", async () => {
+    const amit = await shellSummary(w.ctx, w.amit);
+    expect(amit).toEqual({ stamp: await changeStamp(w.ctx, w.amit), unreadNotes: 1, notifications: [], unreadNotifications: 0 });
+    expect(amit.stamp).toBeGreaterThan(0);
+    // Unread notes are scoped like the leads: Neha has none on Amit's lead.
+    expect((await shellSummary(w.ctx, w.neha)).unreadNotes).toBe(0);
   });
 
   it("an admin sees every lead, the unassigned queue and only their own tasks", async () => {

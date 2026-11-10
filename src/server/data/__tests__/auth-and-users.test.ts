@@ -72,6 +72,41 @@ describe("signing in", () => {
     expect(await resolveActor(world.ctx, headers)).toEqual({ status: "signed-out" });
   });
 
+  it("checks the session cookie's signature and the session row on the one-query path", async () => {
+    const { headers } = await signIn(world.ctx, "amit@capitup.test");
+    const cookie = headers.get("cookie")!;
+    const token = /better-auth\.session_token=([^;]+)/.exec(cookie)![1];
+    const [value, signature] = decodeURIComponent(token).split(/\.(?=[^.]*$)/);
+
+    // A fresh session is answered by one query, without Better Auth's lookup.
+    const lookup = vi.spyOn(world.ctx.auth.api, "getSession");
+    expect(await resolveActor(world.ctx, headers)).toMatchObject({ status: "ok", actor: { id: world.amit.id } });
+    expect(lookup).not.toHaveBeenCalled();
+    lookup.mockRestore();
+
+    // A real session token with a made-up signature is refused.
+    const badSignature = `${value}.${"A".repeat(43)}=`;
+    expect(await resolveActor(world.ctx, new Headers({ cookie: `better-auth.session_token=${encodeURIComponent(badSignature)}` }))).toEqual({
+      status: "signed-out",
+    });
+    expect(signature).toHaveLength(44);
+
+    // An expired session is refused even with a good signature.
+    await world.d1.prepare("update session set expires_at = ? where token = ?").bind(Date.now() - 1000, value).run();
+    expect(await resolveActor(world.ctx, headers)).toEqual({ status: "signed-out" });
+  });
+
+  it("hands a session due for its daily extension to Better Auth, which extends it", async () => {
+    const { headers } = await signIn(world.ctx, "neha@capitup.test");
+    const token = decodeURIComponent(/better-auth\.session_token=([^;]+)/.exec(headers.get("cookie")!)![1]).split(/\.(?=[^.]*$)/)[0];
+    const twoDays = 2 * 86_400_000;
+    const sixDays = Date.now() + 6 * 86_400_000 - twoDays / 2;
+    await world.d1.prepare("update session set expires_at = ? where token = ?").bind(sixDays, token).run();
+    expect(await resolveActor(world.ctx, headers)).toMatchObject({ status: "ok", actor: { id: world.neha.id } });
+    const row = await world.d1.prepare("select expires_at from session where token = ?").bind(token).first<{ expires_at: number }>();
+    expect(row!.expires_at).toBeGreaterThan(sixDays);
+  });
+
   it("refuses a sign-in posted from another site", async () => {
     const response = await world.ctx.auth.handler(
       new Request("http://localhost:3000/api/auth/sign-in/email", {

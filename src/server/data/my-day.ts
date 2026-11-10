@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gte, isNotNull, isNull, lt, lte, notInArray, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNotNull, isNull, lt, lte, notInArray, sql, type SQL } from "drizzle-orm";
 
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
 import { CLOSED_STATUSES } from "@/lib/domain";
@@ -8,7 +8,7 @@ import { CLOSED_STATUSES } from "@/lib/domain";
 import { events, leads } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
 import type { DataContext } from "./context";
-import { countUnreadLeadNotes, unreadLeadNotes, type Lead, type LeadEvent, type UnreadNote } from "./leads";
+import { countUnreadLeadNotesQuery, unreadLeadNotesQuery, type Lead, type LeadEvent, type UnreadNote } from "./leads";
 
 // Everything the My Day screen shows, in one call. Lead numbers cover the
 // caller's own leads (every lead, for admins); tasks are always the caller's own.
@@ -39,12 +39,13 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
   const weekEndStart = startOfBusinessDay(addDays(today, 8));
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString();
 
-  const countLeads = async (...conditions: (SQL | undefined)[]) => {
-    const [row] = await ctx.db.select({ n: count() }).from(leads).where(and(scope, ...conditions));
-    return row?.n ?? 0;
-  };
+  const countLeads = (...conditions: (SQL | undefined)[]) =>
+    ctx.db.select({ n: count().as("n") }).from(leads).where(and(scope, ...conditions));
   const myEvents = and(eq(events.assigned_agent_id, actor.id), eq(events.is_background_reminder, false));
+  // The unassigned queue is for admins; for an agent the query matches nothing.
+  const unassignedWhere = and(isNull(leads.assigned_agent_id), admin ? undefined : sql`0`);
 
+  // One batch, so the whole screen costs a single D1 round trip.
   const [
     activeClients,
     quoted,
@@ -59,7 +60,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     unassignedCount,
     unreadNotes,
     unreadNoteCount,
-  ] = await Promise.all([
+  ] = await ctx.db.batch([
     countLeads(eq(leads.status, "Active Client")),
     countLeads(eq(leads.status, "Quoted")),
     countLeads(eq(leads.status, "Follow-up")),
@@ -95,23 +96,26 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
       .where(and(admin ? isNotNull(leads.assigned_agent_id) : scope, gte(leads.assigned_at, sevenDaysAgo)))
       .orderBy(desc(leads.assigned_at))
       .limit(8),
-    admin
-      ? ctx.db.select().from(leads).where(isNull(leads.assigned_agent_id)).orderBy(desc(leads.created_at)).limit(8)
-      : null,
-    admin ? ctx.db.select({ n: count() }).from(leads).where(isNull(leads.assigned_agent_id)) : null,
-    unreadLeadNotes(ctx, actor, 8),
-    countUnreadLeadNotes(ctx, actor),
+    ctx.db.select().from(leads).where(unassignedWhere).orderBy(desc(leads.created_at)).limit(8),
+    ctx.db.select({ n: count().as("n") }).from(leads).where(unassignedWhere),
+    unreadLeadNotesQuery(ctx, actor, 8),
+    countUnreadLeadNotesQuery(ctx, actor),
   ]);
 
   return {
-    counts: { activeClients, quoted, followUps, overdueRenewals: overdueRenewalCount },
+    counts: {
+      activeClients: activeClients[0]?.n ?? 0,
+      quoted: quoted[0]?.n ?? 0,
+      followUps: followUps[0]?.n ?? 0,
+      overdueRenewals: overdueRenewalCount[0]?.n ?? 0,
+    },
     renewals,
     overdueRenewals,
     openTasks,
     doneToday,
     recentlyAssigned,
-    unassigned: unassigned ? { leads: unassigned, count: unassignedCount?.[0]?.n ?? 0 } : null,
+    unassigned: admin ? { leads: unassigned, count: unassignedCount[0]?.n ?? 0 } : null,
     unreadNotes,
-    unreadNoteCount,
+    unreadNoteCount: unreadNoteCount[0]?.n ?? 0,
   };
 }

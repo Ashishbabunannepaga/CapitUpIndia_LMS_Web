@@ -18,6 +18,7 @@ import {
   getLeadContactLog,
   getLeadEvents,
   getLeadNotes,
+  getLeadPage,
   logLeadContact,
   listLeads,
   markLeadNotesRead,
@@ -88,6 +89,26 @@ describe("who sees which lead", () => {
       ["Amit Agent", "whatsapp", true],
     ]);
     expect(await getLeadContactLog(w.ctx, w.amit, amitLead)).toHaveLength(2);
+  });
+
+  it("the lead screen's one-trip read follows the same access rules", async () => {
+    expect(await getLeadPage(w.ctx, w.amit, nehaLead)).toBeNull();
+    expect(await getLeadPage(w.ctx, w.admin, 999_999)).toBeNull();
+
+    await addLeadNote(w.ctx, w.neha, nehaLead, "Neha's own note");
+    const asAdmin = await getLeadPage(w.ctx, w.admin, nehaLead);
+    expect(asAdmin?.lead.notes).toBe("Neha's secret");
+    expect(asAdmin?.lead.agent_name).toBe("Neha Agent");
+    expect(asAdmin?.notes.map((n) => n.content)).toEqual(await getLeadNotes(w.ctx, w.admin, nehaLead).then((n) => n.map((x) => x.content)));
+    // A teammate's note is unread for the admin, never for its writer.
+    expect(asAdmin?.unreadNoteIds).toEqual(asAdmin?.notes.filter((n) => n.content === "Neha's own note").map((n) => n.id));
+    expect((await getLeadPage(w.ctx, w.neha, nehaLead))?.unreadNoteIds).toEqual([]);
+
+    const asAmit = await getLeadPage(w.ctx, w.amit, amitLead);
+    expect(asAmit?.lead.client_name).toBe("Amit Own Co");
+    expect(asAmit?.events).toEqual(await getLeadEvents(w.ctx, w.amit, amitLead));
+    expect(asAmit?.contacts).toEqual(await getLeadContactLog(w.ctx, w.amit, amitLead));
+    expect(asAmit?.team.map((m) => m.full_name)).toEqual(["Amit Agent", "Asha Admin", "Neha Agent"]);
   });
 
   it("a deleted lead looks the same as one you cannot see", async () => {

@@ -165,10 +165,62 @@ async function teamNames(ctx: DataContext): Promise<Map<string, string>> {
 // --- Reads -----------------------------------------------------------------
 
 export async function getLead(ctx: DataContext, actor: Actor, id: number): Promise<LeadWithAgent | null> {
-  const lead = await ctx.db.query.leads.findFirst({ where: and(eq(leads.id, id), scope(actor)) });
+  const [lead, team] = await Promise.all([
+    ctx.db.query.leads.findFirst({ where: and(eq(leads.id, id), scope(actor)) }),
+    teamNames(ctx),
+  ]);
   if (!lead) return null;
-  const [named] = withNames([lead], await teamNames(ctx));
+  const [named] = withNames([lead], team);
   return named;
+}
+
+export type LeadPage = {
+  lead: LeadWithAgent;
+  notes: LeadNote[];
+  /** Like getLeadEvents. */
+  events: LeadEvent[];
+  contacts: LeadContactLog[];
+  team: Pick<Actor, "id" | "full_name" | "role" | "is_active">[];
+  /** The caller's unread notes on this lead. */
+  unreadNoteIds: number[];
+};
+
+/**
+ * Everything the lead screen shows (bar similar companies) in one D1 round
+ * trip, or null when the caller cannot see the lead. The lead's own rows are
+ * read in the same batch as the access check and are only returned when the
+ * lead itself came back for this caller, so the check is the same as
+ * getLeadNotes / getLeadEvents / getLeadContactLog.
+ */
+export async function getLeadPage(ctx: DataContext, actor: Actor, id: number): Promise<LeadPage | null> {
+  const [found, team, notes, leadEvents, contacts, unread] = await ctx.db.batch([
+    ctx.db.select().from(leads).where(and(eq(leads.id, id), scope(actor))).limit(1),
+    ctx.db
+      .select({ id: profiles.id, full_name: profiles.full_name, role: profiles.role, is_active: profiles.is_active })
+      .from(profiles)
+      .orderBy(asc(profiles.full_name)),
+    ctx.db.select().from(leadNotes).where(eq(leadNotes.lead_id, id)).orderBy(desc(leadNotes.created_at), desc(leadNotes.id)),
+    ctx.db
+      .select()
+      .from(events)
+      .where(and(eq(events.lead_id, id), isAdmin(actor) ? undefined : eq(events.assigned_agent_id, actor.id)))
+      .orderBy(asc(events.event_timestamp)),
+    ctx.db
+      .select()
+      .from(leadContactLogs)
+      .where(eq(leadContactLogs.lead_id, id))
+      .orderBy(desc(leadContactLogs.created_at), desc(leadContactLogs.id))
+      .limit(20),
+    ctx.db
+      .select({ id: leadNotes.id })
+      .from(leadNotes)
+      .innerJoin(leads, eq(leads.id, leadNotes.lead_id))
+      .where(unreadWhere(actor, id)),
+  ]);
+  const lead = found[0];
+  if (!lead) return null;
+  const [named] = withNames([lead], new Map(team.map((m) => [m.id, m.full_name])));
+  return { lead: named, notes, events: leadEvents, contacts, team, unreadNoteIds: unread.map((n) => n.id) };
 }
 
 function escapeLike(term: string): string {
@@ -620,6 +672,11 @@ export type UnreadNote = {
 
 /** Teammates' notes on the caller's leads that the caller has not read, newest first. */
 export async function unreadLeadNotes(ctx: DataContext, actor: Actor, limit = 50): Promise<UnreadNote[]> {
+  return unreadLeadNotesQuery(ctx, actor, limit);
+}
+
+/** The query behind unreadLeadNotes, for callers that batch it with others. */
+export function unreadLeadNotesQuery(ctx: DataContext, actor: Actor, limit = 50) {
   return ctx.db
     .select({
       id: leadNotes.id,
@@ -638,12 +695,17 @@ export async function unreadLeadNotes(ctx: DataContext, actor: Actor, limit = 50
 }
 
 export async function countUnreadLeadNotes(ctx: DataContext, actor: Actor): Promise<number> {
-  const [row] = await ctx.db
-    .select({ n: count() })
+  const [row] = await countUnreadLeadNotesQuery(ctx, actor);
+  return row?.n ?? 0;
+}
+
+/** The query behind countUnreadLeadNotes, for callers that batch it with others. */
+export function countUnreadLeadNotesQuery(ctx: DataContext, actor: Actor) {
+  return ctx.db
+    .select({ n: count().as("n") })
     .from(leadNotes)
     .innerJoin(leads, eq(leads.id, leadNotes.lead_id))
     .where(unreadWhere(actor));
-  return row?.n ?? 0;
 }
 
 /** Marks teammates' notes as read, on one lead or all. Returns how many. */
