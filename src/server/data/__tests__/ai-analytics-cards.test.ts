@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { aiCallsThisHour, aiUsageSummary, logAiUsage, updateModelPricing, updateSetting } from "../ai";
+import { aiCallsThisHour, aiUsageSummary, listModelPricing, logAiUsage, updateModelPricing, updateSetting } from "../ai";
 import { nextRoundRobinAgents, pipelineAnalytics } from "../analytics";
 import { cardForLead, uploadCard } from "../cards";
 import { AccessDeniedError, InvalidInputError } from "../errors";
@@ -122,5 +122,29 @@ describe("visiting cards", () => {
     expect(mine!.httpMetadata?.contentType).toBe("image/jpeg");
     expect(await cardForLead(w.ctx, w.neha, lead)).toBeNull();
     expect(await cardForLead(w.ctx, w.admin, lead)).not.toBeNull();
+  });
+});
+
+describe("OpenAI model pricing", () => {
+  it("prices a new app model from the central defaults without a migration", async () => {
+    const before = Date.now() - 1;
+    await logAiUsage(w.ctx, w.neha, { feature: "follow_up", model: "gpt-5.6-luna", inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    // (0.20 + 1.20) USD * 83.5 = 116.9 INR
+    const summary = await aiUsageSummary(w.ctx, w.neha, new Date(before));
+    expect(summary.by_model).toEqual([expect.objectContaining({ model_name: "gpt-5.6-luna", calls: 1 })]);
+    expect(summary.cost_inr).toBeCloseTo(116.9, 4);
+  });
+
+  it("lists every app model for admins and keeps an admin's edited price", async () => {
+    await updateModelPricing(w.ctx, w.admin, { model_name: "gpt-5.6-luna", input_usd_per_million: 0.5, output_usd_per_million: 2 });
+    const rows = await listModelPricing(w.ctx, w.admin);
+    expect(rows.map((r) => r.model_name)).toEqual(expect.arrayContaining(["gpt-5.6-luna", "gpt-5.6-terra"]));
+    expect(rows.find((r) => r.model_name === "gpt-5.6-luna")).toMatchObject({ input_usd_per_million: 0.5, output_usd_per_million: 2 });
+  });
+
+  it("agents still can't change OpenAI prices", async () => {
+    await expect(
+      updateModelPricing(w.ctx, w.amit, { model_name: "gpt-5.6-terra", input_usd_per_million: 0, output_usd_per_million: 0 }),
+    ).rejects.toBeInstanceOf(AccessDeniedError);
   });
 });

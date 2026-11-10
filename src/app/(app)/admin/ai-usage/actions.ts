@@ -17,7 +17,7 @@ const pricingSchema = z.object({
 
 const SIGNED_OUT: PricingResult = { ok: false, error: "Your session has ended. Sign in again." };
 
-/** Admins keep Gemini pricing current; every new call is priced from it. */
+/** Admins keep AI model pricing current; every new call is priced from it. */
 export async function updateModelPricing(formData: FormData): Promise<PricingResult> {
   const session = await getSession();
   if (!session) return SIGNED_OUT;

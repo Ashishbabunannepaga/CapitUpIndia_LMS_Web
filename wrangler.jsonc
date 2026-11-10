@@ -9,6 +9,12 @@
     "binding": "ASSETS"
   },
   "observability": { "enabled": true },
+  // Runs the Worker next to the D1 database instead of next to the visitor.
+  // A page makes several database queries one after another, so each one
+  // becomes a ~1 ms hop instead of a full trip from India to the database.
+  // Cloudflare decides after watching traffic for up to 15 minutes; the
+  // cf-placement response header shows where a request ran.
+  "placement": { "mode": "smart" },
   // Keeps the upload under the Workers Free plan's 3 MB (gzipped) limit; see
   // scripts/next-build-for-cloudflare.mjs. Check with `npx wrangler deploy --dry-run`.
   "minify": true,
@@ -37,7 +43,7 @@
     "BETTER_AUTH_URL": "https://lms.capitupindia.com"
   }
   // Secrets (dashboard or `wrangler secret put`, never in this file; they
-  // survive deploys): BETTER_AUTH_SECRET, GEMINI_API_KEY, SETUP_CODE
+  // survive deploys): BETTER_AUTH_SECRET, OPENAI_API_KEY, SETUP_CODE
   // until the first admin exists, and optionally OFFICE_EMAIL +
   // OFFICE_PASSWORD for the Office portal page (docs/office-portal.md)
 }

@@ -90,7 +90,7 @@ export const NAV_SECTIONS: NavSection[] = [
         title: "AI Usage",
         href: "/admin/ai-usage",
         icon: IndianRupee,
-        description: "Gemini calls, tokens and INR cost by agent and feature.",
+        description: "AI calls, tokens and INR cost by agent and feature.",
       },
       {
         title: "Team",

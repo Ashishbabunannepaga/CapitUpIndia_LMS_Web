@@ -39,7 +39,7 @@ export default async function AiUsagePage({ searchParams }: PageProps<"/admin/ai
       <PageHeader
         eyebrow="Admin"
         title="AI Usage"
-        description={`Every Gemini call, its tokens and its cost in rupees, since ${formatDate(from.toISOString().slice(0, 10))}.`}
+        description={`Every AI call, its tokens and its cost in rupees, since ${formatDate(from.toISOString().slice(0, 10))}.`}
         actions={
           <div className="flex flex-wrap gap-1.5">
             {(Object.keys(RANGES) as RangeKey[]).map((key) => (
