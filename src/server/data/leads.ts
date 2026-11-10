@@ -68,6 +68,8 @@ export type NewLead = Partial<LeadFields> & {
   visiting_card_path?: string | null;
   /** Set only by the office hand-over (admins): the capitupindia.com call request it came from. */
   office_lead_id?: string | null;
+  /** Set only by the app hand-over (admins): the CapitUp app user who opted in to be contacted. */
+  app_user_id?: string | null;
 };
 
 const FIELD_NAMES: (keyof LeadFields)[] = [
@@ -405,6 +407,7 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
   await assertAssignable(ctx, owner);
   assertCardPath(actor, input.visiting_card_path);
   if (input.office_lead_id && !isAdmin(actor)) throw new AccessDeniedError("Only admins can hand over office call requests.");
+  if (input.app_user_id && !isAdmin(actor)) throw new AccessDeniedError("Only admins can hand over app leads.");
 
   const [dup, renewal] = await Promise.all([duplicateState(ctx, fields.client_name), renewalSettings(ctx)]);
   const stamp = now();
@@ -416,6 +419,7 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
     assigned_at: owner ? stamp : null,
     visiting_card_path: input.visiting_card_path ?? null,
     office_lead_id: input.office_lead_id ?? null,
+    app_user_id: input.app_user_id ?? null,
     created_by: actor.id,
     created_at: stamp,
     updated_at: stamp,

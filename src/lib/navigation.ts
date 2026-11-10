@@ -8,6 +8,7 @@ import {
   IndianRupee,
   KanbanSquare,
   ScanText,
+  Smartphone,
   Sun,
   Users,
 } from "lucide-react";
@@ -73,6 +74,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/import",
         icon: FileSpreadsheet,
         description: "Paste or upload sheets, map columns, catch duplicates and distribute leads round-robin.",
+      },
+      {
+        title: "App leads",
+        href: "/admin/app-leads",
+        icon: Smartphone,
+        description: "CapitUp app users who opted in to be contacted, ready to hand to an agent.",
       },
       {
         title: "Duplicates",
