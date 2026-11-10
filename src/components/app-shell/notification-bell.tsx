@@ -34,7 +34,7 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
   }, [open]);
 
   return (
-    <div ref={panel} className="relative">
+    <div ref={panel}>
       <Button
         type="button"
         variant="ghost"
