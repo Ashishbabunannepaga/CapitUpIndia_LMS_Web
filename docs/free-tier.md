@@ -18,7 +18,7 @@ before you rely on a number):
 ## What was changed
 
 1. **Bundle under 3 MB.** `next build --webpack` (Turbopack copied Better
-   Auth, Zod and the Gemini SDK into a chunk per route and shipped the
+   Auth, Zod and the then-used Gemini SDK into a chunk per route and shipped the
    `next/og` WASM) plus `minify: true` in `wrangler.jsonc`: 4.9 MB to 2.7 MB
    gzipped. Check with `npx wrangler deploy --dry-run`.
 2. **Date formatting.** `Intl.DateTimeFormat` was built on every call (several
@@ -70,5 +70,5 @@ still shows up regularly, the Paid plan ($5/month, 30 s CPU per request) is
 the dependable fix.
 
 Next candidates if needed: the Duplicates page (renders every duplicate
-group, about 1 MB of HTML), and replacing the `@google/genai` SDK with a
-direct `fetch` (about 120 KB gzipped of bundle headroom).
+group, about 1 MB of HTML). (The `@google/genai` SDK was since replaced by a
+direct `fetch` to OpenAI: 2.52 MB to 2.21 MB gzipped; see docs/openai-setup.md.)

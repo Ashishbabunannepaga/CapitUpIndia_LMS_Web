@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, asc, count, eq, gte, lt } from "drizzle-orm";
 
+import { DEFAULT_MODEL_PRICING } from "@/lib/ai/models";
 import { businessDateOf } from "@/lib/dates";
 
 import { aiModelPricing, aiUsageLogs, appSettings, AI_FEATURES } from "../db/schema";
@@ -10,9 +11,11 @@ import { auditInsert } from "./audit";
 import type { DataContext } from "./context";
 import { InvalidInputError } from "./errors";
 
-// Gemini usage and its cost, priced centrally: admins keep model prices and
-// the USD to INR rate; each call is priced when it is logged. Agents see only
-// their own usage.
+// AI usage and its cost, priced centrally: admins keep model prices and
+// the USD to INR rate; each call is priced when it is logged. Models the app
+// uses get their default price (src/lib/ai/models.ts) the first time they are
+// needed, so a model change never needs a migration. Agents see only their
+// own usage.
 
 export type AiFeature = (typeof AI_FEATURES)[number];
 export type ModelPricing = typeof aiModelPricing.$inferSelect;
@@ -22,7 +25,7 @@ async function setting<T>(ctx: DataContext, key: string, fallback: T): Promise<T
   return (row?.value as T | undefined) ?? fallback;
 }
 
-/** Calls this user made to Gemini in the last hour, and their hourly allowance. */
+/** AI calls this user made in the last hour, and their hourly allowance. */
 export async function aiCallsThisHour(ctx: DataContext, userId: string) {
   const [limit, [row]] = await Promise.all([
     setting<number>(ctx, "ai_hourly_limit_per_user", 200),
@@ -34,16 +37,17 @@ export async function aiCallsThisHour(ctx: DataContext, userId: string) {
   return { used: row?.n ?? 0, limit: Number(limit) };
 }
 
-/** Records one Gemini call, priced in INR from the central pricing. */
+/** Records one AI call, priced in INR from the central pricing. */
 export async function logAiUsage(
   ctx: DataContext,
   user: Pick<Actor, "id" | "full_name">,
   call: { feature: AiFeature; model: string; inputTokens: number; outputTokens: number },
 ): Promise<void> {
-  const [pricing, fx] = await Promise.all([
+  const [stored, fx] = await Promise.all([
     ctx.db.query.aiModelPricing.findFirst({ where: eq(aiModelPricing.model_name, call.model) }),
     setting<number>(ctx, "usd_to_inr", 0),
   ]);
+  const pricing = stored ?? (await addDefaultPricing(ctx)).find((p) => p.model_name === call.model);
   if (!pricing) throw new InvalidInputError(`No pricing configured for model ${call.model}`);
   const input = Math.max(0, Math.round(call.inputTokens));
   const output = Math.max(0, Math.round(call.outputTokens));
@@ -59,8 +63,20 @@ export async function logAiUsage(
   });
 }
 
+/** Adds a row, at its default price, for each app model that has none. Never changes an existing price. */
+async function addDefaultPricing(ctx: DataContext): Promise<ModelPricing[]> {
+  const existing = new Set((await ctx.db.select({ m: aiModelPricing.model_name }).from(aiModelPricing)).map((r) => r.m));
+  const missing = DEFAULT_MODEL_PRICING.filter((p) => !existing.has(p.model_name));
+  if (missing.length === 0) return [];
+  return ctx.db.insert(aiModelPricing).values(missing.map((p) => ({ ...p }))).onConflictDoNothing().returning();
+}
+
 export async function listModelPricing(ctx: DataContext, actor: Actor): Promise<ModelPricing[]> {
   void actor;
+  const rows = await ctx.db.select().from(aiModelPricing).orderBy(asc(aiModelPricing.model_name));
+  const have = new Set(rows.map((r) => r.model_name));
+  if (DEFAULT_MODEL_PRICING.every((p) => have.has(p.model_name))) return rows;
+  await addDefaultPricing(ctx);
   return ctx.db.select().from(aiModelPricing).orderBy(asc(aiModelPricing.model_name));
 }
 

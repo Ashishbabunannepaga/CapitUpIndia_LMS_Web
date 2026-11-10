@@ -1,6 +1,7 @@
 "use server";
 
-import { AiRateLimitError, AiUnavailableError, generate, MODELS } from "@/lib/ai/gemini";
+import { AiRateLimitError, AiUnavailableError, generate } from "@/lib/ai/client";
+import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
 import { followUpPrompt, isFollowUpTone, rephrasePrompt, type FollowUpTone } from "@/lib/ai/prompts";
 import { getSession } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
@@ -41,9 +42,10 @@ export async function generateFollowUp(leadId: number, tone: string, previousDra
   const { ctx, actor: profile } = session;
   if (!isFollowUpTone(tone)) return { ok: false, error: "Pick a tone." };
 
-  const lead = await getLead(ctx, profile, leadId);
+  // Both reads check access to the lead; run them together.
+  const [lead, allNotes] = await Promise.all([getLead(ctx, profile, leadId), getLeadNotes(ctx, profile, leadId).catch(() => [])]);
   if (!lead) return { ok: false, error: "That lead no longer exists or isn't yours." };
-  const notes = (await getLeadNotes(ctx, profile, leadId)).slice(0, 5);
+  const notes = allNotes.slice(0, 5);
 
   const sender = firstName(profile.full_name) || profile.full_name;
   const context = [
@@ -64,12 +66,12 @@ export async function generateFollowUp(leadId: number, tone: string, previousDra
       ctx,
       user: profile,
       feature: rephrase ? "follow_up_rephrase" : "follow_up",
-      models: MODELS.writing,
-      systemInstruction: rephrase ? rephrasePrompt(tone, sender) : followUpPrompt(tone, sender),
-      contents: rephrase
+      models: MODEL_CHAINS.writing,
+      system: rephrase ? rephrasePrompt(tone, sender) : followUpPrompt(tone, sender),
+      maxOutputTokens: MAX_OUTPUT_TOKENS.followUp,
+      text: rephrase
         ? `${context}\n\nPrevious draft:\n"""${previousDraft!.slice(0, 1500)}"""\n\nWrite the new version.`
         : `${context}\n\nWrite the message.`,
-      temperature: rephrase ? 0.85 : 0.6,
       parse: (text) => {
         const clean = text.replace(/^["']|["']$/g, "").trim();
         if (/\[(your|company|client|name)[^\]]*\]/i.test(clean)) throw new Error("Draft contains placeholders");

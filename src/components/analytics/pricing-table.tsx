@@ -18,7 +18,7 @@ function SaveState({ state }: { state: "idle" | "saving" | "saved" | string }) {
   return <span className="text-xs text-destructive">{state}</span>;
 }
 
-/** Editable Gemini prices and the USD to INR rate, admin only. */
+/** Editable AI model prices and the USD to INR rate, admin only. */
 export function PricingTable({ models, usdToInr }: { models: Model[]; usdToInr: number }) {
   const [states, setStates] = useState<Record<string, string>>({});
   const [rateState, setRateState] = useState<string>("idle");
