@@ -8,6 +8,7 @@ import { markNotificationsRead } from "@/app/(app)/notifications/actions";
 import { Button } from "@/components/ui/button";
 import type { AppNotification } from "@/lib/database.types";
 import { formatNoteTimestamp } from "@/lib/dates";
+import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
 type Item = Pick<AppNotification, "id" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
@@ -61,7 +62,9 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-xs"
-                onClick={() => startTransition(() => markNotificationsRead())}
+                onClick={() => startTransition(async () => {
+                  await safeAction(() => markNotificationsRead());
+                })}
               >
                 <CheckCheck className="size-3.5" />
                 Mark all read
@@ -81,7 +84,9 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
                     className="block px-3 py-2.5 hover:bg-accent"
                     onClick={() => {
                       setOpen(false);
-                      if (!item.read_at) startTransition(() => markNotificationsRead(item.id));
+                      if (!item.read_at) startTransition(async () => {
+                        await safeAction(() => markNotificationsRead(item.id));
+                      });
                     }}
                   >
                     <p className="flex items-start gap-1.5 text-sm font-medium">

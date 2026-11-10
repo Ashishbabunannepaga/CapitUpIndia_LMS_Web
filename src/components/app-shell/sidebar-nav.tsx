@@ -1,11 +1,31 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 import type { UserRole } from "@/lib/database.types";
 import { navForRole } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+
+/**
+ * A thin bar that fills under the clicked link while its page loads, so a
+ * click shows at once even when the server takes a moment. Absolute, so it
+ * never shifts the layout; it waits 120 ms so quick pages don't flash it.
+ */
+function PendingBar() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute inset-x-3 bottom-0.5 h-0.5 origin-left rounded-full bg-gold-400/80 motion-reduce:transition-none",
+        pending
+          ? "scale-x-100 opacity-100 transition-[transform,opacity] delay-[120ms] duration-[1200ms] ease-out"
+          : "scale-x-0 opacity-0 transition-opacity duration-150",
+      )}
+    />
+  );
+}
 
 export function SidebarNav({
   role,
@@ -53,6 +73,7 @@ export function SidebarNav({
                   )}
                 />
                 {item.title}
+                <PendingBar />
                 {badges?.[item.href] ? (
                   <span
                     className="ml-auto font-mono text-xs text-gold-300 tabular-nums"

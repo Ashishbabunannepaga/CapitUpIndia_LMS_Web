@@ -1,6 +1,6 @@
 import { BUSINESS_TYPES, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
 
-// JSON Schemas sent to Gemini as responseJsonSchema, so the model returns
+// JSON Schemas sent to the model as strict structured output, so it returns
 // exactly these fields. Every value is still validated and cleaned after.
 
 const text = (description: string) => ({ type: "string", description });
@@ -24,27 +24,36 @@ const leadProperties = {
   notes: text("Other useful details"),
 } as const;
 
-const LEAD_REQUIRED = ["client_name", "type", "business_type", "policy_product", "renewal_date", "poc_name", "poc_designation", "poc_contact_number", "poc_email_id", "notes"];
+// OpenAI strict mode: every property is required (empty strings stand for
+// "not given") and no extra properties are allowed.
+const LEAD_REQUIRED = Object.keys(leadProperties);
 
 export const leadSchema = {
-  type: "object",
-  properties: leadProperties,
-  required: LEAD_REQUIRED,
-  propertyOrdering: Object.keys(leadProperties),
+  name: "lead",
+  schema: {
+    type: "object",
+    properties: leadProperties,
+    required: LEAD_REQUIRED,
+    additionalProperties: false,
+  },
 };
 
 export const bulkLeadsSchema = {
-  type: "object",
-  properties: {
-    leads: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: { source_row: { type: "integer", description: "The [n] row number from the input" }, ...leadProperties },
-        required: ["source_row", ...LEAD_REQUIRED],
-        propertyOrdering: ["source_row", ...Object.keys(leadProperties)],
+  name: "leads",
+  schema: {
+    type: "object",
+    properties: {
+      leads: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { source_row: { type: "integer", description: "The [n] row number from the input" }, ...leadProperties },
+          required: ["source_row", ...LEAD_REQUIRED],
+          additionalProperties: false,
+        },
       },
     },
+    required: ["leads"],
+    additionalProperties: false,
   },
-  required: ["leads"],
 };

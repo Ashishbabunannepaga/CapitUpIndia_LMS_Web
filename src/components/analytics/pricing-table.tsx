@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ModelPricing } from "@/lib/database.types";
+import { safeAction } from "@/lib/safe-action";
 
 type Model = ModelPricing;
 
@@ -18,7 +19,7 @@ function SaveState({ state }: { state: "idle" | "saving" | "saved" | string }) {
   return <span className="text-xs text-destructive">{state}</span>;
 }
 
-/** Editable Gemini prices and the USD to INR rate, admin only. */
+/** Editable AI model prices and the USD to INR rate, admin only. */
 export function PricingTable({ models, usdToInr }: { models: Model[]; usdToInr: number }) {
   const [states, setStates] = useState<Record<string, string>>({});
   const [rateState, setRateState] = useState<string>("idle");
@@ -54,7 +55,7 @@ export function PricingTable({ models, usdToInr }: { models: Model[]; usdToInr: 
                     action={(formData) => {
                       mark(model.model_name, "saving");
                       startTransition(async () => {
-                        const result = await updateModelPricing(formData);
+                        const result = await safeAction(() => updateModelPricing(formData));
                         mark(model.model_name, result.ok ? "saved" : result.error);
                       });
                     }}
@@ -95,7 +96,7 @@ export function PricingTable({ models, usdToInr }: { models: Model[]; usdToInr: 
         action={(formData) => {
           setRateState("saving");
           startTransition(async () => {
-            const result = await updateExchangeRate(formData);
+            const result = await safeAction(() => updateExchangeRate(formData));
             setRateState(result.ok ? "saved" : result.error);
             if (result.ok) setTimeout(() => setRateState("idle"), 2000);
           });

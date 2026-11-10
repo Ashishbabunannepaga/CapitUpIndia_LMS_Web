@@ -1,22 +1,20 @@
 import "server-only";
 
-import { GoogleGenAI, type ContentListUnion } from "@google/genai";
+import { after } from "next/server";
 
 import type { AiFeature, Profile } from "@/lib/database.types";
 import { aiCallsThisHour, logAiUsage } from "@/server/data/ai";
 import type { DataContext } from "@/server/data/context";
 
-// The only place the app talks to Gemini. Runs on the server with the
-// GEMINI_API_KEY Worker secret, tries each model in order, and logs every
-// call's real token usage (from usageMetadata) to ai_usage_logs, priced from
-// the central pricing table.
+import { MODEL_TIMEOUT_MS, type ModelChoice } from "./models";
+import { callOpenAi, openAiKey, ProviderFatalError } from "./openai";
 
-/** Model fallback chains, from the existing app. Every model needs a row in ai_model_pricing. */
-export const MODELS = {
-  text: ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
-  vision: ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-flash"],
-  writing: ["gemini-3.5-flash", "gemini-2.5-flash"],
-} as const;
+// The only door to the AI provider. Features (intake, card OCR, follow-ups,
+// import mapping) call generate() and never see which provider answers.
+// It runs on the server with the OPENAI_API_KEY Worker secret, tries each
+// model in order, and logs every call's real token usage to ai_usage_logs,
+// priced from the central pricing table. Logging runs after the response is
+// sent, so it never slows the user down.
 
 export class AiUnavailableError extends Error {
   constructor(message = "AI is not available right now.") {
@@ -32,17 +30,8 @@ export class AiRateLimitError extends Error {
   }
 }
 
-let client: GoogleGenAI | null = null;
-
-function getClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  client ??= new GoogleGenAI({ apiKey, httpOptions: { timeout: 45_000 } });
-  return client;
-}
-
 export function isAiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return Boolean(openAiKey());
 }
 
 type Caller = Pick<Profile, "id" | "full_name">;
@@ -60,17 +49,31 @@ async function logUsage(ctx: DataContext, user: Caller, feature: AiFeature, mode
   }
 }
 
+/** Runs the log after the response when inside a request; awaits it otherwise (tests, scripts). */
+async function logLater(task: () => Promise<void>) {
+  try {
+    after(task);
+  } catch {
+    await task();
+  }
+}
+
 type GenerateOptions<T> = {
   /** The request's data context (src/server/data), for rate limits and usage logs. */
   ctx: DataContext;
   user: Caller;
   feature: AiFeature;
-  models: readonly string[];
-  contents: ContentListUnion;
-  systemInstruction?: string;
-  temperature: number;
-  /** JSON Schema for structured output; omit for plain text. */
-  jsonSchema?: unknown;
+  /** Models to try in order, from MODEL_CHAINS in src/lib/ai/models.ts. */
+  models: readonly ModelChoice[];
+  /** Standing instructions (the prompt). */
+  system?: string;
+  /** The user's material: notes, sheet rows, lead context. */
+  text: string;
+  /** An image to read (visiting cards). */
+  image?: { mime: string; base64: string };
+  /** JSON Schema for strict structured output; omit for plain text. */
+  jsonSchema?: { name: string; schema: unknown };
+  maxOutputTokens: number;
   /** Parses and checks the response; throw to fall through to the next model. */
   parse: (text: string) => T;
   /** Calls this request counts as for rate limiting (bulk mapping sends several). */
@@ -82,43 +85,41 @@ type GenerateOptions<T> = {
  * Throws AiUnavailableError when no key is configured or every model fails.
  */
 export async function generate<T>(opts: GenerateOptions<T>): Promise<{ value: T; model: string }> {
-  const ai = getClient();
-  if (!ai) throw new AiUnavailableError("AI is not configured on this server (GEMINI_API_KEY is missing).");
+  const apiKey = openAiKey();
+  if (!apiKey) throw new AiUnavailableError("AI is not configured on this server (OPENAI_API_KEY is missing).");
   await enforceRateLimit(opts.ctx, opts.user, opts.rateLimitCalls ?? 1);
 
   let lastError: unknown;
-  for (const model of opts.models) {
+  for (const choice of opts.models) {
     try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: opts.contents,
-        config: {
-          systemInstruction: opts.systemInstruction,
-          temperature: opts.temperature,
-          ...(opts.jsonSchema ? { responseMimeType: "application/json", responseJsonSchema: opts.jsonSchema } : {}),
-        },
+      const response = await callOpenAi(apiKey, {
+        choice,
+        system: opts.system,
+        text: opts.text,
+        image: opts.image,
+        jsonSchema: opts.jsonSchema,
+        maxOutputTokens: opts.maxOutputTokens,
+        timeoutMs: MODEL_TIMEOUT_MS,
       });
-      const usage = response.usageMetadata;
-      await logUsage(
-        opts.ctx,
-        opts.user,
-        opts.feature,
-        model,
-        (usage?.promptTokenCount ?? 0) + (usage?.toolUsePromptTokenCount ?? 0),
-        (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
-      );
-      const text = response.text?.trim();
-      if (!text) throw new Error("Empty response");
-      return { value: opts.parse(text), model };
+      await logLater(() => logUsage(opts.ctx, opts.user, opts.feature, choice.model, response.inputTokens, response.outputTokens));
+      if (response.problem) throw new Error(response.problem);
+      if (!response.text) throw new Error("Empty response");
+      return { value: opts.parse(response.text), model: choice.model };
     } catch (error) {
       lastError = error;
-      console.warn(`Gemini ${model} failed for ${opts.feature}`, error instanceof Error ? error.message : error);
+      console.warn(`AI model ${choice.model} failed for ${opts.feature}`, error instanceof Error ? error.message : error);
+      // A bad key or an empty account fails the same way on every model.
+      if (error instanceof ProviderFatalError) break;
     }
   }
   throw new AiUnavailableError(
-    lastError instanceof Error && /quota|rate/i.test(lastError.message)
-      ? "The AI service is over its quota right now. Try again shortly."
-      : "The AI service could not process this request.",
+    lastError instanceof ProviderFatalError
+      ? lastError.kind === "quota"
+        ? "The OpenAI account is out of credit. An admin needs to add credit on platform.openai.com."
+        : "The OpenAI key was refused. An admin needs to check the OPENAI_API_KEY secret."
+      : lastError instanceof Error && /\b429\b|rate/i.test(lastError.message)
+        ? "The AI service is busy right now. Try again shortly."
+        : "The AI service could not process this request.",
   );
 }
 

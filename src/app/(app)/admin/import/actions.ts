@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { readSheet } from "read-excel-file/node";
 import { z } from "zod";
 
-import { AiRateLimitError, AiUnavailableError, generate, MODELS, parseJsonObject } from "@/lib/ai/gemini";
+import { AiRateLimitError, AiUnavailableError, generate, parseJsonObject } from "@/lib/ai/client";
 import { cleanExtractedLead, type ExtractedLead } from "@/lib/ai/lead-cleanup";
+import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
 import { bulkMappingPrompt } from "@/lib/ai/prompts";
 import { bulkLeadsSchema } from "@/lib/ai/schemas";
 import { friendlyError } from "@/lib/action-errors";
@@ -21,7 +22,7 @@ import { findSimilarLeads } from "@/server/data/duplicates";
 import { addLeadContact, addLeadNote, createLead, getLead, updateLead } from "@/server/data/leads";
 import { listActiveAgents } from "@/server/data/users";
 
-// Bulk ingestion for admins: paste TSV/CSV or upload a sheet, let Gemini map
+// Bulk ingestion for admins: paste TSV/CSV or upload a sheet, let the AI model map
 // the columns (15 rows per request, as the existing app did), review every
 // row, then commit. Rows are never imported without a preview, existing
 // companies are merged through addLeadContact() instead of overwritten,
@@ -63,7 +64,7 @@ function toSheet(text: string): ParsedSheet {
   return parsePastedSheet(text);
 }
 
-/** Maps one chunk with Gemini; falls back to the heuristic mapper per chunk. */
+/** Maps one chunk with the AI model; falls back to the heuristic mapper per chunk. */
 async function mapChunk(
   { ctx, actor: user }: Session,
   sheet: ParsedSheet,
@@ -77,11 +78,11 @@ async function mapChunk(
     ctx,
     user,
     feature: "bulk_mapping",
-    models: MODELS.text,
-    systemInstruction: bulkMappingPrompt(today),
-    contents: `Spreadsheet rows (chunk ${index + 1} of ${total}):\n${rowsAsText(sheet, chunk)}`,
-    temperature: 0.1,
+    models: MODEL_CHAINS.text,
+    system: bulkMappingPrompt(today),
+    text: `Spreadsheet rows (chunk ${index + 1} of ${total}):\n${rowsAsText(sheet, chunk)}`,
     jsonSchema: bulkLeadsSchema,
+    maxOutputTokens: MAX_OUTPUT_TOKENS.bulk,
     rateLimitCalls: calls,
     parse: (text) => {
       const parsed = parseJsonObject(text);

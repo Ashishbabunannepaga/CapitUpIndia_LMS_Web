@@ -4,7 +4,7 @@ The whole app runs on one Cloudflare account: a **Worker** (the website and the
 every-minute reminder job), a **D1** database and a private **R2** bucket for
 visiting-card photos. Do the steps in order.
 
-Secrets (`BETTER_AUTH_SECRET`, `GEMINI_API_KEY`, `SETUP_CODE`) go straight into the
+Secrets (`BETTER_AUTH_SECRET`, `OPENAI_API_KEY`, `SETUP_CODE`) go straight into the
 Cloudflare dashboard. Never paste them into chat or commit them.
 
 ## 1. Plan
@@ -57,7 +57,7 @@ Worker > **Settings > Variables and Secrets**, type **Secret**:
 | Name | Value |
 | --- | --- |
 | `BETTER_AUTH_SECRET` | A random string of 32+ characters (a password manager can generate one). Changing it later signs everyone out. |
-| `GEMINI_API_KEY` | The rotated Google AI Studio key, never the one in the old APK |
+| `OPENAI_API_KEY` | An OpenAI project API key (see docs/openai-setup.md) |
 | `SETUP_CODE` | Any 12+ character code you make up; used once in step 6 |
 
 Add each one with type **Secret**: a deploy replaces plain dashboard variables
@@ -106,7 +106,7 @@ Sign-in builds its internal requests from `BETTER_AUTH_URL`, so both addresses w
 - Create a lead with tomorrow as its renewal date. Calendar shows the due event at once,
   and the bell shows each countdown reminder within a minute of it falling due
   (Worker > **Logs** shows the cron running every minute).
-- Paste a sentence into **Intake**; with the Gemini key set, fields come back filled by AI
+- Paste a sentence into **Intake**; with the OpenAI key set, fields come back filled by AI
   and **AI Usage** shows the call and its rupee cost.
 - Sign in as an agent in a private window: only that agent's leads are visible.
 

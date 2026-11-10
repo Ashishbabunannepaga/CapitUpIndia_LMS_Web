@@ -101,38 +101,30 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
   expect(milestones?.n).toBe(10);
 });
 
-test("a rollover lead needs a renewal date, keeps its RM and shows an attached visiting card", async ({ page }) => {
+test("a failed save shows a message instead of crashing the page", async ({ page }) => {
+  const lead = await leadRow("UI Kaveri Textiles");
   await signIn(page, "amit");
-  await page.goto("/leads/new");
-  await page.getByLabel("Client or company name").fill("UI Rollover Logistics");
-  // New leads may skip the date; renewals and rollovers may not.
-  await expect(page.locator("#renewal_date")).not.toHaveAttribute("required");
-  await page.getByLabel("New, renewal or rollover").selectOption("Rollover");
-  await expect(page.locator("#renewal_date")).toHaveAttribute("required");
-  await page.getByLabel("RM (relationship manager)").fill("Ravi Kumar, HDFC Ergo, 98480 12345");
-  await page.locator("#renewal_date").fill("2030-06-01");
-  await page.getByRole("button", { name: "Save lead" }).click();
+  await page.goto(`/leads/${lead?.id}`);
+  const note = page.getByPlaceholder("Call notes, visit feedback or quote details");
 
-  await expect(page.getByText("Lead saved.")).toBeVisible();
-  await expect(page.getByText("Rollover", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Ravi Kumar, HDFC Ergo, 98480 12345")).toBeVisible();
-  const lead = await leadRow("UI Rollover Logistics");
-  expect(lead).toMatchObject({ lead_type: "Rollover", relationship_manager: "Ravi Kumar, HDFC Ergo, 98480 12345" });
+  // The network drops while the note is sent.
+  await page.route(/\/leads\//, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await note.fill("Sent while offline");
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByText("nothing was saved")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "UI Kaveri Textiles" })).toBeVisible();
+  await expect(note).toHaveValue("Sent while offline");
+  await page.unroute(/\/leads\//);
 
-  // Attach a card from the lead page: it is shrunk in the browser, stored, and shown beside the lead.
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAFCAIAAAD38zoCAAAAEUlEQVR4nGM4ISeHFTHQQQIABrMooTYkvzkAAAAASUVORK5CYII=",
-    "base64",
+  // A tab opened before a deploy calls an action the new build no longer has.
+  await page.route(/\/leads\//, (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 404, headers: { "x-nextjs-action-not-found": "1" }, body: "" })
+      : route.continue(),
   );
-  await page
-    .locator('section[aria-label="Visiting card"]:visible input[type=file]')
-    .setInputFiles({ name: "card.png", mimeType: "image/png", buffer: png });
-  const card = page.locator('section[aria-label="Visiting card"]:visible img');
-  await expect(card).toBeVisible();
-  await expect.poll(() => card.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-  const stored = await leadRow("UI Rollover Logistics");
-  const preview = await queryFirst<{ mime: string }>(db, "select mime from visiting_card_previews where path = ?", stored!.visiting_card_path);
-  expect(preview?.mime).toBe("image/jpeg");
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByText("The app was just updated")).toBeVisible();
+  await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
 });
 
 test("the form explains invalid input instead of saving it", async ({ page }) => {

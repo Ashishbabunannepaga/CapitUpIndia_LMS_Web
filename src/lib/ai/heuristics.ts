@@ -1,6 +1,6 @@
 import { parseLooseDate } from "@/lib/date-parse";
 
-// Offline fallback for AI lead intake, used when Gemini is not configured or
+// Offline fallback for AI lead intake, used when the AI model is not configured or
 // every model fails. Pulls out what simple patterns can find and leaves the
 // rest empty; unlike the old app it never fills in demo values.
 

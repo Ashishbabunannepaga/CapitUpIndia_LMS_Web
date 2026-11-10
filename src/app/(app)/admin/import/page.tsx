@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { PageHeader } from "@/components/app-shell/page-header";
 import { ImportWorkspace } from "@/components/import/import-workspace";
-import { isAiConfigured } from "@/lib/ai/gemini";
+import { isAiConfigured } from "@/lib/ai/client";
 import { requireAdmin } from "@/lib/auth";
 import { getTeam } from "@/lib/leads";
 

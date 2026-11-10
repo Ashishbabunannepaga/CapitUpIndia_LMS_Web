@@ -8,6 +8,7 @@ import { setLeadStatus } from "@/app/(app)/leads/actions";
 import type { LeadStatus } from "@/lib/database.types";
 import { CLOSED_STATUSES, LEAD_STATUSES, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
 import type { LeadWithAgent } from "@/lib/leads";
+import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 import { DuplicateBadge, RenewalDate } from "./lead-badges";
 import { AgentName } from "./lead-views";
@@ -40,7 +41,7 @@ export function LeadsKanban({
     setError(null);
     startTransition(async () => {
       moveOptimistic({ id, status });
-      const result = await setLeadStatus(id, status);
+      const result = await safeAction(() => setLeadStatus(id, status));
       if (!result.ok) setError(`${lead.client_name}: ${result.error}`);
     });
   };

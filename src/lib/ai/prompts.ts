@@ -1,7 +1,7 @@
 import { formatDate } from "@/lib/dates";
 import { POLICY_PRODUCTS } from "@/lib/domain";
 
-// Gemini prompts, adapted from the existing app (spec/gemini-prompts.md):
+// AI prompts, adapted from the existing app (spec/gemini-prompts.md):
 // today's date is injected instead of the app's hard-coded "June 10, 2026",
 // the full product list is used, explicit designations such as Director are
 // kept, and the structure is enforced with a response schema.

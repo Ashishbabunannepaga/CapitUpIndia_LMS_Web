@@ -1,8 +1,9 @@
 "use server";
 
 import { heuristicParseText } from "@/lib/ai/heuristics";
-import { AiRateLimitError, AiUnavailableError, generate, MODELS, parseJsonObject } from "@/lib/ai/gemini";
+import { AiRateLimitError, AiUnavailableError, generate, parseJsonObject } from "@/lib/ai/client";
 import { cleanExtractedLead, type ExtractedLead } from "@/lib/ai/lead-cleanup";
+import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
 import { leadIntakePrompt, visitingCardPrompt } from "@/lib/ai/prompts";
 import { leadSchema } from "@/lib/ai/schemas";
 import { getSession } from "@/lib/auth";
@@ -17,7 +18,7 @@ export type ExtractionResult =
       lead: ExtractedLead;
       /** Values removed by the clean-up rules, shown to the user. */
       dropped: string[];
-      /** "ai" when Gemini extracted it, "basic" for the offline fallback. */
+      /** "ai" when the AI model extracted it, "basic" for the offline fallback. */
       source: "ai" | "basic";
       notice?: string;
       cardPath?: string;
@@ -42,11 +43,11 @@ export async function extractLeadFromText(input: string): Promise<ExtractionResu
       ctx,
       user: profile,
       feature: "lead_intake",
-      models: MODELS.text,
-      systemInstruction: leadIntakePrompt(today),
-      contents: `Sales agent's note:\n${text}`,
-      temperature: 0.1,
+      models: MODEL_CHAINS.text,
+      system: leadIntakePrompt(today),
+      text: `Sales agent's note:\n${text}`,
       jsonSchema: leadSchema,
+      maxOutputTokens: MAX_OUTPUT_TOKENS.lead,
       parse: parseJsonObject,
     });
     const { lead, dropped } = cleanExtractedLead(value, { sourceText: text, today });
@@ -95,18 +96,12 @@ export async function scanVisitingCard(formData: FormData): Promise<ExtractionRe
       ctx,
       user: profile,
       feature: "card_ocr",
-      models: MODELS.vision,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: visitingCardPrompt(today) },
-            { inlineData: { mimeType: image.mime, data: Buffer.from(bytes).toString("base64") } },
-          ],
-        },
-      ],
-      temperature: 0.2,
+      models: MODEL_CHAINS.vision,
+      system: visitingCardPrompt(today),
+      text: "Read this visiting card.",
+      image: { mime: image.mime, base64: Buffer.from(bytes).toString("base64") },
       jsonSchema: leadSchema,
+      maxOutputTokens: MAX_OUTPUT_TOKENS.lead,
       parse: parseJsonObject,
     });
     // No source text to cross-check against, so only placeholder values are dropped.

@@ -8,7 +8,8 @@ interface CloudflareEnv {
    * wrangler.jsonc, but declared here because cloudflare-env.d.ts predates it.
    */
   BETTER_AUTH_URL?: string;
-  GEMINI_API_KEY?: string;
+  /** OpenAI API key for the AI features (src/lib/ai/openai.ts). Optional: without it they fall back to rules. */
+  OPENAI_API_KEY?: string;
   /** One-time code that opens /setup for the first admin; remove it after setup. */
   SETUP_CODE?: string;
   /**
