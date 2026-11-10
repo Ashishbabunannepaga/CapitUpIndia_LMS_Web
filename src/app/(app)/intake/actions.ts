@@ -83,7 +83,9 @@ export async function scanVisitingCard(formData: FormData): Promise<ExtractionRe
   let cardPath: string | undefined;
   let notice: string | undefined;
   try {
-    cardPath = await uploadCard(ctx, profile, bytes);
+    const preview = formData.get("preview");
+    const small = preview instanceof File && preview.size > 0 ? new Uint8Array(await preview.arrayBuffer()) : null;
+    cardPath = await uploadCard(ctx, profile, bytes, small);
   } catch (error) {
     console.error("Visiting card upload failed", error);
     notice = "The card photo could not be stored, so it won't be attached to the lead.";

@@ -1,14 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
 
 import { aiCallsThisHour, aiUsageSummary, listModelPricing, logAiUsage, updateModelPricing, updateSetting } from "../ai";
 import { nextRoundRobinAgents, pipelineAnalytics } from "../analytics";
-import { cardForLead, uploadCard } from "../cards";
+import { attachCardToLead, cardForLead, MAX_CARD_PREVIEW_BYTES, uploadCard, type CardImage } from "../cards";
 import { AccessDeniedError, InvalidInputError } from "../errors";
-import { createLead } from "../leads";
+import { createLead, deleteLead, getLead } from "../leads";
 import { createUser } from "../users";
 import { PASSWORD, testWorld } from "./helpers";
+import { visitingCardPreviews } from "@/server/db/schema";
 
 // AI usage and pricing, analytics, bulk-import round-robin and visiting cards.
 
@@ -106,6 +108,8 @@ describe("round-robin", () => {
 
 describe("visiting cards", () => {
   const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+  const small = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9]);
+  const bytesOf = async (card: CardImage) => new Uint8Array(await new Response(card.body).arrayBuffer());
 
   it("stores only real images under the uploader's folder", async () => {
     const path = await uploadCard(w.ctx, w.amit, jpeg);
@@ -118,10 +122,51 @@ describe("visiting cards", () => {
     const path = await uploadCard(w.ctx, w.amit, jpeg);
     const lead = await createLead(w.ctx, w.amit, { client_name: "Card Holder Co", visiting_card_path: path });
     const mine = await cardForLead(w.ctx, w.amit, lead);
-    expect(new Uint8Array(await mine!.arrayBuffer())).toEqual(jpeg);
-    expect(mine!.httpMetadata?.contentType).toBe("image/jpeg");
+    expect(await bytesOf(mine!)).toEqual(jpeg);
+    expect(mine!.contentType).toBe("image/jpeg");
     expect(await cardForLead(w.ctx, w.neha, lead)).toBeNull();
+    expect(await cardForLead(w.ctx, w.neha, lead, { full: true })).toBeNull();
     expect(await cardForLead(w.ctx, w.admin, lead)).not.toBeNull();
+  });
+
+  it("keeps a compressed copy in D1 and serves it, with the full photo on request", async () => {
+    const path = await uploadCard(w.ctx, w.amit, jpeg, small);
+    const row = await w.ctx.db.query.visitingCardPreviews.findFirst({ where: eq(visitingCardPreviews.path, path) });
+    expect(row).toMatchObject({ mime: "image/jpeg", byte_size: small.byteLength, created_by: w.amit.id });
+    const lead = await createLead(w.ctx, w.amit, { client_name: "Preview Co", visiting_card_path: path });
+    expect(await bytesOf((await cardForLead(w.ctx, w.amit, lead))!)).toEqual(small);
+    expect(await bytesOf((await cardForLead(w.ctx, w.amit, lead, { full: true }))!)).toEqual(jpeg);
+  });
+
+  it("rejects a preview that is not an image or is too large", async () => {
+    await expect(uploadCard(w.ctx, w.amit, jpeg, new TextEncoder().encode("<svg>"))).rejects.toThrow("preview");
+    const huge = new Uint8Array(MAX_CARD_PREVIEW_BYTES + 1);
+    huge.set([0xff, 0xd8, 0xff]);
+    await expect(uploadCard(w.ctx, w.amit, jpeg, huge)).rejects.toThrow("too large");
+  });
+
+  it("attaches a card to a lead the caller can see, and nobody else's", async () => {
+    const lead = await createLead(w.ctx, w.amit, { client_name: "Attach Me Co" });
+    await expect(attachCardToLead(w.ctx, w.neha, lead, jpeg, small)).rejects.toBeInstanceOf(InvalidInputError);
+    expect((await getLead(w.ctx, w.amit, lead))!.visiting_card_path).toBeNull();
+
+    await attachCardToLead(w.ctx, w.amit, lead, jpeg, small);
+    const first = (await getLead(w.ctx, w.amit, lead))!.visiting_card_path;
+    expect(first).toMatch(new RegExp(`^${w.amit.id}/`));
+    expect(await bytesOf((await cardForLead(w.ctx, w.amit, lead))!)).toEqual(small);
+
+    // An admin can replace it; the new card is what the lead shows.
+    await attachCardToLead(w.ctx, w.admin, lead, jpeg);
+    const second = (await getLead(w.ctx, w.amit, lead))!.visiting_card_path;
+    expect(second).not.toBe(first);
+    expect(second).toMatch(new RegExp(`^${w.admin.id}/`));
+  });
+
+  it("removes the compressed copy when the lead is deleted", async () => {
+    const path = await uploadCard(w.ctx, w.amit, jpeg, small);
+    const lead = await createLead(w.ctx, w.amit, { client_name: "Short Lived Co", visiting_card_path: path });
+    await deleteLead(w.ctx, w.admin, lead);
+    expect(await w.ctx.db.query.visitingCardPreviews.findFirst({ where: eq(visitingCardPreviews.path, path) })).toBeUndefined();
   });
 });
 

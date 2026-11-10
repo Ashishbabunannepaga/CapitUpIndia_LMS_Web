@@ -14,7 +14,7 @@ function dateContext(today: string): string {
 }
 
 const LEAD_FIELD_RULES = `- client_name: the company name, or the person's name for an individual (retail) policy.
-- type: "Renewal" if a renewal, expiry or renewal date is mentioned, otherwise "New".
+- type: "Rollover" if the client is moving (rolling over or porting) an existing policy from another insurer or broker to us; "Renewal" if a renewal, expiry or renewal date is mentioned; otherwise "New".
 - business_type: "Corporate" for companies, "Retail" for individuals, families or personal vehicles.
 - policy_product: exactly one of ${PRODUCTS}. "Fire" or "Property" means "Fire or Property"; workmen's compensation (WC) and other liability covers mean "Liability". Use "Health" only when the text is about health or does not say.
 - sub_product_name: any plan, scheme or detailed policy name (e.g. "Floater Scheme", "Cargo Transit", "GMC"); empty if none.
@@ -59,7 +59,7 @@ Common sheet layouts:
 
 Rules:
 - client_name: the company or insured name ("Insured Name" in the location sheet).
-- type: "Renewal" if a renewal date, expiry or renewal month is given, otherwise "New".
+- type: "Rollover" if the row says rollover or porting from another insurer; "Renewal" if a renewal date, expiry or renewal month is given; otherwise "New".
 - business_type: "Retail" for vehicles (4WHEELER, 2WHEELER, car, motor), individual policies or rows that name only a person; otherwise "Corporate".
 - policy_product: exactly one of ${PRODUCTS}. "Group health insurance" is Health; "WC" or workmen's compensation is Liability; "Package" is Fire or Property. Default to Health.
 - sub_product_name: the raw policy description from the sheet (e.g. "Group health insurance", "WC").

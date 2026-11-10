@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { isValidIsoDate } from "@/lib/date-parse";
-import { BUSINESS_TYPES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
+import { BUSINESS_TYPES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS, needsRenewalDate } from "@/lib/domain";
 
 // Validation for the lead form. The database re-checks lengths, email shape,
 // ownership and duplicate state, so this is about clear messages.
@@ -45,6 +45,7 @@ export const leadFormSchema = z
     poc2_contact_number: phone,
     poc2_email_id: email,
     notes: text(20000),
+    relationship_manager: text(200),
     status: z.enum(LEAD_STATUSES as [string, ...string[]]).default("Prospect"),
     assigned_agent_id: z
       .string()
@@ -54,6 +55,11 @@ export const leadFormSchema = z
     // Set by AI intake after a visiting card scan; checked on the server.
     visiting_card_path: z.string().trim().max(200).default(""),
     confirm_duplicate: z.string().optional(),
+  })
+  // A New lead may not have a policy yet; a Renewal or Rollover always has an expiry date.
+  .refine((v) => !needsRenewalDate(v.type) || v.renewal_date !== "", {
+    message: "Add the policy's renewal date. Only New leads can leave it empty.",
+    path: ["renewal_date"],
   })
   .transform((v) => ({
     ...v,
@@ -84,6 +90,7 @@ export const LEAD_FORM_FIELDS = [
   "poc2_contact_number",
   "poc2_email_id",
   "notes",
+  "relationship_manager",
   "status",
   "assigned_agent_id",
   "visiting_card_path",

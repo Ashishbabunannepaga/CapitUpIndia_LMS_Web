@@ -267,7 +267,7 @@ export function cleanExtractedLead(
 
   const lead: ExtractedLead = {
     client_name: tidyCase(get("client_name").replace(/^["']+|["']+$/g, "")),
-    type: rawType.includes("renew") || renewalDate ? "Renewal" : "New",
+    type: rawType.includes("roll") || /\bport/.test(rawType) ? "Rollover" : rawType.includes("renew") || renewalDate ? "Renewal" : "New",
     business_type: normalizeBusinessType(get("business_type"), context),
     policy_product: normalizeProduct(rawProduct || subProduct),
     sub_product_name: subProduct,

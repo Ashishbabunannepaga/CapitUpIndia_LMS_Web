@@ -10,7 +10,7 @@ import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isContactChann
 import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 
-import { appSettings, events, leadContactLogs, leadNoteReads, leadNotes, leads, profiles, renewalMilestoneOffsets } from "../db/schema";
+import { appSettings, events, leadContactLogs, leadNoteReads, leadNotes, leads, profiles, renewalMilestoneOffsets, visitingCardPreviews } from "../db/schema";
 import { isAdmin, assertAdmin, type Actor } from "./actor";
 import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
@@ -58,6 +58,7 @@ export type LeadFields = {
   poc2_contact_number: string;
   poc2_email_id: string;
   notes: string;
+  relationship_manager: string;
   status: Lead["status"];
 };
 
@@ -86,6 +87,7 @@ const FIELD_NAMES: (keyof LeadFields)[] = [
   "poc2_contact_number",
   "poc2_email_id",
   "notes",
+  "relationship_manager",
   "status",
 ];
 
@@ -113,6 +115,7 @@ function tidy<T extends Partial<LeadFields>>(fields: T): T {
   if (out.poc_email_id !== undefined) out.poc_email_id = out.poc_email_id.trim().toLowerCase();
   if (out.poc2_email_id !== undefined) out.poc2_email_id = out.poc2_email_id.trim().toLowerCase();
   if (out.poc_designation !== undefined) out.poc_designation = out.poc_designation.trim() || DEFAULT_POC_DESIGNATION;
+  if (out.relationship_manager !== undefined) out.relationship_manager = out.relationship_manager.trim();
   return out;
 }
 
@@ -480,6 +483,8 @@ export async function deleteLead(ctx: DataContext, actor: Actor, id: number): Pr
   const before = await findVisible(ctx, actor, id);
   await ctx.db.batch([
     ctx.db.delete(leads).where(eq(leads.id, id)),
+    // The compressed card copy goes with the lead (the R2 photo is kept, as before).
+    ctx.db.delete(visitingCardPreviews).where(eq(visitingCardPreviews.path, before.visiting_card_path ?? "")),
     auditInsert(ctx, actor, "leads", id, "DELETE", before, null),
   ]);
 }

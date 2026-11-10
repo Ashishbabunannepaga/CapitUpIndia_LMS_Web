@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { Lead } from "@/lib/database.types";
-import { BUSINESS_TYPES, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
+import { BUSINESS_TYPES, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS, needsRenewalDate } from "@/lib/domain";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +54,7 @@ const EMPTY: Record<string, string> = {
   poc2_contact_number: "",
   poc2_email_id: "",
   notes: "",
+  relationship_manager: "",
   status: "Prospect",
   assigned_agent_id: "",
   visiting_card_path: "",
@@ -250,6 +251,11 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
   const canOpen = (match: SimilarLead) => isAdmin || match.assigned_agent_id === currentUserId;
 
   const formKey = JSON.stringify(values);
+  // The renewal date is required for Renewal and Rollover, optional for New.
+  // Reset to the form's values whenever the form is re-rendered from the server.
+  const [typeChoice, setTypeChoice] = useState({ key: formKey, type: values.type });
+  const leadType = typeChoice.key === formKey ? typeChoice.type : values.type;
+  const dateRequired = needsRenewalDate(leadType);
 
   return (
     <form
@@ -311,8 +317,13 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
             </div>
           ) : null}
 
-          <Field label="New or renewal" name="type">
-            <NativeSelect id="type" name="type" defaultValue={values.type}>
+          <Field label="New, renewal or rollover" name="type">
+            <NativeSelect
+              id="type"
+              name="type"
+              defaultValue={values.type}
+              onChange={(event) => setTypeChoice({ key: formKey, type: event.target.value })}
+            >
               {LEAD_TYPES.map((t) => (
                 <option key={t}>{t}</option>
               ))}
@@ -358,12 +369,37 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
             />
           </Field>
           <Field
-            label="Renewal date"
+            label={dateRequired ? "Renewal date" : "Renewal date (optional)"}
             name="renewal_date"
             error={errors.renewal_date}
-            hint="Reminders are scheduled from T-30 days to T-5 minutes."
+            hint={
+              dateRequired
+                ? "Required for renewals and rollovers. Reminders run from T-30 days to T-5 minutes."
+                : "Optional for a new lead. Add it when you know the policy's expiry to get reminders."
+            }
           >
-            <Input id="renewal_date" name="renewal_date" type="date" defaultValue={values.renewal_date} />
+            <Input
+              id="renewal_date"
+              name="renewal_date"
+              type="date"
+              required={dateRequired}
+              defaultValue={values.renewal_date}
+              aria-invalid={Boolean(errors.renewal_date)}
+            />
+          </Field>
+          <Field
+            label="RM (relationship manager)"
+            name="relationship_manager"
+            error={errors.relationship_manager}
+            hint="Whom to call for policy details on follow-ups."
+          >
+            <Input
+              id="relationship_manager"
+              name="relationship_manager"
+              maxLength={200}
+              defaultValue={values.relationship_manager}
+              placeholder="e.g. Ravi Kumar, HDFC Ergo, 98480 12345"
+            />
           </Field>
           {isAdmin ? (
             <Field label="Assigned agent" name="assigned_agent_id">

@@ -22,7 +22,12 @@ export const LEAD_STATUSES: readonly LeadStatus[] = [
   "Closed Lost",
 ];
 
-export const LEAD_TYPES: readonly LeadType[] = ["New", "Renewal"];
+export const LEAD_TYPES: readonly LeadType[] = ["New", "Renewal", "Rollover"];
+
+/** A Renewal or Rollover lead needs its policy expiry date; a New lead may have none. */
+export function needsRenewalDate(type: string): boolean {
+  return type === "Renewal" || type === "Rollover";
+}
 
 export const BUSINESS_TYPES: readonly BusinessType[] = ["Corporate", "Retail"];
 
