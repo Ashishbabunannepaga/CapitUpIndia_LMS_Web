@@ -117,17 +117,25 @@ export async function findSimilarLeads(
   candidateIds.delete(excludeId);
   if (candidateIds.size === 0) return [];
 
-  const rows = await ctx.db
-    .select({
-      lead_id: leads.id,
-      client_name: leads.client_name,
-      normalized: leads.client_name_normalized,
-      assigned_agent_id: leads.assigned_agent_id,
-      assigned_agent_name: profiles.full_name,
-    })
-    .from(leads)
-    .leftJoin(profiles, eq(profiles.id, leads.assigned_agent_id))
-    .where(inArray(leads.id, [...candidateIds]));
+  // D1 allows at most 100 bound parameters per statement. The FTS search
+  // can return 200 candidates (plus exact matches), so query IDs in safe chunks.
+  const ids = [...candidateIds];
+  const rows = [];
+  for (let start = 0; start < ids.length; start += 100) {
+    const batchIds = ids.slice(start, start + 100);
+    const batch = await ctx.db
+      .select({
+        lead_id: leads.id,
+        client_name: leads.client_name,
+        normalized: leads.client_name_normalized,
+        assigned_agent_id: leads.assigned_agent_id,
+        assigned_agent_name: profiles.full_name,
+      })
+      .from(leads)
+      .leftJoin(profiles, eq(profiles.id, leads.assigned_agent_id))
+      .where(inArray(leads.id, batchIds));
+    rows.push(...batch);
+  }
 
   return rows
     .filter((r) => isSimilar(query, r.normalized))
