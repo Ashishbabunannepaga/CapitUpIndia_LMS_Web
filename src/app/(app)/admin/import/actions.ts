@@ -242,7 +242,7 @@ const commitSchema = z.object({
     .array(
       z.object({
         client_name: z.string().trim().min(1).max(300),
-        type: z.enum(["New", "Renewal"]),
+        type: z.enum(["New", "Renewal", "Rollover"]),
         business_type: z.enum(["Corporate", "Retail"]),
         policy_product: z.string(),
         sub_product_name: z.string().max(200),

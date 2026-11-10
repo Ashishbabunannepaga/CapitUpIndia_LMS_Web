@@ -226,6 +226,16 @@ describe("cleanExtractedLead", () => {
   });
 });
 
+describe("lead type", () => {
+  it("keeps Rollover from the extraction, even with a date", () => {
+    for (const raw of ["Rollover", "rollover", "Roll over", "Porting"]) {
+      expect(cleanExtractedLead({ client_name: "Acme", type: raw, renewal_date: "2027-03-03" }, { today: TODAY }).lead.type).toBe("Rollover");
+    }
+    expect(cleanExtractedLead({ client_name: "Acme", type: "New", renewal_date: "2027-03-03" }, { today: TODAY }).lead.type).toBe("Renewal");
+    expect(cleanExtractedLead({ client_name: "Acme", type: "New" }, { today: TODAY }).lead.type).toBe("New");
+  });
+});
+
 describe("heuristicParseText", () => {
   it("reads a labelled note", () => {
     const text = "Client: Kaveri Textiles, POC Priya Sharma (HR) priya@kaveri.in +91 98450 12345, motor fleet renewal 3rd March";

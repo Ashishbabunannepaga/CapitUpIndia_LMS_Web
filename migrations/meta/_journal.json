@@ -43,6 +43,13 @@
       "when": 1794120453628,
       "tag": "0005_dazzling_silver_surfer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794294462411,
+      "tag": "0006_sharp_white_queen",
+      "breakpoints": true
     }
   ]
 }

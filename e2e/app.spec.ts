@@ -101,6 +101,40 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
   expect(milestones?.n).toBe(10);
 });
 
+test("a rollover lead needs a renewal date, keeps its RM and shows an attached visiting card", async ({ page }) => {
+  await signIn(page, "amit");
+  await page.goto("/leads/new");
+  await page.getByLabel("Client or company name").fill("UI Rollover Logistics");
+  // New leads may skip the date; renewals and rollovers may not.
+  await expect(page.locator("#renewal_date")).not.toHaveAttribute("required");
+  await page.getByLabel("New, renewal or rollover").selectOption("Rollover");
+  await expect(page.locator("#renewal_date")).toHaveAttribute("required");
+  await page.getByLabel("RM (relationship manager)").fill("Ravi Kumar, HDFC Ergo, 98480 12345");
+  await page.locator("#renewal_date").fill("2030-06-01");
+  await page.getByRole("button", { name: "Save lead" }).click();
+
+  await expect(page.getByText("Lead saved.")).toBeVisible();
+  await expect(page.getByText("Rollover", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Ravi Kumar, HDFC Ergo, 98480 12345")).toBeVisible();
+  const lead = await leadRow("UI Rollover Logistics");
+  expect(lead).toMatchObject({ lead_type: "Rollover", relationship_manager: "Ravi Kumar, HDFC Ergo, 98480 12345" });
+
+  // Attach a card from the lead page: it is shrunk in the browser, stored, and shown beside the lead.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAFCAIAAAD38zoCAAAAEUlEQVR4nGM4ISeHFTHQQQIABrMooTYkvzkAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page
+    .locator('section[aria-label="Visiting card"]:visible input[type=file]')
+    .setInputFiles({ name: "card.png", mimeType: "image/png", buffer: png });
+  const card = page.locator('section[aria-label="Visiting card"]:visible img');
+  await expect(card).toBeVisible();
+  await expect.poll(() => card.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  const stored = await leadRow("UI Rollover Logistics");
+  const preview = await queryFirst<{ mime: string }>(db, "select mime from visiting_card_previews where path = ?", stored!.visiting_card_path);
+  expect(preview?.mime).toBe("image/jpeg");
+});
+
 test("the form explains invalid input instead of saving it", async ({ page }) => {
   await signIn(page, "amit");
   await page.goto("/leads/new");

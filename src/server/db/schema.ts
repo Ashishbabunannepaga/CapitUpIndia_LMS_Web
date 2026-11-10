@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { blob, check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // D1 (SQLite) schema. Ported from the old Supabase migrations (see git history
 // before the Cloudflare move); their comments explained the business rules. Differences from Postgres:
@@ -12,7 +12,7 @@ import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex
 //     normalizeCompanyName() (SQLite cannot call it from a generated column).
 
 export const USER_ROLES = ["ADMIN", "AGENT"] as const;
-export const LEAD_TYPES = ["New", "Renewal"] as const;
+export const LEAD_TYPES = ["New", "Renewal", "Rollover"] as const;
 export const BUSINESS_TYPES = ["Corporate", "Retail"] as const;
 export const POLICY_PRODUCTS = ["Health", "Fire or Property", "Life", "Motor", "Liability", "Travel", "Marine", "Credit"] as const;
 export const LEAD_STATUSES = ["Prospect", "Quoted", "Active Client", "Follow-up", "Closed Won", "Closed Lost"] as const;
@@ -123,7 +123,15 @@ export const leads = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     client_name: text("client_name").notNull(),
     client_name_normalized: text("client_name_normalized").notNull(),
-    type: text("type", { enum: LEAD_TYPES }).notNull().default("New"),
+    /**
+     * New, Renewal or Rollover. Stored in `lead_type`: the original `type`
+     * column's CHECK allowed only New and Renewal, and SQLite can only change a
+     * CHECK by rebuilding the table, which on D1 cascades and deletes every
+     * event and note. So the type moved to a new column (migration 0006).
+     */
+    type: text("lead_type", { enum: LEAD_TYPES }).notNull().default("New"),
+    /** Unused since migration 0006 (see `type`). Kept because dropping it needs a table rebuild. */
+    legacy_type: text("type", { enum: ["New", "Renewal"] }).notNull().default("New"),
     business_type: text("business_type", { enum: BUSINESS_TYPES }).notNull().default("Corporate"),
     policy_product: text("policy_product", { enum: POLICY_PRODUCTS }).notNull().default("Health"),
     sub_product_name: text("sub_product_name").notNull().default(""),
@@ -146,6 +154,8 @@ export const leads = sqliteTable(
     duplicate_resolved_at: text("duplicate_resolved_at"),
     duplicate_resolved_by: text("duplicate_resolved_by").references(() => profiles.id, { onDelete: "set null" }),
     visiting_card_path: text("visiting_card_path"),
+    /** The insurer's relationship manager for this account (name, phone), so agents know whom to ask for details. */
+    relationship_manager: text("relationship_manager").notNull().default(""),
     /** The capitupindia.com/office call request this lead was handed over from, if any. */
     office_lead_id: text("office_lead_id"),
     created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
@@ -163,7 +173,8 @@ export const leads = sqliteTable(
     index("leads_updated_at_idx").on(t.updated_at),
     index("leads_duplicate_idx").on(t.is_duplicate),
     check("leads_client_name_len", sql`length(trim(${t.client_name})) between 1 and 300`),
-    check("leads_type", sql`${t.type} in (${inList(LEAD_TYPES)})`),
+    check("leads_type", sql`${t.legacy_type} in ('New', 'Renewal')`),
+    check("leads_lead_type", sql`${t.type} in (${inList(LEAD_TYPES)})`),
     check("leads_business_type", sql`${t.business_type} in (${inList(BUSINESS_TYPES)})`),
     check("leads_policy_product", sql`${t.policy_product} in (${inList(POLICY_PRODUCTS)})`),
     check("leads_status", sql`${t.status} in (${inList(LEAD_STATUSES)})`),
@@ -178,6 +189,28 @@ export const leads = sqliteTable(
     ),
     check("leads_address_len", sql`length(${t.address}) <= 1000`),
     check("leads_notes_len", sql`length(${t.notes}) <= 20000`),
+    check("leads_relationship_manager_len", sql`length(${t.relationship_manager}) <= 200`),
+  ],
+);
+
+/**
+ * A small, compressed copy of each visiting card (resized in the browser),
+ * kept in D1 so the lead page can show it instantly. The full photo stays in
+ * R2 under the same path. Rows are read only through src/server/data/cards.ts.
+ */
+export const visitingCardPreviews = sqliteTable(
+  "visiting_card_previews",
+  {
+    path: text("path").primaryKey(),
+    mime: text("mime").notNull(),
+    data: blob("data", { mode: "buffer" }).notNull(),
+    byte_size: integer("byte_size").notNull(),
+    created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [
+    check("visiting_card_previews_mime", sql`${t.mime} in ('image/jpeg', 'image/png', 'image/webp')`),
+    check("visiting_card_previews_size", sql`${t.byte_size} between 1 and 307200`),
   ],
 );
 

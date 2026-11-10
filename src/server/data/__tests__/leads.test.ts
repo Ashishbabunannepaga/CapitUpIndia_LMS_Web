@@ -211,6 +211,36 @@ describe("lead fields", () => {
   });
 });
 
+describe("lead type and RM", () => {
+  it("stores Rollover beside New and Renewal, and filters by it", async () => {
+    const id = await createLead(w.ctx, w.amit, { client_name: "Rollover Co", type: "Rollover", renewal_date: "2027-03-01" });
+    expect((await getLead(w.ctx, w.amit, id))?.type).toBe("Rollover");
+    // A rollover gets the same renewal countdown as a renewal.
+    expect((await getLeadEvents(w.ctx, w.amit, id)).filter((e) => e.is_system_generated).length).toBeGreaterThan(0);
+    const rows = await listLeads(w.ctx, w.amit, filters({ type: "Rollover" }));
+    expect(rows.leads.map((l) => l.id)).toEqual([id]);
+    await updateLead(w.ctx, w.amit, id, { type: "Renewal" });
+    expect((await getLead(w.ctx, w.amit, id))?.type).toBe("Renewal");
+    await expect(createLead(w.ctx, w.amit, { client_name: "Odd Type", type: "Transfer" as never })).rejects.toThrow(/constraint/i);
+  });
+
+  it("a New lead can be saved without a renewal date", async () => {
+    const id = await createLead(w.ctx, w.amit, { client_name: "Fresh Prospect Co", type: "New" });
+    expect(await getLead(w.ctx, w.amit, id)).toMatchObject({ type: "New", renewal_date: null });
+  });
+
+  it("keeps the RM on the lead, trimmed, and refuses one over 200 characters", async () => {
+    const id = await createLead(w.ctx, w.amit, { client_name: "RM Co", relationship_manager: "  Ravi Kumar, HDFC Ergo, 9848012345 " });
+    expect((await getLead(w.ctx, w.amit, id))?.relationship_manager).toBe("Ravi Kumar, HDFC Ergo, 9848012345");
+    await updateLead(w.ctx, w.amit, id, { relationship_manager: "Sita (ICICI Lombard)" });
+    expect((await getLead(w.ctx, w.amit, id))?.relationship_manager).toBe("Sita (ICICI Lombard)");
+    await expect(createLead(w.ctx, w.amit, { client_name: "Long RM", relationship_manager: "x".repeat(201) })).rejects.toThrow(/constraint/i);
+    // Another agent cannot set the RM on Amit's lead.
+    await expect(updateLead(w.ctx, w.neha, id, { relationship_manager: "Someone else" })).rejects.toBeInstanceOf(InvalidInputError);
+    expect((await getLead(w.ctx, w.amit, id))?.relationship_manager).toBe("Sita (ICICI Lombard)");
+  });
+});
+
 describe("search and filters", () => {
   beforeAll(async () => {
     await createLead(w.ctx, w.amit, { client_name: "Search Kaveri Textiles", poc_contact_number: "+91 98450-12345", status: "Quoted" });

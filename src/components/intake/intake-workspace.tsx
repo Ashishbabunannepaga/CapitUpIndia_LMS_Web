@@ -7,6 +7,7 @@ import { extractLeadFromText, scanVisitingCard, type ExtractionResult } from "@/
 import { LeadForm } from "@/components/leads/lead-form";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { cardFormData, prepareCardImages } from "@/lib/card-image";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -89,21 +90,8 @@ function useDictation(onText: (text: string) => void) {
 }
 
 // ---------------------------------------------------------------------------
-// Images: shrink before upload so phone photos stay well under the limit
+// Camera capture (photos are shrunk before upload by prepareCardImages)
 // ---------------------------------------------------------------------------
-
-async function shrinkImage(file: Blob, maxSide = 1600): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not read the image"))), "image/jpeg", 0.85),
-  );
-}
 
 function WebcamCapture({ onCapture, onClose }: { onCapture: (blob: Blob) => void; onClose: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
@@ -208,11 +196,9 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured }
     setBusy("card");
     startTransition(async () => {
       try {
-        const small = await shrinkImage(file);
-        const formData = new FormData();
-        formData.set("card", new File([small], "card.jpg", { type: "image/jpeg" }));
-        const res = await scanVisitingCard(formData);
-        if (res.ok) show({ ...res, from: "card", previewUrl: URL.createObjectURL(small) });
+        const images = await prepareCardImages(file);
+        const res = await scanVisitingCard(cardFormData(images));
+        if (res.ok) show({ ...res, from: "card", previewUrl: URL.createObjectURL(images.preview) });
         else setError(res.error);
       } catch {
         setError("Could not read that image. Try a clearer JPEG or PNG photo.");

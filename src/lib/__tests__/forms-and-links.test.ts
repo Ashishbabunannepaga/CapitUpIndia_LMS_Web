@@ -30,6 +30,22 @@ describe("leadFormSchema", () => {
     expect(leadFormSchema.parse({ ...valid, poc_designation: "Director" }).poc_designation).toBe("Director");
   });
 
+  it("needs a renewal date for Renewal and Rollover, not for New", () => {
+    expect(leadFormSchema.parse({ ...valid, type: "New" }).renewal_date).toBeNull();
+    for (const type of ["Renewal", "Rollover"]) {
+      const missing = leadFormSchema.safeParse({ ...valid, type });
+      expect(missing.success).toBe(false);
+      expect(missing.error?.issues[0]?.path).toEqual(["renewal_date"]);
+      expect(leadFormSchema.parse({ ...valid, type, renewal_date: "2027-01-15" })).toMatchObject({ type, renewal_date: "2027-01-15" });
+    }
+  });
+
+  it("keeps the RM, trimmed, and refuses one over 200 characters", () => {
+    expect(leadFormSchema.parse({ ...valid, relationship_manager: "  Ravi, HDFC Ergo " }).relationship_manager).toBe("Ravi, HDFC Ergo");
+    expect(leadFormSchema.parse(valid).relationship_manager).toBe("");
+    expect(leadFormSchema.safeParse({ ...valid, relationship_manager: "x".repeat(201) }).success).toBe(false);
+  });
+
   const rejects: [string, Record<string, string>][] = [
     ["an empty client", { client_name: "   " }],
     ["a client over 300 characters", { client_name: "x".repeat(301) }],
@@ -39,6 +55,7 @@ describe("leadFormSchema", () => {
     ["letters in a phone", { client_name: "Acme", poc_contact_number: "98450abc" }],
     ["a phone over 32 characters", { client_name: "Acme", poc_contact_number: "9".repeat(33) }],
     ["an unknown status", { client_name: "Acme", status: "Won" }],
+    ["an unknown lead type", { client_name: "Acme", type: "Transfer" }],
     ["an unknown product", { client_name: "Acme", policy_product: "Pet" }],
     ["an agent id that is not a uuid", { client_name: "Acme", assigned_agent_id: "1 or 1=1" }],
   ];

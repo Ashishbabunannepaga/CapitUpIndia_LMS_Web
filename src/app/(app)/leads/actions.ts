@@ -8,6 +8,8 @@ import { getSession, isAdmin } from "@/lib/auth";
 import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
 import { isLeadStatus } from "@/lib/domain";
 import { contactSchema, formDataToObject, leadFormSchema, type LeadFormValues } from "@/lib/lead-schema";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
+import { attachCardToLead } from "@/server/data/cards";
 import { findSimilarLeads, type SimilarLead } from "@/server/data/duplicates";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 import * as leadData from "@/server/data/leads";
@@ -48,6 +50,7 @@ function toRow(v: LeadFormValues) {
     poc2_contact_number: v.poc2_contact_number,
     poc2_email_id: v.poc2_email_id,
     notes: v.notes,
+    relationship_manager: v.relationship_manager,
     status: v.status as LeadStatus,
   };
 }
@@ -238,6 +241,19 @@ export async function resolveDuplicate(leadId: number): Promise<ActionResult> {
 
 export async function deleteLead(leadId: number): Promise<ActionResult> {
   return run(({ ctx, actor }) => leadData.deleteLead(ctx, actor, leadId));
+}
+
+/** Attaches a visiting card photo (plus its compressed preview) to a lead the caller can see. */
+export async function attachVisitingCard(leadId: number, formData: FormData): Promise<ActionResult> {
+  const card = formData.get("card");
+  const preview = formData.get("preview");
+  if (!(card instanceof File) || card.size === 0) return { ok: false, error: "Choose a photo of the card." };
+  if (card.size > MAX_UPLOAD_BYTES) return { ok: false, error: `The photo is larger than ${MAX_UPLOAD_LABEL}.` };
+  const bytes = new Uint8Array(await card.arrayBuffer());
+  const small = preview instanceof File && preview.size > 0 ? new Uint8Array(await preview.arrayBuffer()) : null;
+  const result = await run(({ ctx, actor }) => attachCardToLead(ctx, actor, leadId, bytes, small));
+  if (result.ok) revalidatePath(`/leads/${leadId}`);
+  return result.ok ? { ok: true, message: "Visiting card attached." } : result;
 }
 
 export async function markNotesRead(leadId: number | null): Promise<void> {

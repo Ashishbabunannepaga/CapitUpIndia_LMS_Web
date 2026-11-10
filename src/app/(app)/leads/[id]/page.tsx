@@ -16,6 +16,7 @@ import { ContactLink } from "@/components/leads/contact-link";
 import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
+import { VisitingCardPanel } from "@/components/leads/visiting-card-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
@@ -146,8 +147,10 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
     unreadLeadNotes(ctx, profile, 200),
     getLeadContactLog(id),
   ]);
-  // Served from the private bucket by ./card/route.ts, which checks access again.
-  const cardUrl = lead.visiting_card_path ? `/leads/${id}/card` : null;
+  // Served by ./card/route.ts, which checks access again. The card's file name
+  // in the URL makes a replaced card a new URL, so caching stays safe.
+  const cardVersion = lead.visiting_card_path?.split("/").pop()?.split(".")[0];
+  const cardUrl = cardVersion ? `/leads/${id}/card?v=${cardVersion}` : null;
   const unreadIds = new Set(unread.filter((n) => n.lead_id === id).map((n) => n.id));
   const saved = (await searchParams).saved;
   const savedMessage = typeof saved === "string" ? SAVED_MESSAGES[saved] : undefined;
@@ -277,6 +280,10 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {/* On phones the card sits first, so it is one tap away at a client visit. */}
+        {cardUrl ? (
+          <VisitingCardPanel leadId={lead.id} clientName={lead.client_name} cardUrl={cardUrl} className="xl:hidden" />
+        ) : null}
         <div className="min-w-0 space-y-6 xl:col-span-2">
           <Panel title="Policy">
             <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -298,6 +305,11 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                   <AgentName name={lead.agent_name} />
                 )}
               </Fact>
+              {lead.relationship_manager ? (
+                <Fact label="RM (relationship manager)">
+                  <span className="whitespace-pre-wrap">{lead.relationship_manager}</span>
+                </Fact>
+              ) : null}
               {lead.address ? (
                 <Fact label="Address">
                   <span className="whitespace-pre-wrap">{lead.address}</span>
@@ -351,19 +363,15 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             )}
           </Panel>
 
-          {cardUrl ? (
-            <Panel title="Visiting card">
-              {/* eslint-disable-next-line @next/next/no-img-element -- same-origin route that checks access */}
-              <img
-                src={cardUrl}
-                alt={`Visiting card for ${lead.client_name}`}
-                className="max-h-80 w-auto rounded-lg border"
-              />
-            </Panel>
-          ) : null}
         </div>
 
         <div className="min-w-0 space-y-6">
+          <VisitingCardPanel
+            leadId={lead.id}
+            clientName={lead.client_name}
+            cardUrl={cardUrl}
+            className={cardUrl ? "hidden xl:block" : undefined}
+          />
           <Panel title={`Notes thread (${notes.length})`}>
             <AddNoteForm leadId={lead.id} />
             {notes.length > 0 ? (

@@ -135,13 +135,13 @@ export function buildImportSql(result, { sourceLabel = "firebase export", genera
     const created = ts(l.createdAt);
     push(`-- legacy ${commentValue(l.legacyId)}`);
     push("insert into leads (");
-    push("  client_name, client_name_normalized, type, business_type, policy_product, sub_product_name, renewal_date,");
+    push("  client_name, client_name_normalized, type, lead_type, business_type, policy_product, sub_product_name, renewal_date,");
     push("  poc_name, poc_designation, poc_contact_number, poc_email_id,");
     push("  poc2_name, poc2_designation, poc2_contact_number, poc2_email_id,");
     push("  notes, status, assigned_agent_id, assigned_at, created_at, updated_at");
     push(") values (");
     push(
-      `  ${lit(str(l.clientName))}, ${lit(normalizeCompanyName(str(l.clientName)))}, ${lit(l.type)}, ${lit(l.businessType)}, ${lit(l.policyProduct)}, ${lit(l.subProductName)}, ${lit(l.renewalDate)},`,
+      `  ${lit(str(l.clientName))}, ${lit(normalizeCompanyName(str(l.clientName)))}, ${lit(l.type)}, ${lit(l.type)}, ${lit(l.businessType)}, ${lit(l.policyProduct)}, ${lit(l.subProductName)}, ${lit(l.renewalDate)},`,
     );
     // The same clean-up the data layer's tidy() applies to a new lead.
     push(`  ${lit(l.pocName)}, ${lit(str(l.pocDesignation) || "poc")}, ${lit(l.pocContactNumber)}, ${lit(email(l.pocEmailId))},`);
