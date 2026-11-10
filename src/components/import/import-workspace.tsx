@@ -19,6 +19,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/dates";
 import { LEAD_STATUSES, POLICY_PRODUCTS } from "@/lib/domain";
+import { safeAction } from "@/lib/safe-action";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { cn } from "@/lib/utils";
 
@@ -75,7 +76,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
   function preview() {
     setError(null);
     startTransition(async () => {
-      apply(await previewPastedRows(text, useAi));
+      apply(await safeAction(() => previewPastedRows(text, useAi)));
     });
   }
 
@@ -89,7 +90,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
     formData.set("sheet", file);
     formData.set("use_ai", String(useAi));
     startTransition(async () => {
-      apply(await previewUploadedSheet(formData));
+      apply(await safeAction(() => previewUploadedSheet(formData)));
     });
   }
 
@@ -115,12 +116,14 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
     }
     setError(null);
     startTransition(async () => {
-      const result = await commitImport({
+      const result = await safeAction(() =>
+        commitImport({
         status,
         allocation,
         agentId,
         rows: selected.map((r) => r.lead),
-      });
+        }),
+      );
       if (!result.ok) {
         setError(result.error);
         return;

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { safeAction } from "@/lib/safe-action";
 
 function Feedback({ result }: { result: TeamResult | null }) {
   if (!result) return null;
@@ -35,7 +36,7 @@ export function AddMemberForm() {
       className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto] lg:items-end"
       action={(formData) =>
         startTransition(async () => {
-          const outcome = await addTeamMember(formData);
+          const outcome = await safeAction(() => addTeamMember(formData));
           setResult(outcome);
           if (outcome.ok) form.current?.reset();
         })
@@ -84,7 +85,7 @@ export function MemberControls({
   const [resetting, setResetting] = useState(false);
   const act = (fn: () => Promise<TeamResult>) =>
     startTransition(async () => {
-      const outcome = await fn();
+      const outcome = await safeAction(fn);
       setResult(outcome);
       if (outcome.ok) setResetting(false);
     });

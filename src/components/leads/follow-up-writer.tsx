@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FOLLOW_UP_TONES, type FollowUpTone } from "@/lib/ai/prompts";
 import { draftMailtoHref, gmailComposeHref, whatsappHref } from "@/lib/contact-links";
+import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -32,7 +33,7 @@ export function FollowUpWriter({ leadId, clientName, product, phone, email }: Pr
     setError(null);
     setNotice(null);
     startTransition(async () => {
-      const result = await generateFollowUp(leadId, tone, rephrase ? draft : undefined);
+      const result = await safeAction(() => generateFollowUp(leadId, tone, rephrase ? draft : undefined));
       if (!result.ok) {
         setError(result.error);
         return;

@@ -5,6 +5,7 @@ import { useOptimistic, useTransition } from "react";
 import { setLeadStatus } from "@/app/(app)/leads/actions";
 import type { LeadStatus } from "@/lib/database.types";
 import { LEAD_STATUSES, STATUS_STYLES } from "@/lib/domain";
+import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
 /** Inline status changer used in the table, cards and lead header. */
@@ -29,7 +30,7 @@ export function StatusSelect({
         const next = event.target.value as LeadStatus;
         startTransition(async () => {
           setOptimistic(next);
-          const result = await setLeadStatus(leadId, next);
+          const result = await safeAction(() => setLeadStatus(leadId, next));
           if (!result.ok) window.alert(result.error);
         });
       }}
