@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
 
 vi.mock("server-only", () => ({}));
 
@@ -9,6 +10,7 @@ import { AccessDeniedError, InvalidInputError } from "../errors";
 import { createLead, deleteLead, getLead } from "../leads";
 import { createUser } from "../users";
 import { PASSWORD, testWorld } from "./helpers";
+import { visitingCardPreviews } from "@/server/db/schema";
 
 // AI usage and pricing, analytics, bulk-import round-robin and visiting cards.
 
