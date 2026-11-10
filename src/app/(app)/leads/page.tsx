@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell/page-header";
 import { LeadFiltersBar } from "@/components/leads/lead-filters-bar";
@@ -8,8 +8,9 @@ import { EmptyLeads, LeadCards, LeadsTable } from "@/components/leads/lead-views
 import { LeadsKanban } from "@/components/leads/leads-kanban";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireProfile } from "@/lib/auth";
-import { parseLeadFilters } from "@/lib/lead-filters";
-import { countLeadsByStatus, getTeam, LEAD_LIST_LIMIT, listLeads } from "@/lib/leads";
+import { formatCount } from "@/lib/analytics";
+import { leadsHref, parseLeadFilters } from "@/lib/lead-filters";
+import { countLeadsByStatus, getTeam, KANBAN_COLUMN_LIMIT, LEAD_PAGE_SIZE, listLeads } from "@/lib/leads";
 
 export const metadata: Metadata = { title: "Leads" };
 
@@ -20,9 +21,18 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   // The board shows every status as a column, so the status filter does not apply there.
   const effective = filters.view === "kanban" ? { ...filters, status: null } : filters;
 
-  const [{ leads, truncated }, team] = await Promise.all([listLeads(effective), getTeam()]);
-  // Past the list limit the loaded cards undercount, so columns take their totals from the database.
-  const columnTotals = filters.view === "kanban" && truncated ? await countLeadsByStatus(effective) : null;
+  // Status counts come from one GROUP BY: the total for the pager, and board
+  // column totals when a column holds more cards than it shows.
+  const [{ leads, truncated }, team, statusCounts] = await Promise.all([
+    listLeads(effective),
+    getTeam(),
+    countLeadsByStatus(effective),
+  ]);
+  const kanban = filters.view === "kanban";
+  const columnTotals = kanban && truncated ? statusCounts : null;
+  const matching = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
+  const firstShown = (filters.page - 1) * LEAD_PAGE_SIZE + 1;
+  const lastShown = firstShown + leads.length - 1;
   const agents = team.filter((member) => member.is_active);
   const filtered = Boolean(
     effective.q || effective.status || effective.product || effective.type || effective.agent || effective.renewal || effective.duplicates,
@@ -50,12 +60,9 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       <LeadFiltersBar filters={filters} agents={agents} showAgentFilter={admin} />
 
       <p className="mb-3 text-xs text-muted-foreground">
-        {columnTotals
-          ? `${Object.values(columnTotals).reduce((sum, n) => sum + n, 0)} leads`
-          : leads.length === 1
-            ? "1 lead"
-            : `${leads.length} leads`}
-        {truncated ? ` (showing the first ${LEAD_LIST_LIMIT}; narrow the filters to see the rest)` : ""}
+        {matching === 1 ? "1 lead" : `${formatCount(matching)} leads`}
+        {kanban && truncated ? ` (each column shows its first ${KANBAN_COLUMN_LIMIT}; narrow the filters or use the table to see the rest)` : ""}
+        {!kanban && leads.length > 0 && (filters.page > 1 || truncated) ? `, showing ${firstShown}-${lastShown}` : ""}
       </p>
 
       {leads.length === 0 ? (
@@ -67,6 +74,34 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       ) : (
         <LeadsTable leads={leads} showAgent={admin} />
       )}
+
+      {!kanban && (filters.page > 1 || truncated) ? (
+        <nav aria-label="Pages" className="mt-4 flex items-center justify-between gap-2">
+          {filters.page > 1 ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={leadsHref({ ...filters, page: filters.page - 1 })} rel="prev">
+                <ChevronLeft />
+                Previous
+              </Link>
+            </Button>
+          ) : (
+            <span />
+          )}
+          <span className="text-xs text-muted-foreground tabular-nums">
+            Page {filters.page} of {Math.max(1, Math.ceil(matching / LEAD_PAGE_SIZE))}
+          </span>
+          {truncated ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={leadsHref({ ...filters, page: filters.page + 1 })} rel="next">
+                Next
+                <ChevronRight />
+              </Link>
+            </Button>
+          ) : (
+            <span />
+          )}
+        </nav>
+      ) : null}
     </>
   );
 }

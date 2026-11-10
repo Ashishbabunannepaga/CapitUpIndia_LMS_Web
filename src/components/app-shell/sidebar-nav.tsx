@@ -1,11 +1,31 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 import type { UserRole } from "@/lib/database.types";
 import { navForRole } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+
+/**
+ * A thin bar that fills under the clicked link while its page loads, so a
+ * click shows at once even when the server takes a moment. Absolute, so it
+ * never shifts the layout; it waits 120 ms so quick pages don't flash it.
+ */
+function PendingBar() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute inset-x-3 bottom-0.5 h-0.5 origin-left rounded-full bg-gold-400/80 motion-reduce:transition-none",
+        pending
+          ? "scale-x-100 opacity-100 transition-[transform,opacity] delay-[120ms] duration-[1200ms] ease-out"
+          : "scale-x-0 opacity-0 transition-opacity duration-150",
+      )}
+    />
+  );
+}
 
 export function SidebarNav({
   role,
@@ -21,8 +41,8 @@ export function SidebarNav({
   return (
     <nav className="flex flex-col gap-6 px-3 py-4" aria-label="Main">
       {navForRole(role).map((section) => (
-        <div key={section.title} className="space-y-1">
-          <p className="px-3 pb-1 text-[10px] font-semibold tracking-[0.16em] text-sidebar-foreground/40 uppercase">
+        <div key={section.title} className="space-y-0.5">
+          <p className="px-3 pb-2 text-xs text-sidebar-foreground/50">
             {section.title}
           </p>
           {section.items.map((item) => {
@@ -35,27 +55,28 @@ export function SidebarNav({
                 onClick={onNavigate}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/75 transition-all duration-200 hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  "group relative flex h-9 items-center gap-2.5 rounded-lg px-3 text-sm font-medium text-sidebar-foreground/75 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   active &&
-                    "bg-gradient-to-r from-brand-400/20 to-brand-400/5 text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_rgb(45_197_172/0.25)]",
+                    "bg-white/[0.08] text-sidebar-accent-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]",
                 )}
               >
                 {active ? (
                   <span
                     aria-hidden="true"
-                    className="absolute top-1/2 -left-3 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-gold-300 to-gold-500"
+                    className="absolute top-1/2 -left-3 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-gold-400"
                   />
                 ) : null}
                 <Icon
                   className={cn(
                     "size-4 transition-colors",
-                    active ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-brand-300",
+                    active ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80",
                   )}
                 />
                 {item.title}
+                <PendingBar />
                 {badges?.[item.href] ? (
                   <span
-                    className="ml-auto rounded-full bg-gradient-to-r from-gold-300 to-gold-400 px-1.5 py-0.5 text-[10px] leading-none font-semibold text-sidebar-primary-foreground"
+                    className="ml-auto font-mono text-xs text-gold-300 tabular-nums"
                     title={`${badges[item.href]} new notes`}
                   >
                     {badges[item.href] > 99 ? "99+" : badges[item.href]}

@@ -11,7 +11,7 @@ Tailwind CSS, shadcn/ui and Lucide on the front end, running on Cloudflare Worke
 ## Getting started
 
 1. Install dependencies: `npm install`
-2. Copy `.dev.vars.example` to `.dev.vars`. Add `GEMINI_API_KEY` for the AI features;
+2. Copy `.dev.vars.example` to `.dev.vars`. Add `OPENAI_API_KEY` for the AI features;
    without it the app falls back to basic extraction and standard follow-up drafts, and
    card scanning is unavailable.
 3. Create the local database: `npm run d1:migrate:local`
@@ -50,7 +50,7 @@ from Supabase to D1 is in [docs/cloudflare-d1-plan.md](docs/cloudflare-d1-plan.m
 | `events` | Visible calendar events and background renewal reminders (`T-30 Days` ... `T-5 Minutes`) |
 | `lead_notes` | Append-only, timestamped agent notes, rendered as `[Agent Name - DD MMM YYYY, HH:mm]: Note` |
 | `lead_note_reads` | Per-user read receipts for the "new notes" badge |
-| `ai_usage_logs` | Every Gemini call: user, feature, model, tokens and INR cost |
+| `ai_usage_logs` | Every AI call: user, feature, model, tokens and INR cost |
 | `ai_model_pricing`, `app_settings` | Central pricing, USD to INR rate, renewal due time and timezone |
 | `notifications` | Delivered renewal reminders, per user, with a read flag |
 | `audit_logs` | Who changed leads, profiles, notes, pricing and settings |
@@ -85,8 +85,10 @@ user; nothing else may import the database (ESLint enforces it).
 
 ## AI features
 
-Gemini is called only from the server, with the `GEMINI_API_KEY` Worker secret, and each
-feature tries a chain of models before giving up.
+OpenAI is called only from the server, with the `OPENAI_API_KEY` Worker secret, through
+one client (`src/lib/ai/client.ts`). Models, their fallback order and default prices live in
+`src/lib/ai/models.ts`; each feature tries its chain of models before giving up. Setup:
+`docs/openai-setup.md`.
 
 | Feature | Where | Falls back to |
 | --- | --- | --- |
@@ -108,12 +110,13 @@ shown for review before it is saved, and what was dropped is listed.
   ends them at once.
 - `/setup` creates the first admin only while there are no accounts and only with the
   `SETUP_CODE` secret; remove the secret afterwards.
-- `GEMINI_API_KEY` is read only on the server (`src/lib/ai/gemini.ts`). The old Android
-  app shipped its key inside the APK; that key must stay out of this repository.
+- `OPENAI_API_KEY` is read only on the server (`src/lib/ai/openai.ts`) and sent only in
+  the request header to api.openai.com. The old Android app shipped a Gemini key inside
+  the APK; no key belongs in this repository.
 - Visiting card photos live in a private R2 bucket under the uploader's id. They are
   served only by `/leads/<id>/card`, to people who can see that lead, with `nosniff`
   and a sandboxing CSP.
-- Agents are limited to `ai_hourly_limit_per_user` Gemini calls an hour (200 by default).
+- Agents are limited to `ai_hourly_limit_per_user` AI calls an hour (200 by default).
 - `src/proxy.ts` only redirects visitors without a session cookie; the real checks happen
   on the server (`src/lib/auth.ts`) and in the data layer.
 - The old app's plaintext passwords and name-based identity are not carried over.
@@ -132,7 +135,7 @@ src/
       admin/            Admin-only screens (guarded in admin/layout.tsx)
   components/           App shell, leads, admin, analytics and shadcn/ui components
   lib/
-    ai/                 Gemini client, prompts, schemas, deterministic clean-up
+    ai/                 AI client (OpenAI), model config, prompts, schemas, deterministic clean-up
     import/             Sheet parsing and heuristic column mapping
     auth.ts             The signed-in user for pages and actions
     domain.ts           Statuses, products, milestones, note formatting

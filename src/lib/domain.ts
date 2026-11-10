@@ -44,21 +44,21 @@ export const RENEWAL_MILESTONES = [
 
 export const BUSINESS_TIMEZONE = "Asia/Kolkata";
 
+let noteLineFormat: Intl.DateTimeFormat | undefined;
+
 /** Renders a note as "[Agent Name - DD MMM YYYY, HH:mm]: Note" in business time. */
 export function formatNoteLine(agentName: string, createdAt: string | Date, content: string): string {
-  const date = new Date(createdAt);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: BUSINESS_TIMEZONE,
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(date)
-      .find((p) => p.type === type)?.value ?? "";
+  noteLineFormat ??= new Intl.DateTimeFormat("en-GB", {
+    timeZone: BUSINESS_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = noteLineFormat.formatToParts(new Date(createdAt));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `[${agentName} - ${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}]: ${content}`;
 }
 
@@ -131,4 +131,12 @@ export function calendarCategories(
     return [retail ? "retail_renewal" : "gmc_renewal", ...(active ? (["active_client"] as const) : [])];
   }
   return [active ? "active_client" : "task"];
+}
+
+/** Ways an agent can reach a POC from the lead page; each click is logged on the lead. */
+export const CONTACT_CHANNELS = ["call", "whatsapp", "email"] as const;
+export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
+export const CONTACT_CHANNEL_LABELS: Record<ContactChannel, string> = { call: "Call", whatsapp: "WhatsApp", email: "Email" };
+export function isContactChannel(value: unknown): value is ContactChannel {
+  return typeof value === "string" && (CONTACT_CHANNELS as readonly string[]).includes(value);
 }

@@ -4,9 +4,10 @@ import {
   CalendarClock,
   CopyCheck,
   FileSpreadsheet,
+  Globe,
   IndianRupee,
   KanbanSquare,
-  Sparkles,
+  ScanText,
   Sun,
   Users,
 } from "lucide-react";
@@ -52,8 +53,14 @@ export const NAV_SECTIONS: NavSection[] = [
       {
         title: "AI Intake",
         href: "/intake",
-        icon: Sparkles,
+        icon: ScanText,
         description: "Turn notes, speech or a visiting card photo into a structured lead.",
+      },
+      {
+        title: "Office portal",
+        href: "/office",
+        icon: Globe,
+        description: "Open capitupindia.com/office and see its uploaded policies, gap reports and renewals.",
       },
     ],
   },
@@ -83,7 +90,7 @@ export const NAV_SECTIONS: NavSection[] = [
         title: "AI Usage",
         href: "/admin/ai-usage",
         icon: IndianRupee,
-        description: "Gemini calls, tokens and INR cost by agent and feature.",
+        description: "AI calls, tokens and INR cost by agent and feature.",
       },
       {
         title: "Team",

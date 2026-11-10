@@ -25,8 +25,8 @@ export default defineConfig({
     command: [
       `npx wrangler dev --ip 127.0.0.1 --port ${PORT} --test-scheduled --show-interactive-dev-session=false`,
       `--var BETTER_AUTH_SECRET:${AUTH_SECRET} --var BETTER_AUTH_URL:${BASE_URL}`,
-      // The app must run without Gemini: AI features fall back to the offline rules.
-      `--var GEMINI_API_KEY:`,
+      // The app must run without an AI key: AI features fall back to the offline rules.
+      `--var OPENAI_API_KEY:`,
     ].join(" "),
     url: `${BASE_URL}/login`,
     // The tests and the Worker share the local database; the server's own

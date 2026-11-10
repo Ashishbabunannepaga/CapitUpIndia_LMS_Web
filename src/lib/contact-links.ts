@@ -21,9 +21,28 @@ export function whatsappHref(phone: string, text?: string): string | null {
 
 export function mailtoHref(email: string, subject?: string, body?: string): string | null {
   if (!email.includes("@")) return null;
-  const params = [
+  return draftMailtoHref(email, subject, body);
+}
+
+function emailParams(subject?: string, body?: string): string[] {
+  return [
     subject ? `subject=${encodeURIComponent(subject)}` : "",
     body ? `body=${encodeURIComponent(body)}` : "",
   ].filter(Boolean);
-  return `mailto:${email}${params.length ? `?${params.join("&")}` : ""}`;
+}
+
+/** mailto link for a ready draft; the recipient is left blank when the POC has no valid email. */
+export function draftMailtoHref(email: string, subject?: string, body?: string): string {
+  const to = email.includes("@") ? email.trim() : "";
+  const params = emailParams(subject, body);
+  return `mailto:${to}${params.length ? `?${params.join("&")}` : ""}`;
+}
+
+/** Gmail web compose link, for agents whose browser has no mail app set up. */
+export function gmailComposeHref(email: string, subject?: string, body?: string): string {
+  const params = ["view=cm", "fs=1"];
+  if (email.includes("@")) params.push(`to=${encodeURIComponent(email.trim())}`);
+  if (subject) params.push(`su=${encodeURIComponent(subject)}`);
+  if (body) params.push(`body=${encodeURIComponent(body)}`);
+  return `https://mail.google.com/mail/?${params.join("&")}`;
 }

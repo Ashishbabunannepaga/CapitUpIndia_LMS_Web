@@ -7,6 +7,7 @@ import { nextCookies } from "better-auth/next-js";
 import { drizzle } from "drizzle-orm/d1";
 
 import * as schema from "./db/schema";
+import { hashPassword, verifyPassword } from "./password";
 
 // Sign-in for the LMS: email + password, sessions stored in D1. There is no
 // public sign-up; admins create accounts (src/server/data/users.ts).
@@ -17,7 +18,28 @@ import * as schema from "./db/schema";
 
 export type AuthEnv = Pick<CloudflareEnv, "BETTER_AUTH_SECRET" | "BETTER_AUTH_URL">;
 
+// Building a Better Auth instance (its endpoints, schema and plugins) costs
+// a few milliseconds of CPU, a real share of the Free plan's 10 ms per
+// request. The D1 binding object stays the same for an isolate's lifetime, so
+// one instance per binding and config is reused across requests.
+const instances = new WeakMap<D1Database, Map<string, ReturnType<typeof buildAuth>>>();
+
 export function createAuth(d1: D1Database, env: AuthEnv) {
+  const key = `${env.BETTER_AUTH_SECRET ?? ""}\n${env.BETTER_AUTH_URL ?? ""}`;
+  let byConfig = instances.get(d1);
+  if (!byConfig) {
+    byConfig = new Map();
+    instances.set(d1, byConfig);
+  }
+  let auth = byConfig.get(key);
+  if (!auth) {
+    auth = buildAuth(d1, env);
+    byConfig.set(key, auth);
+  }
+  return auth;
+}
+
+function buildAuth(d1: D1Database, env: AuthEnv) {
   if (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32) {
     throw new Error("BETTER_AUTH_SECRET must be set to a random string of at least 32 characters.");
   }
@@ -43,6 +65,8 @@ export function createAuth(d1: D1Database, env: AuthEnv) {
       minPasswordLength: 8,
       maxPasswordLength: 128,
       revokeSessionsOnPasswordReset: true,
+      // Low-memory hashing for Workers; see src/server/password.ts.
+      password: { hash: hashPassword, verify: verifyPassword },
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7,

@@ -16,7 +16,7 @@ longer part of the launch.
 | Renewal milestone triggers            | Recomputed in the same D1 batch as the lead write                               |
 | Inngest cron every minute             | Workers Cron Trigger every minute calling the reminder job                      |
 | Supabase Storage (visiting cards)     | Private R2 bucket, files only served through a signed-in route                  |
-| Supabase Realtime refresh             | Page refresh every minute while the tab is visible, and on coming back to it   |
+| Supabase Realtime refresh             | A one-number change check every minute; the page re-renders only when data changed (docs/free-tier.md) |
 | Gemini key in Vercel env              | Worker secret `GEMINI_API_KEY`, entered by Ash in the Cloudflare dashboard      |
 
 Why OpenNext and not vinext: Cloudflare now recommends vinext for new apps, but

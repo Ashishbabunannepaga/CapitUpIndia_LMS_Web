@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Camera, ImageUp, Info, Loader2, Mic, MicOff, ScanLine, Sparkles, X } from "lucide-react";
+import { Camera, ImageUp, Info, Loader2, Mic, MicOff, ScanLine, ScanText, X } from "lucide-react";
 
 import { extractLeadFromText, scanVisitingCard, type ExtractionResult } from "@/app/(app)/intake/actions";
 import { LeadForm } from "@/components/leads/lead-form";
@@ -267,7 +267,7 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured }
           {dictation.error ? <p className="mt-2 text-xs text-destructive">{dictation.error}</p> : null}
           <div className="mt-3 flex justify-end">
             <Button type="button" onClick={extractText} disabled={busy !== null || !notes.trim()}>
-              {busy === "text" ? <Loader2 className="animate-spin" /> : <Sparkles />}
+              {busy === "text" ? <Loader2 className="animate-spin" /> : <ScanText />}
               {busy === "text" ? "Extracting…" : "Extract lead"}
             </Button>
           </div>

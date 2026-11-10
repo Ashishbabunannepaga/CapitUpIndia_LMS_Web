@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ShieldCheck, UserCheck, UserPlus, Users, UserX } from "lucide-react";
+import { KeyRound, ShieldAlert, UserPlus } from "lucide-react";
 
 import { AddMemberForm, MemberControls } from "@/components/admin/team-controls";
 import { StatCard } from "@/components/analytics/charts";
@@ -9,9 +9,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { pipelineAnalytics } from "@/server/data/analytics";
+import { recentSignInFailures } from "@/server/data/sign-in-failures";
 import { listTeam } from "@/server/data/users";
 
 export const metadata: Metadata = { title: "Team" };
+
+const attemptFormat = new Intl.DateTimeFormat("en-IN", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Asia/Kolkata",
+});
+
+const FAILURE_LABELS = { invalid: "Wrong email or password", inactive: "Disabled account" } as const;
 
 const joinedFormat = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit",
@@ -23,7 +34,11 @@ const joinedFormat = new Intl.DateTimeFormat("en-IN", {
 export default async function TeamPage() {
   const { ctx, actor } = await requireSession();
   // Active people first, then by name.
-  const [team, pipeline] = await Promise.all([listTeam(ctx, actor), pipelineAnalytics(ctx, actor)]);
+  const [team, pipeline, failures] = await Promise.all([
+    listTeam(ctx, actor),
+    pipelineAnalytics(ctx, actor),
+    recentSignInFailures(ctx, actor, 25),
+  ]);
   const members = team.sort((a, b) => Number(b.is_active) - Number(a.is_active));
   const owned = new Map(pipeline.agents.map((a) => [a.agent_id, a]));
   const active = members.filter((m) => m.is_active);
@@ -43,13 +58,12 @@ export default async function TeamPage() {
         description="Agents and admins who can sign in. Only admins add people; there is no public sign-up."
       />
       <div className="stagger mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="People" value={members.length} icon={Users} tone="brand" />
-        <StatCard label="Active" value={active.length} icon={UserCheck} tone="success" />
-        <StatCard label="Admins" value={active.filter((m) => m.role === "ADMIN").length} icon={ShieldCheck} tone="gold" />
+        <StatCard label="People" value={members.length} tone="brand" />
+        <StatCard label="Active" value={active.length} tone="success" />
+        <StatCard label="Admins" value={active.filter((m) => m.role === "ADMIN").length} tone="gold" />
         <StatCard
           label="Disabled"
           value={members.length - active.length}
-          icon={UserX}
           tone="urgent"
           quiet={members.length === active.length}
         />
@@ -71,7 +85,7 @@ export default async function TeamPage() {
         <CardContent className="px-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b bg-muted/60 text-left text-[11px] tracking-wide text-muted-foreground uppercase">
+              <thead className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Email</th>
@@ -97,8 +111,8 @@ export default async function TeamPage() {
                             !member.is_active
                               ? "bg-muted text-muted-foreground"
                               : member.role === "ADMIN"
-                                ? "bg-gradient-to-br from-gold-200 to-gold-400 text-gold-900"
-                                : "bg-gradient-to-br from-brand-100 to-brand-300 text-brand-900",
+                                ? "bg-gold-200 text-gold-900"
+                                : "bg-brand-100 text-brand-900",
                           )}
                         >
                           {initials(member.full_name)}
@@ -118,7 +132,12 @@ export default async function TeamPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      {member.is_active ? (
+                      {member.is_active && member.must_change_password ? (
+                        <span className="inline-flex items-center gap-1.5 text-gold-800" title="Signs in with the password an admin set, then must choose their own.">
+                          <KeyRound className="size-3.5" aria-hidden="true" />
+                          New password due
+                        </span>
+                      ) : member.is_active ? (
                         <span className="inline-flex items-center gap-1.5 text-success">
                           <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
                           Active
@@ -147,6 +166,47 @@ export default async function TeamPage() {
               </tbody>
             </table>
           </div>
+        </CardContent>
+      </Card>
+      <Card className="mt-6 animate-rise overflow-hidden py-0 [animation-delay:200ms]">
+        <CardHeader className="pt-6">
+          <CardTitle className="flex items-center gap-2.5 text-base">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-urgent/10 text-urgent">
+              <ShieldAlert className="size-4" />
+            </span>
+            Failed sign-ins
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            The latest 25. Admins get a bell alert when one account has 5 failures, or one address 10, within 15 minutes.
+          </p>
+        </CardHeader>
+        <CardContent className="px-0">
+          {failures.length === 0 ? (
+            <p className="px-6 pb-6 text-sm text-muted-foreground">No failed sign-ins in the last 90 days.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">When</th>
+                    <th className="px-4 py-3 font-medium">Email tried</th>
+                    <th className="px-4 py-3 font-medium">Why</th>
+                    <th className="px-4 py-3 font-medium">From</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {failures.map((f) => (
+                    <tr key={f.id}>
+                      <td className="px-4 py-3 tabular-nums">{attemptFormat.format(new Date(f.created_at))}</td>
+                      <td className="px-4 py-3">{f.email}</td>
+                      <td className="px-4 py-3">{FAILURE_LABELS[f.reason]}</td>
+                      <td className="px-4 py-3 tabular-nums text-muted-foreground">{f.ip ?? "unknown"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </>

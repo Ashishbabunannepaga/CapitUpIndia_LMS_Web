@@ -4,7 +4,7 @@ The whole app runs on one Cloudflare account: a **Worker** (the website and the
 every-minute reminder job), a **D1** database and a private **R2** bucket for
 visiting-card photos. Do the steps in order.
 
-Secrets (`BETTER_AUTH_SECRET`, `GEMINI_API_KEY`, `SETUP_CODE`) go straight into the
+Secrets (`BETTER_AUTH_SECRET`, `OPENAI_API_KEY`, `SETUP_CODE`) go straight into the
 Cloudflare dashboard. Never paste them into chat or commit them.
 
 ## 1. Plan
@@ -57,7 +57,7 @@ Worker > **Settings > Variables and Secrets**, type **Secret**:
 | Name | Value |
 | --- | --- |
 | `BETTER_AUTH_SECRET` | A random string of 32+ characters (a password manager can generate one). Changing it later signs everyone out. |
-| `GEMINI_API_KEY` | The rotated Google AI Studio key, never the one in the old APK |
+| `OPENAI_API_KEY` | An OpenAI project API key (see docs/openai-setup.md) |
 | `SETUP_CODE` | Any 12+ character code you make up; used once in step 6 |
 
 Add each one with type **Secret**: a deploy replaces plain dashboard variables
@@ -73,6 +73,25 @@ Worker > **Settings > Domains & Routes > Add > Custom domain**, e.g.
 `lms.capitupindia.com`. The DNS record is created for you because the zone is on
 Cloudflare. Then change `BETTER_AUTH_URL` in `wrangler.jsonc` to it and merge.
 
+### Domain without moving DNS (AWS CloudFront)
+
+capitupindia.com's DNS stays on cPanel, so `lms.capitupindia.com` reaches the
+Worker through an AWS CloudFront distribution:
+
+1. ACM certificate for `lms.capitupindia.com` in **us-east-1**, validated by a
+   CNAME added in cPanel Zone Editor.
+2. CloudFront distribution: origin `capitup-lms-web.<account>.workers.dev`
+   (HTTPS only), alternate domain `lms.capitupindia.com` with that certificate,
+   all HTTP methods, cache policy **CachingDisabled**, origin request policy
+   **AllViewerExceptHostHeader** plus the `CloudFront-Viewer-Address` header,
+   and a custom origin header `x-origin-verify` set to a random 40+ character value.
+3. The same value as the Worker secret `ORIGIN_VERIFY_SECRET`, so the sign-in
+   rate limit counts each visitor's own IP (src/lib/client-ip.ts).
+4. cPanel CNAME `lms` → the distribution's `dxxxx.cloudfront.net` name.
+
+`next.config.ts` already accepts forms posted from `lms.capitupindia.com`.
+Sign-in builds its internal requests from `BETTER_AUTH_URL`, so both addresses work.
+
 ## 6. First admin and the team
 
 1. Open `https://<your domain>/setup`, enter the `SETUP_CODE`, your name, email and a
@@ -87,7 +106,7 @@ Cloudflare. Then change `BETTER_AUTH_URL` in `wrangler.jsonc` to it and merge.
 - Create a lead with tomorrow as its renewal date. Calendar shows the due event at once,
   and the bell shows each countdown reminder within a minute of it falling due
   (Worker > **Logs** shows the cron running every minute).
-- Paste a sentence into **Intake**; with the Gemini key set, fields come back filled by AI
+- Paste a sentence into **Intake**; with the OpenAI key set, fields come back filled by AI
   and **AI Usage** shows the call and its rupee cost.
 - Sign in as an agent in a private window: only that agent's leads are visible.
 

@@ -6,11 +6,11 @@ import type { BatchItem } from "drizzle-orm/batch";
 
 import { normalizeCompanyName } from "@/lib/company-name";
 import { addDays, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isLeadStatus } from "@/lib/domain";
+import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isContactChannel, isLeadStatus } from "@/lib/domain";
 import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 
-import { appSettings, events, leadNoteReads, leadNotes, leads, profiles, renewalMilestoneOffsets } from "../db/schema";
+import { appSettings, events, leadContactLogs, leadNoteReads, leadNotes, leads, profiles, renewalMilestoneOffsets } from "../db/schema";
 import { isAdmin, assertAdmin, type Actor } from "./actor";
 import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
@@ -32,8 +32,12 @@ export type Lead = typeof leads.$inferSelect;
 export type LeadWithAgent = Lead & { agent_name: string | null };
 export type LeadNote = typeof leadNotes.$inferSelect;
 export type LeadEvent = typeof events.$inferSelect;
+export type LeadContactLog = typeof leadContactLogs.$inferSelect;
 
-export const LEAD_LIST_LIMIT = 500;
+/** Leads per page in the table and card views. */
+export const LEAD_PAGE_SIZE = 100;
+/** Cards per status column on the board; column headers still show the full count. */
+export const KANBAN_COLUMN_LIMIT = 50;
 const NOT_FOUND = "That lead no longer exists or isn't yours.";
 
 /** Lead fields a form can set. Everything else is decided here. */
@@ -61,6 +65,8 @@ export type NewLead = Partial<LeadFields> & {
   client_name: string;
   assigned_agent_id?: string | null;
   visiting_card_path?: string | null;
+  /** Set only by the office hand-over (admins): the capitupindia.com call request it came from. */
+  office_lead_id?: string | null;
 };
 
 const FIELD_NAMES: (keyof LeadFields)[] = [
@@ -220,6 +226,12 @@ function filterConditions(actor: Actor, filters: LeadFilters, today: string): SQ
   return conditions.filter((c): c is SQL => c !== undefined);
 }
 
+/**
+ * One page of the leads matching the filters. The board (filters.view
+ * "kanban") instead gets the first KANBAN_COLUMN_LIMIT leads of every status.
+ * `truncated` says more leads match than came back. Pages are kept small
+ * because rendering hundreds of rows was most of a request's CPU time.
+ */
 export async function listLeads(
   ctx: DataContext,
   actor: Actor,
@@ -234,11 +246,50 @@ export async function listLeads(
     updated: [desc(leads.updated_at), desc(leads.id)],
   }[filters.sort] ?? [desc(leads.updated_at), desc(leads.id)];
 
-  const [rows, team] = await Promise.all([
-    ctx.db.select().from(leads).where(where).orderBy(...order).limit(LEAD_LIST_LIMIT + 1),
-    teamNames(ctx),
-  ]);
-  return { leads: withNames(rows.slice(0, LEAD_LIST_LIMIT), team), truncated: rows.length > LEAD_LIST_LIMIT };
+  let query;
+  if (filters.view === "kanban") {
+    // Rank within each status, keep one extra per column to know if it was cut.
+    const ranked = ctx.db
+      .select({
+        id: leads.id,
+        rank: sql<number>`row_number() over (partition by ${leads.status} order by ${sql.join(order, sql`, `)})`.as("rank"),
+      })
+      .from(leads)
+      .where(where)
+      .as("ranked");
+    query = ctx.db
+      .select()
+      .from(leads)
+      .where(
+        and(where, inArray(leads.id, ctx.db.select({ id: ranked.id }).from(ranked).where(lte(ranked.rank, KANBAN_COLUMN_LIMIT + 1)))),
+      )
+      .orderBy(...order);
+  } else {
+    query = ctx.db
+      .select()
+      .from(leads)
+      .where(where)
+      .orderBy(...order)
+      .limit(LEAD_PAGE_SIZE + 1)
+      .offset((Math.max(filters.page, 1) - 1) * LEAD_PAGE_SIZE);
+  }
+  const [rows, team] = await Promise.all([query, teamNames(ctx)]);
+
+  let kept: Lead[];
+  let truncated: boolean;
+  if (filters.view === "kanban") {
+    const perStatus = new Map<string, number>();
+    kept = rows.filter((row) => {
+      const n = (perStatus.get(row.status) ?? 0) + 1;
+      perStatus.set(row.status, n);
+      return n <= KANBAN_COLUMN_LIMIT;
+    });
+    truncated = kept.length < rows.length;
+  } else {
+    kept = rows.slice(0, LEAD_PAGE_SIZE);
+    truncated = rows.length > LEAD_PAGE_SIZE;
+  }
+  return { leads: withNames(kept, team), truncated };
 }
 
 /** How many leads match the filters in each status (board columns beyond the list limit). */
@@ -298,6 +349,7 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
   }
   await assertAssignable(ctx, owner);
   assertCardPath(actor, input.visiting_card_path);
+  if (input.office_lead_id && !isAdmin(actor)) throw new AccessDeniedError("Only admins can hand over office call requests.");
 
   const [dup, renewal] = await Promise.all([duplicateState(ctx, fields.client_name), renewalSettings(ctx)]);
   const stamp = now();
@@ -308,6 +360,7 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
     assigned_agent_id: owner,
     assigned_at: owner ? stamp : null,
     visiting_card_path: input.visiting_card_path ?? null,
+    office_lead_id: input.office_lead_id ?? null,
     created_by: actor.id,
     created_at: stamp,
     updated_at: stamp,
@@ -504,6 +557,39 @@ export async function deleteLeadNote(ctx: DataContext, actor: Actor, noteId: num
     ctx.db.delete(leadNotes).where(eq(leadNotes.id, noteId)),
     auditInsert(ctx, actor, "lead_notes", noteId, "DELETE", note, null),
   ]);
+}
+
+// --- Contact log ------------------------------------------------------------
+
+/** Records a Call, WhatsApp or Email press on a lead the caller can see. */
+export async function logLeadContact(
+  ctx: DataContext,
+  actor: Actor,
+  leadId: number,
+  channel: unknown,
+  withDraft = false,
+): Promise<void> {
+  if (!isContactChannel(channel)) throw new InvalidInputError("Unknown contact channel.");
+  await findVisible(ctx, actor, leadId);
+  await ctx.db
+    .insert(leadContactLogs)
+    .values({ lead_id: leadId, agent_id: actor.id, agent_name: actor.full_name, channel, with_draft: withDraft });
+}
+
+/** The latest contact presses on a lead the caller can see, newest first. */
+export async function getLeadContactLog(
+  ctx: DataContext,
+  actor: Actor,
+  leadId: number,
+  limit = 20,
+): Promise<LeadContactLog[]> {
+  await findVisible(ctx, actor, leadId);
+  return ctx.db
+    .select()
+    .from(leadContactLogs)
+    .where(eq(leadContactLogs.lead_id, leadId))
+    .orderBy(desc(leadContactLogs.created_at), desc(leadContactLogs.id))
+    .limit(limit);
 }
 
 // --- Unread notes from teammates ---------------------------------------------

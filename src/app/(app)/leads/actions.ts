@@ -193,6 +193,18 @@ export async function assignLead(leadId: number, agentId: string | null): Promis
   return run(({ ctx, actor }) => leadData.assignLead(ctx, actor, leadId, agentId));
 }
 
+/** Logs a Call, WhatsApp or Email press. Fire and forget: a failure never blocks the contact itself. */
+export async function logLeadContact(leadId: number, channel: string, withDraft = false): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  try {
+    await leadData.logLeadContact(session.ctx, session.actor, leadId, channel, withDraft);
+    revalidatePath(`/leads/${leadId}`);
+  } catch {
+    // The lead vanished or the channel is unknown; nothing to record.
+  }
+}
+
 export async function addLeadNote(leadId: number, content: string): Promise<ActionResult> {
   return run(({ ctx, actor }) => leadData.addLeadNote(ctx, actor, leadId, content));
 }

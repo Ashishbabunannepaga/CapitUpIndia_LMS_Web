@@ -9,6 +9,7 @@ import { createTask, deleteTask, setTaskDone } from "@/app/(app)/my-day/actions"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
 export type TaskItem = {
@@ -48,7 +49,7 @@ export function TaskList({ tasks, emptyText }: { tasks: TaskItem[]; emptyText: s
                 setError(null);
                 startTransition(async () => {
                   update({ id: task.id, done });
-                  const result = await setTaskDone(task.id, done);
+                  const result = await safeAction(() => setTaskDone(task.id, done));
                   if (!result.ok) setError(result.error);
                 });
               }}
@@ -57,7 +58,7 @@ export function TaskList({ tasks, emptyText }: { tasks: TaskItem[]; emptyText: s
             <div className="min-w-0 flex-1">
               <p className={cn("text-sm", task.isCompleted && "text-muted-foreground line-through")}>
                 {task.leadId ? (
-                  <Link href={`/leads/${task.leadId}`} className="hover:text-primary hover:underline">
+                  <Link prefetch={false} href={`/leads/${task.leadId}`} className="hover:text-primary hover:underline">
                     {task.title}
                   </Link>
                 ) : (
@@ -79,7 +80,7 @@ export function TaskList({ tasks, emptyText }: { tasks: TaskItem[]; emptyText: s
                   setError(null);
                   startTransition(async () => {
                     update({ id: task.id, removed: true });
-                    const result = await deleteTask(task.id);
+                    const result = await safeAction(() => deleteTask(task.id));
                     if (!result.ok) setError(result.error);
                   });
                 }}
@@ -112,10 +113,13 @@ export function QuickTaskForm({
     <form
       ref={formRef}
       className="space-y-2"
-      action={(formData) => {
+      onSubmit={(event) => {
+        // Not a form action: React would clear the fields even when saving fails.
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
         setError(null);
         startTransition(async () => {
-          const result = await createTask(formData);
+          const result = await safeAction(() => createTask(formData));
           if (result.ok) formRef.current?.reset();
           else setError(result.error);
         });
@@ -158,7 +162,9 @@ export function MarkAllReadButton() {
       size="sm"
       variant="ghost"
       disabled={pending}
-      onClick={() => startTransition(() => markNotesRead(null))}
+      onClick={() => startTransition(async () => {
+          await safeAction(() => markNotesRead(null));
+        })}
     >
       {pending ? <Loader2 className="animate-spin" /> : <CheckCheck />}
       Mark all read

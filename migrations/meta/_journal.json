@@ -15,6 +15,34 @@
       "when": 1791550523983,
       "tag": "0001_search_triggers_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792057470452,
+      "tag": "0002_stiff_spot",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793777356999,
+      "tag": "0003_change_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793788140460,
+      "tag": "0004_great_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794120453628,
+      "tag": "0005_dazzling_silver_surfer",
+      "breakpoints": true
     }
   ]
 }

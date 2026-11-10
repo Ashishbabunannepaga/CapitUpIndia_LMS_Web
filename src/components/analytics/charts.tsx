@@ -6,44 +6,30 @@ import { formatCount } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 // Small server-rendered charts: no chart library. Motion is CSS only (bars
-// grow, rings draw) and switches off under prefers-reduced-motion; the only
+// grow, rings draw, once on load) and switches off under prefers-reduced-motion; the only
 // client JavaScript is the number roll in CountUp.
 
 export type Tone = "default" | "urgent" | "warning" | "success" | "brand" | "gold";
 
-const TONE_ICON: Record<Tone, string> = {
-  default: "bg-muted text-muted-foreground",
-  brand: "bg-brand-50 text-brand-700 ring-brand-100",
-  gold: "bg-gold-50 text-gold-700 ring-gold-100",
-  urgent: "bg-red-50 text-urgent ring-red-100",
-  warning: "bg-amber-50 text-warning ring-amber-100",
-  success: "bg-emerald-50 text-success ring-emerald-100",
-};
+const monthShortFormat = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" });
 
+// Figures stay in the text colour unless they need attention; brand, gold and
+// success read as neutral so the alarm colours keep their meaning.
 const TONE_VALUE: Record<Tone, string> = {
   default: "",
-  brand: "text-brand-800",
-  gold: "text-gold-700",
+  brand: "",
+  gold: "",
   urgent: "text-urgent",
   warning: "text-warning",
-  success: "text-success",
+  success: "",
 };
 
-const TONE_GLOW: Record<Tone, string> = {
-  default: "from-slate-200/0",
-  brand: "from-brand-200/50",
-  gold: "from-gold-200/60",
-  urgent: "from-red-200/50",
-  warning: "from-amber-200/50",
-  success: "from-emerald-200/50",
-};
-
+/** A label and a figure. Colour only when the number needs attention. */
 export function StatCard({
   label,
   value,
   hint,
   href,
-  icon: Icon,
   tone = "default",
   quiet = false,
 }: {
@@ -51,7 +37,6 @@ export function StatCard({
   value: string | number;
   hint?: string;
   href?: string;
-  icon?: LucideIcon;
   tone?: Tone;
   /** A zero that needs no attention: drop the alarm colour. */
   quiet?: boolean;
@@ -59,30 +44,16 @@ export function StatCard({
   const t = quiet ? "default" : tone;
   const body = (
     <>
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute -top-10 -right-10 size-28 rounded-full bg-gradient-to-br to-transparent opacity-70 blur-2xl transition-opacity group-hover:opacity-100",
-          TONE_GLOW[t],
-        )}
-      />
-      <div className="relative flex items-start justify-between gap-3">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        {Icon ? (
-          <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-transparent", TONE_ICON[t])}>
-            <Icon className="size-4" />
-          </span>
-        ) : null}
-      </div>
-      <p className={cn("relative mt-2 text-[28px] leading-none font-semibold tracking-tight tabular-nums", TONE_VALUE[t])}>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className={cn("mt-2 text-[28px] leading-none font-medium tracking-tight tabular-nums", TONE_VALUE[t])}>
         {typeof value === "number" ? <CountUp value={value} /> : value}
       </p>
-      {hint ? <p className="relative mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-2 text-xs text-muted-foreground">{hint}</p> : null}
     </>
   );
-  const className = "group surface relative block overflow-hidden p-4";
+  const className = "surface block p-4";
   return href ? (
-    <Link href={href} className={cn(className, "lift hover:border-brand-200")}>
+    <Link href={href} className={cn(className, "lift")}>
       {body}
     </Link>
   ) : (
@@ -109,15 +80,11 @@ export function Panel({
 }) {
   return (
     <section className={cn("surface overflow-hidden", className)}>
-      <header className="flex items-start justify-between gap-3 border-b px-5 py-3.5">
+      <header className="flex items-start justify-between gap-3 border-b px-5 py-3">
         <div className="flex min-w-0 items-start gap-2.5">
-          {Icon ? (
-            <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700">
-              <Icon className="size-3.5" />
-            </span>
-          ) : null}
+          {Icon ? <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" /> : null}
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">{title}</h2>
+            <h2 className="text-sm font-medium">{title}</h2>
             {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
           </div>
         </div>
@@ -140,7 +107,7 @@ export function BarList({ data, emptyText = "No data yet." }: { data: BarDatum[]
   return (
     <ul className="space-y-3">
       {data.map((item, i) => (
-        <li key={item.label} className="space-y-1.5">
+        <li key={item.label} className="space-y-2">
           <div className="flex items-baseline justify-between gap-2 text-sm">
             {item.href ? (
               <Link href={item.href} className="truncate hover:text-primary hover:underline">
@@ -150,7 +117,7 @@ export function BarList({ data, emptyText = "No data yet." }: { data: BarDatum[]
               <span className="truncate">{item.label}</span>
             )}
             <span className="shrink-0 tabular-nums">
-              <span className="font-semibold">{item.valueLabel ?? formatCount(item.value)}</span>
+              <span className="font-medium">{item.valueLabel ?? formatCount(item.value)}</span>
               {!item.valueLabel && total > 0 ? (
                 <span className="ml-1.5 text-xs text-muted-foreground">{Math.round((item.value / total) * 100)}%</span>
               ) : null}
@@ -158,8 +125,8 @@ export function BarList({ data, emptyText = "No data yet." }: { data: BarDatum[]
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className={cn("h-full origin-left animate-grow-x rounded-full", item.colorClass ?? "bg-gradient-to-r from-brand-500 to-brand-400")}
-              style={{ width: `${Math.round((item.value / max) * 100)}%`, animationDelay: `${i * 70}ms` }}
+              className={cn("h-full origin-left animate-grow-x rounded-full", item.colorClass ?? "bg-brand-500")}
+              style={{ width: `${Math.round((item.value / max) * 100)}%`, animationDelay: `${Math.min(i, 5) * 50}ms` }}
             />
           </div>
         </li>
@@ -171,29 +138,28 @@ export function BarList({ data, emptyText = "No data yet." }: { data: BarDatum[]
 /** Monthly columns, for renewals and leads created. */
 export function MonthBars({
   data,
-  colorClass = "bg-gradient-to-t from-brand-600 to-brand-400",
+  colorClass = "bg-brand-500",
 }: {
   data: { month: string; count: number }[];
   colorClass?: string;
 }) {
   const max = Math.max(1, ...data.map((d) => d.count));
-  const label = (month: string) =>
-    new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`));
+  const label = (month: string) => monthShortFormat.format(new Date(`${month}-01T00:00:00Z`));
   return (
     <div className="flex items-end gap-1.5" role="img" aria-label={data.map((d) => `${label(d.month)}: ${d.count}`).join(", ")}>
       {data.map((item, i) => (
         <div key={item.month} className="group flex min-w-0 flex-1 flex-col items-center gap-1">
-          <span className="text-[10px] font-medium text-muted-foreground tabular-nums group-hover:text-foreground">
+          <span className="font-mono text-[11px] text-muted-foreground tabular-nums group-hover:text-foreground">
             {item.count || ""}
           </span>
           <div
             className={cn(
-              "w-full origin-bottom animate-grow-y rounded-t-md transition-opacity group-hover:opacity-80",
+              "w-full origin-bottom animate-grow-y rounded-t transition-opacity duration-150 group-hover:opacity-80",
               item.count > 0 ? colorClass : "bg-muted",
             )}
-            style={{ height: `${Math.max(3, Math.round((item.count / max) * 110))}px`, animationDelay: `${i * 45}ms` }}
+            style={{ height: `${Math.max(3, Math.round((item.count / max) * 110))}px`, animationDelay: `${Math.min(i, 5) * 50}ms` }}
           />
-          <span className="truncate text-[10px] text-muted-foreground">{label(item.month)}</span>
+          <span className="truncate font-mono text-[11px] text-muted-foreground">{label(item.month)}</span>
         </div>
       ))}
     </div>
@@ -297,7 +263,7 @@ export function Donut({
                     strokeDasharray={`${visible} ${c - visible}`}
                     strokeDashoffset={-offset}
                     className="animate-draw"
-                    style={{ "--draw-from": c - offset, animationDelay: `${i * 90}ms` } as React.CSSProperties}
+                    style={{ "--draw-from": c - offset, animationDelay: `${Math.min(i, 5) * 50}ms` } as React.CSSProperties}
                   >
                     <title>{`${slice.label}: ${slice.value}`}</title>
                   </circle>
@@ -308,7 +274,7 @@ export function Donut({
             : null}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <CountUp value={centerValue} className="text-2xl leading-none font-semibold tracking-tight" />
+          <CountUp value={centerValue} className="text-2xl leading-none font-medium tracking-tight tabular-nums" />
           <span className="mt-1 text-[11px] text-muted-foreground">{centerLabel}</span>
         </div>
       </div>
@@ -318,7 +284,7 @@ export function Donut({
             <>
               <span className="size-2.5 shrink-0 rounded-sm" style={{ background: slice.color }} />
               <span className="min-w-0 flex-1 truncate">{slice.label}</span>
-              <span className="font-semibold tabular-nums">{formatCount(slice.value)}</span>
+              <span className="font-medium tabular-nums">{formatCount(slice.value)}</span>
             </>
           );
           return (

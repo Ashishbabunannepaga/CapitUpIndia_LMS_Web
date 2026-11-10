@@ -4,15 +4,17 @@ import { BUSINESS_TIMEZONE } from "@/lib/domain";
 // the same shape as leads.renewal_date, so they compare as strings.
 
 const IST_OFFSET = "+05:30";
+// India has kept UTC+05:30 all year since 1945 (no daylight saving), so
+// business dates are plain arithmetic. Building an Intl formatter costs far
+// more CPU than formatting with one, and Workers bill CPU per request, so
+// every formatter below is created once per isolate and reused.
+const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
 
 /** Today's date in business time, as YYYY-MM-DD. */
 export function todayInBusinessTz(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: BUSINESS_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
+  const ms = now.getTime();
+  if (Number.isNaN(ms)) throw new RangeError("Invalid time value");
+  return new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 /** Adds whole days to a YYYY-MM-DD date. */
@@ -42,37 +44,40 @@ export function businessDateOf(timestamp: string | Date): string {
   return todayInBusinessTz(new Date(timestamp));
 }
 
+const dateFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" });
+const dateTimeFormat = new Intl.DateTimeFormat("en-GB", {
+  timeZone: BUSINESS_TIMEZONE,
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+const timeFormat = new Intl.DateTimeFormat("en-GB", { timeZone: BUSINESS_TIMEZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const noteTimestampFormat = new Intl.DateTimeFormat("en-GB", {
+  timeZone: BUSINESS_TIMEZONE,
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 /** "05 Oct 2026" */
 export function formatDate(date: string | null | undefined): string {
   if (!date) return "";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(`${date.slice(0, 10)}T00:00:00Z`));
+  return dateFormat.format(new Date(`${date.slice(0, 10)}T00:00:00Z`));
 }
 
 /** "05 Oct, 14:30" in business time. */
 export function formatDateTime(timestamp: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: BUSINESS_TIMEZONE,
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(timestamp));
+  return dateTimeFormat.format(new Date(timestamp));
 }
 
 /** "14:30" in business time. */
 export function formatTime(timestamp: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: BUSINESS_TIMEZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(timestamp));
+  return timeFormat.format(new Date(timestamp));
 }
 
 export type Urgency = "overdue" | "today" | "week" | "month" | "later";
@@ -103,15 +108,7 @@ export function nowMs(): number {
 
 /** "05 Oct 2026, 14:30" in business time, the note timestamp format. */
 export function formatNoteTimestamp(timestamp: string): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: BUSINESS_TIMEZONE,
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(timestamp));
+  const parts = noteTimestampFormat.formatToParts(new Date(timestamp));
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}`;
 }

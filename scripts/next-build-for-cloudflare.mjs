@@ -13,7 +13,11 @@ const run = (cmd, args) => execFileSync(cmd, args, { stdio: "inherit", env: { NE
 
 // Next's own bin through this Node, not `npx`: on Windows npx is npx.cmd,
 // which execFileSync cannot start without a shell.
-run(process.execPath, [path.join("node_modules", "next", "dist", "bin", "next"), "build"]);
+// Webpack, not Turbopack: Turbopack copies shared server code (Better Auth,
+// Zod) into a chunk per route and pulls in the next/og WASM,
+// which put the Worker at 4.9 MB gzipped, over the Workers Free plan's 3 MB
+// limit. Webpack shares those chunks (with wrangler's minify: 2.7 MB).
+run(process.execPath, [path.join("node_modules", "next", "dist", "bin", "next"), "build", "--webpack"]);
 
 const nftPath = ".next/server/middleware.js.nft.json";
 const esmDir = "node_modules/@opentelemetry/api/build/esm";

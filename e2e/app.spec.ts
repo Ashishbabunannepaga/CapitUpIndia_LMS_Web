@@ -101,6 +101,32 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
   expect(milestones?.n).toBe(10);
 });
 
+test("a failed save shows a message instead of crashing the page", async ({ page }) => {
+  const lead = await leadRow("UI Kaveri Textiles");
+  await signIn(page, "amit");
+  await page.goto(`/leads/${lead?.id}`);
+  const note = page.getByPlaceholder("Call notes, visit feedback or quote details");
+
+  // The network drops while the note is sent.
+  await page.route(/\/leads\//, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await note.fill("Sent while offline");
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByText("nothing was saved")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "UI Kaveri Textiles" })).toBeVisible();
+  await expect(note).toHaveValue("Sent while offline");
+  await page.unroute(/\/leads\//);
+
+  // A tab opened before a deploy calls an action the new build no longer has.
+  await page.route(/\/leads\//, (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 404, headers: { "x-nextjs-action-not-found": "1" }, body: "" })
+      : route.continue(),
+  );
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByText("The app was just updated")).toBeVisible();
+  await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
+});
+
 test("the form explains invalid input instead of saving it", async ({ page }) => {
   await signIn(page, "amit");
   await page.goto("/leads/new");
@@ -196,6 +222,16 @@ test("the admin adds a person who can then sign in, and disabling them shuts the
   await ravi.getByLabel("Work email").fill("ravi@e2e.test");
   await ravi.getByLabel("Password").fill("ravi-Password-1");
   await ravi.getByRole("button", { name: "Sign in" }).click();
+
+  // The admin knows this password, so Ravi must choose his own first.
+  await expect(ravi).toHaveURL(/\/change-password/);
+  await ravi.goto("/leads");
+  await expect(ravi).toHaveURL(/\/change-password/);
+  expect((await ravi.request.get("/api/changes")).status()).toBe(401);
+  await ravi.getByLabel("Current password").fill("ravi-Password-1");
+  await ravi.getByLabel("New password", { exact: true }).fill("ravi-own-Secret-2");
+  await ravi.getByLabel("New password again").fill("ravi-own-Secret-2");
+  await ravi.getByRole("button", { name: "Save new password" }).click();
   await expect(ravi).toHaveURL(/\/my-day/);
 
   const row = page.getByRole("row").filter({ hasText: "ravi@e2e.test" });
@@ -219,6 +255,46 @@ test("an admin cannot demote or disable themselves from the team page", async ({
 test("first-run setup is closed once the team exists", async ({ request }) => {
   const response = await request.get("/setup");
   expect(response.status()).toBe(404);
+});
+
+test("a sign-out link on another site does not sign an active user out", async ({ page }) => {
+  await signIn(page, "amit");
+  await page.goto("/auth/signout?reason=inactive");
+  await expect(page).toHaveURL(/\/my-day/);
+  await page.goto("/leads");
+  await expect(page).toHaveURL(/\/leads/);
+});
+
+test("pages carry the security headers", async ({ request }) => {
+  const response = await request.get("/login");
+  const headers = response.headers();
+  expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(headers["x-frame-options"]).toBe("DENY");
+  expect(headers["strict-transport-security"]).toContain("max-age=");
+  expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  expect(headers["x-powered-by"]).toBeUndefined();
+});
+
+test("the security policy blocks nothing the app itself needs", async ({ page }) => {
+  const violations: string[] = [];
+  page.on("console", (message) => {
+    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
+  });
+  await signIn(page, "admin");
+  for (const path of ["/my-day", "/leads", "/leads?view=kanban", "/intake", "/calendar", "/admin/team", "/admin/analytics"]) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+  }
+  expect(violations).toEqual([]);
+});
+
+test("failed sign-ins show on the admin's Team page", async ({ page }) => {
+  await signIn(page, "amit", "definitely-wrong-1");
+  await expect(page.getByText("Incorrect email or password.")).toBeVisible();
+  await signIn(page, "admin");
+  await page.goto("/admin/team");
+  const failures = page.locator("table").filter({ hasText: "Email tried" });
+  await expect(failures.getByRole("cell", { name: USERS.amit.email }).first()).toBeVisible();
 });
 
 test("signing out ends the session", async ({ page }) => {

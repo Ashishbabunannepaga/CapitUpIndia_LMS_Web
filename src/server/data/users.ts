@@ -1,9 +1,9 @@
 import "server-only";
 
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { profiles } from "../db/schema";
+import { authAccount, profiles } from "../db/schema";
 import { assertAdmin, type Actor } from "./actor";
 import type { DataContext } from "./context";
 import { AccessDeniedError, InvalidInputError, isTriggerError } from "./errors";
@@ -12,9 +12,12 @@ import { AccessDeniedError, InvalidInputError, isTriggerError } from "./errors";
 //   * every active user can see the team list;
 //   * a user can change their own display name, nothing else about themselves;
 //   * only admins create accounts, change roles, deactivate or reset passwords;
+//   * a password an admin set (new account or reset) must be replaced by the
+//     user before they can do anything else (must_change_password);
 //   * there is always at least one active admin (also a D1 trigger).
 
 const LAST_ADMIN = "The last active admin cannot be removed";
+const SETUP_ACTOR_ID = "setup";
 
 const passwordSchema = z
   .string()
@@ -76,9 +79,17 @@ export async function createUser(ctx: DataContext, actor: Actor, input: unknown)
       accountId: user.id,
       password: await auth.password.hash(data.password),
     });
+    // The first admin chose their own password on /setup; anyone else got
+    // theirs from an admin and must replace it.
     const [profile] = await ctx.db
       .insert(profiles)
-      .values({ id: user.id, email: data.email, full_name: data.fullName, role: data.role })
+      .values({
+        id: user.id,
+        email: data.email,
+        full_name: data.fullName,
+        role: data.role,
+        must_change_password: actor.id !== SETUP_ACTOR_ID,
+      })
       .returning();
     return profile;
   } catch (error) {
@@ -96,18 +107,55 @@ export async function createFirstAdmin(ctx: DataContext, input: unknown): Promis
   const [{ total }] = await ctx.db.select({ total: count() }).from(profiles);
   if (total > 0) throw new AccessDeniedError("This app is already set up. Ask an admin for an account.");
   const data = parse(newUserSchema, input);
-  const bootstrap = { id: "setup", role: "ADMIN" } as Actor;
+  const bootstrap = { id: SETUP_ACTOR_ID, role: "ADMIN" } as Actor;
   return createUser(ctx, bootstrap, { ...data, role: "ADMIN" });
 }
 
-/** Sets a new password and signs the user out everywhere. Admins only. */
+/**
+ * Sets a temporary password and signs the user out everywhere; they must
+ * choose their own on next sign-in. Admins only.
+ */
 export async function resetPassword(ctx: DataContext, actor: Actor, userId: string, password: unknown): Promise<void> {
   assertAdmin(actor);
   const value = parse(passwordSchema, password);
   const auth = await ctx.auth.$context;
   await findMember(ctx, userId);
   await auth.internalAdapter.updatePassword(userId, await auth.password.hash(value));
+  await ctx.db.update(profiles).set({ must_change_password: true }).where(eq(profiles.id, userId));
   await auth.internalAdapter.deleteUserSessions(userId);
+}
+
+const changeOwnPasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password."),
+  newPassword: passwordSchema,
+});
+
+/**
+ * The signed-in user replaces their own password. Signs out their other
+ * sessions and keeps `keepSessionToken` (the one making this request).
+ */
+export async function changeOwnPassword(
+  ctx: DataContext,
+  actor: Actor,
+  input: unknown,
+  keepSessionToken: string | null,
+): Promise<void> {
+  const { currentPassword, newPassword } = parse(changeOwnPasswordSchema, input);
+  if (currentPassword === newPassword) throw new InvalidInputError("Choose a password different from the current one.");
+
+  const auth = await ctx.auth.$context;
+  const account = await ctx.db.query.authAccount.findFirst({
+    where: and(eq(authAccount.userId, actor.id), eq(authAccount.providerId, "credential")),
+  });
+  if (!account?.password || !(await auth.password.verify({ hash: account.password, password: currentPassword }))) {
+    throw new InvalidInputError("Your current password is not right.");
+  }
+
+  await auth.internalAdapter.updatePassword(actor.id, await auth.password.hash(newPassword));
+  await ctx.db.update(profiles).set({ must_change_password: false }).where(eq(profiles.id, actor.id));
+  for (const session of await auth.internalAdapter.listSessions(actor.id)) {
+    if (session.token !== keepSessionToken) await auth.internalAdapter.deleteSession(session.token);
+  }
 }
 
 /** Activates or deactivates an account. Deactivating signs them out. Admins only. */

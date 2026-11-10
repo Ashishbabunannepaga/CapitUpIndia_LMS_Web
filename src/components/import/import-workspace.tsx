@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Merge, Sparkles, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Columns3, FileSpreadsheet, Loader2, Merge, Trash2, Upload } from "lucide-react";
 
 import {
   commitImport,
@@ -19,6 +19,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/dates";
 import { LEAD_STATUSES, POLICY_PRODUCTS } from "@/lib/domain";
+import { safeAction } from "@/lib/safe-action";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { cn } from "@/lib/utils";
 
@@ -75,7 +76,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
   function preview() {
     setError(null);
     startTransition(async () => {
-      apply(await previewPastedRows(text, useAi));
+      apply(await safeAction(() => previewPastedRows(text, useAi)));
     });
   }
 
@@ -89,7 +90,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
     formData.set("sheet", file);
     formData.set("use_ai", String(useAi));
     startTransition(async () => {
-      apply(await previewUploadedSheet(formData));
+      apply(await safeAction(() => previewUploadedSheet(formData)));
     });
   }
 
@@ -115,12 +116,14 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
     }
     setError(null);
     startTransition(async () => {
-      const result = await commitImport({
+      const result = await safeAction(() =>
+        commitImport({
         status,
         allocation,
         agentId,
         rows: selected.map((r) => r.lead),
-      });
+        }),
+      );
       if (!result.ok) {
         setError(result.error);
         return;
@@ -187,7 +190,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
                 disabled={!aiConfigured}
                 onChange={(e) => setUseAi(e.target.checked)}
               />
-              <Sparkles className="size-4" />
+              <Columns3 className="size-4" />
               Use AI column mapping
               {!aiConfigured ? <span className="text-xs">(AI is not configured on this server)</span> : null}
             </label>
@@ -258,7 +261,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
 
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full min-w-[1280px] text-sm">
-              <thead className="bg-muted/50 text-left text-xs tracking-wide text-muted-foreground uppercase">
+              <thead className="bg-muted/50 text-left text-xs font-medium text-muted-foreground">
                 <tr>
                   <th className="w-10 px-3 py-2">
                     <input

@@ -5,7 +5,6 @@ import { LogOut, Menu, X } from "lucide-react";
 
 import { BrandLockup, BrandMark } from "@/components/brand/brand";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Profile } from "@/lib/database.types";
 import { cn } from "@/lib/utils";
@@ -35,21 +34,15 @@ function UserPanel({
     .toUpperCase();
 
   return (
-    <div className="m-3 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/[0.04] px-3 py-3">
-      <div className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-gold-300 to-gold-500 text-xs font-semibold text-gold-900 ring-2 ring-white/10">
+    <div className="m-3 flex items-center gap-3 rounded-xl border border-sidebar-border bg-white/[0.04] p-3">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gold-300 text-xs font-medium text-gold-900">
         {initials}
-        <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-brand-400 ring-2 ring-sidebar" aria-hidden="true" />
       </div>
       <div className="min-w-0 flex-1 leading-tight">
         <p className="truncate text-sm font-medium text-sidebar-foreground" title={user.email}>
           {user.full_name}
         </p>
-        <Badge
-          variant="outline"
-          className="mt-1 border-gold-400/30 bg-gold-400/10 px-1.5 py-0 text-[10px] tracking-wide text-gold-200"
-        >
-          {user.role === "ADMIN" ? "Admin" : "Agent"}
-        </Badge>
+        <p className="mt-0.5 text-xs text-sidebar-foreground/60">{user.role === "ADMIN" ? "Admin" : "Agent"}</p>
       </div>
       <NotificationBell notifications={notifications} unread={unreadNotifications} />
       <form action="/auth/signout" method="post">
@@ -85,13 +78,7 @@ function SidebarContents({
 }) {
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-sidebar">
-      {/* Brand glow and the logo's ring, faint, behind the navigation. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(28rem_18rem_at_0%_0%,rgb(45_197_172/0.22),transparent_60%),radial-gradient(24rem_18rem_at_100%_100%,rgb(236_203_118/0.12),transparent_60%)]"
-      />
-      <BrandMark className="pointer-events-none absolute -right-16 -bottom-10 size-56 animate-float opacity-[0.05] grayscale" />
-      <div className="relative flex h-20 shrink-0 items-center px-5">
+      <div className="relative flex h-16 shrink-0 items-center px-5">
         <BrandLockup />
       </div>
       <div className="relative flex-1 overflow-y-auto">
@@ -174,7 +161,7 @@ export function AppShell({
         </div>
       </div>
 
-      <main className="ambient min-h-svh lg:pl-64">
+      <main className="min-h-svh lg:pl-64">
         <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">{children}</div>
       </main>
     </div>

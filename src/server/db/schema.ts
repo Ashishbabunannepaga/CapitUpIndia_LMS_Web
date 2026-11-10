@@ -105,6 +105,8 @@ export const profiles = sqliteTable(
     full_name: text("full_name").notNull(),
     role: text("role", { enum: USER_ROLES }).notNull().default("AGENT"),
     is_active: bool("is_active").notNull().default(true),
+    /** Set when an admin creates the account or resets its password; the user must pick their own before anything else. */
+    must_change_password: bool("must_change_password").notNull().default(false),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
@@ -144,11 +146,15 @@ export const leads = sqliteTable(
     duplicate_resolved_at: text("duplicate_resolved_at"),
     duplicate_resolved_by: text("duplicate_resolved_by").references(() => profiles.id, { onDelete: "set null" }),
     visiting_card_path: text("visiting_card_path"),
+    /** The capitupindia.com/office call request this lead was handed over from, if any. */
+    office_lead_id: text("office_lead_id"),
     created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
   (t) => [
+    // One LMS lead per office call request (NULLs do not clash).
+    uniqueIndex("leads_office_lead_id_idx").on(t.office_lead_id),
     index("leads_client_name_normalized_idx").on(t.client_name_normalized),
     index("leads_renewal_date_idx").on(t.renewal_date),
     index("leads_assigned_status_idx").on(t.assigned_agent_id, t.status),
@@ -228,6 +234,27 @@ export const leadNotes = sqliteTable(
     index("lead_notes_lead_idx").on(t.lead_id, t.created_at),
     index("lead_notes_created_idx").on(t.created_at),
     check("lead_notes_content_len", sql`length(trim(${t.content})) between 1 and 5000`),
+  ],
+);
+
+/** Every Call, WhatsApp and Email button press on a lead, so admins can see who followed up and when. */
+export const leadContactLogs = sqliteTable(
+  "lead_contact_logs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    lead_id: integer("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    agent_id: text("agent_id").references(() => profiles.id, { onDelete: "set null" }),
+    agent_name: text("agent_name").notNull(),
+    channel: text("channel", { enum: ["call", "whatsapp", "email"] }).notNull(),
+    /** True when the message was an AI follow-up draft. */
+    with_draft: bool("with_draft").notNull().default(false),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("lead_contact_logs_lead_idx").on(t.lead_id, t.created_at),
+    check("lead_contact_logs_channel", sql`${t.channel} in ('call', 'whatsapp', 'email')`),
   ],
 );
 
@@ -321,6 +348,31 @@ export const aiUsageLogs = sqliteTable(
   ],
 );
 
+/**
+ * Failed sign-ins (wrong password, unknown email, disabled account), for the
+ * admins' Team page and the failed sign-in alert (src/server/data/sign-in-failures.ts).
+ * Attempts the rate limit already blocked are only logged, not stored, so a
+ * flood cannot fill the table.
+ */
+export const signInFailures = sqliteTable(
+  "sign_in_failures",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    ip: text("ip"),
+    user_agent: text("user_agent"),
+    reason: text("reason", { enum: ["invalid", "inactive"] }).notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("sign_in_failures_created_idx").on(t.created_at),
+    index("sign_in_failures_email_idx").on(t.email, t.created_at),
+    index("sign_in_failures_ip_idx").on(t.ip, t.created_at),
+    check("sign_in_failures_reason", sql`${t.reason} in ('invalid', 'inactive')`),
+    check("sign_in_failures_email_len", sql`length(${t.email}) <= 320`),
+  ],
+);
+
 export const auditLogs = sqliteTable(
   "audit_logs",
   {
@@ -338,3 +390,14 @@ export const auditLogs = sqliteTable(
     index("audit_logs_created_idx").on(t.created_at),
   ],
 );
+
+/**
+ * One row: the unix second of the last change to anything a screen shows.
+ * SQLite triggers (migrations/0003) bump it, at most once a second, so open
+ * tabs can ask "did anything change?" by reading one row instead of
+ * re-rendering the page every minute.
+ */
+export const changeVersion = sqliteTable("change_version", {
+  id: integer("id").primaryKey(),
+  version: integer("version").notNull().default(0),
+});

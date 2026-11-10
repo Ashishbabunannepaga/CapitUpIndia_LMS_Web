@@ -34,10 +34,10 @@ type Filter = "all" | CalendarCategory;
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+const monthLabelFormat = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+
 function monthLabel(month: string): string {
-  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(`${month}-01T00:00:00Z`),
-  );
+  return monthLabelFormat.format(new Date(`${month}-01T00:00:00Z`));
 }
 
 function shiftMonth(month: string, by: number): string {
@@ -207,7 +207,7 @@ export function MonthCalendar({
                       key={c}
                       title={CALENDAR_CATEGORY_LABELS[c]}
                       className={cn(
-                        "flex items-center gap-1 truncate rounded px-1 text-[10px] font-medium",
+                        "flex items-center gap-1 truncate rounded px-1 text-[11px] font-medium",
                         CALENDAR_CATEGORY_STYLES[c].pill,
                       )}
                     >
@@ -239,7 +239,7 @@ export function MonthCalendar({
         </header>
         <div className="space-y-4 px-5 py-4">
           <div>
-            <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Renewals</h3>
+            <h3 className="text-xs font-medium text-muted-foreground">Renewals</h3>
             {renewals.length === 0 ? (
               <p className="py-2 text-sm text-muted-foreground">No renewals due.</p>
             ) : (
@@ -258,7 +258,7 @@ export function MonthCalendar({
                     </span>
                     <div className="min-w-0">
                       {entry.leadId ? (
-                        <Link href={`/leads/${entry.leadId}`} className="font-medium hover:text-primary hover:underline">
+                        <Link prefetch={false} href={`/leads/${entry.leadId}`} className="font-medium hover:text-primary hover:underline">
                           {entry.title}
                         </Link>
                       ) : (
@@ -275,7 +275,7 @@ export function MonthCalendar({
             )}
           </div>
           <div>
-            <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Tasks</h3>
+            <h3 className="text-xs font-medium text-muted-foreground">Tasks</h3>
             <TaskList tasks={tasks} emptyText="Nothing planned." />
           </div>
         </div>

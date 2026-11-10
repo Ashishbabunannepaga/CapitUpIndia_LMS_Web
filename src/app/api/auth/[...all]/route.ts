@@ -1,10 +1,11 @@
-import { getAuth } from "@/server/auth";
+import { getDataContext } from "@/server/data/context";
+import { handleAuthRequest } from "@/server/data/sessions";
 
 // Better Auth's endpoints (sign-in, sign-out, session). Sign-up is disabled
-// in src/server/auth.ts.
+// in src/server/auth.ts. Failed sign-ins made here are logged like the login
+// form's (src/server/data/sign-in-failures.ts).
 async function handle(request: Request) {
-  const auth = await getAuth();
-  return auth.handler(request);
+  return handleAuthRequest(await getDataContext(), request);
 }
 
 export const GET = handle;

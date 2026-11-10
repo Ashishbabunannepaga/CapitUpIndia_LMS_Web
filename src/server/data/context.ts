@@ -9,12 +9,20 @@ import * as schema from "../db/schema";
 /** What data functions need: the database, auth, and the visiting-card bucket. */
 export type DataContext = { db: DrizzleD1Database<typeof schema>; auth: Auth; cards: R2Bucket };
 
+const databases = new WeakMap<D1Database, DataContext["db"]>();
+
 export function createDataContext(
   d1: D1Database,
   env: Parameters<typeof createAuth>[1],
   cards: R2Bucket,
 ): DataContext {
-  return { db: drizzle(d1, { schema }), auth: createAuth(d1, env), cards };
+  // Reused per binding, like the auth instance: both are stateless wrappers.
+  let db = databases.get(d1);
+  if (!db) {
+    db = drizzle(d1, { schema });
+    databases.set(d1, db);
+  }
+  return { db, auth: createAuth(d1, env), cards };
 }
 
 /** The data context for the current request's Worker environment. */

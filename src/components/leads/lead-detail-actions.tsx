@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { safeAction } from "@/lib/safe-action";
 
 function Feedback({ result }: { result: { ok: boolean; text: string } | null }) {
   if (!result) return null;
@@ -49,7 +50,7 @@ export function AssignAgentSelect({
           const value = event.target.value || null;
           setError(null);
           startTransition(async () => {
-            const result = await assignLead(leadId, value);
+            const result = await safeAction(() => assignLead(leadId, value));
             if (!result.ok) setError(result.error);
           });
         }}
@@ -75,11 +76,14 @@ export function AddNoteForm({ leadId }: { leadId: number }) {
     <form
       ref={formRef}
       className="space-y-2"
-      action={(formData) => {
+      onSubmit={(event) => {
+        // Not a form action: React would clear the fields even when saving fails.
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
         const content = String(formData.get("content") ?? "");
         setResult(null);
         startTransition(async () => {
-          const res = await addLeadNote(leadId, content);
+          const res = await safeAction(() => addLeadNote(leadId, content));
           if (res.ok) formRef.current?.reset();
           else setResult({ ok: false, text: res.error });
         });
@@ -132,10 +136,13 @@ export function AddContactForm({ leadId }: { leadId: number }) {
     <form
       ref={formRef}
       className="space-y-3 rounded-lg border bg-muted/30 p-3"
-      action={(formData) => {
+      onSubmit={(event) => {
+        // Not a form action: React would clear the fields even when saving fails.
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
         setResult(null);
         startTransition(async () => {
-          const res = await addLeadContact(leadId, formData);
+          const res = await safeAction(() => addLeadContact(leadId, formData));
           if (res.ok) {
             formRef.current?.reset();
             setOpen(false);
@@ -194,7 +201,7 @@ export function ResolveDuplicateButton({ leadId }: { leadId: number }) {
         disabled={pending}
         onClick={() =>
           startTransition(async () => {
-            const result = await resolveDuplicate(leadId);
+            const result = await safeAction(() => resolveDuplicate(leadId));
             if (!result.ok) setError(result.error);
           })
         }
@@ -220,7 +227,7 @@ export function DeleteLeadButton({ leadId, clientName, redirectTo }: { leadId: n
       onClick={() => {
         if (!window.confirm(`Delete ${clientName}? Its notes and reminders are deleted too. This can't be undone.`)) return;
         startTransition(async () => {
-          const result = await deleteLead(leadId);
+          const result = await safeAction(() => deleteLead(leadId));
           if (!result.ok) window.alert(result.error);
           else if (redirectTo) router.push(redirectTo);
         });

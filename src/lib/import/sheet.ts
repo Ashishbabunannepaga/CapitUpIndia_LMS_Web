@@ -108,7 +108,7 @@ export function fromCellMatrix(matrix: readonly (readonly unknown[])[]): ParsedS
   return { header, rows: body.map((cells, i) => ({ row: i + 1, cells })) };
 }
 
-/** The input sent to Gemini: the header plus numbered rows. */
+/** The input sent to the AI model: the header plus numbered rows. */
 export function rowsAsText(sheet: ParsedSheet, rows: SheetRow[]): string {
   const header = sheet.header.length > 0 ? `Header: ${sheet.header.join(" | ")}\n` : "";
   return header + rows.map((r) => `[${r.row}] ${r.cells.join(" | ")}`).join("\n");
