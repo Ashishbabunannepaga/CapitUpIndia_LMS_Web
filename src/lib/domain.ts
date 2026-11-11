@@ -145,3 +145,33 @@ export const CONTACT_CHANNEL_LABELS: Record<ContactChannel, string> = { call: "C
 export function isContactChannel(value: unknown): value is ContactChannel {
   return typeof value === "string" && (CONTACT_CHANNELS as readonly string[]).includes(value);
 }
+
+/** What the admins' activity log tracks (src/server/data/activity.ts). */
+export const ACTIVITY_KINDS = [
+  "lead_created",
+  "status_changed",
+  "lead_assigned",
+  "lead_edited",
+  "card_uploaded",
+  "note_added",
+  "task_created",
+  "task_completed",
+  "contact",
+  "lead_deleted",
+] as const;
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+export const ACTIVITY_KIND_LABELS: Record<ActivityKind, string> = {
+  lead_created: "Created lead",
+  status_changed: "Changed status",
+  lead_assigned: "Reassigned lead",
+  lead_edited: "Edited lead",
+  card_uploaded: "Uploaded visiting card",
+  note_added: "Added note",
+  task_created: "Created task",
+  task_completed: "Completed task",
+  contact: "Contacted client",
+  lead_deleted: "Deleted lead",
+};
+export function isActivityKind(value: unknown): value is ActivityKind {
+  return typeof value === "string" && (ACTIVITY_KINDS as readonly string[]).includes(value);
+}

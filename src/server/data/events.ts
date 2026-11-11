@@ -6,6 +6,7 @@ import { calendarCategories, type CalendarCategory } from "@/lib/domain";
 
 import { events, leads, profiles } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
+import { auditInsert } from "./audit";
 import type { DataContext } from "./context";
 import { AccessDeniedError, InvalidInputError } from "./errors";
 
@@ -127,11 +128,15 @@ export async function createTask(ctx: DataContext, actor: Actor, input: NewTask)
 }
 
 export async function setEventDone(ctx: DataContext, actor: Actor, id: number, done: boolean): Promise<void> {
-  await findVisible(ctx, actor, id);
-  await ctx.db
-    .update(events)
-    .set({ is_completed: done, completed_at: done ? new Date().toISOString() : null })
-    .where(eq(events.id, id));
+  const event = await findVisible(ctx, actor, id);
+  if (event.is_completed === done) return;
+  const completed_at = done ? new Date().toISOString() : null;
+  // The audit row records who ticked it off, for the admins' activity log.
+  const summary = { title: event.title, lead_id: event.lead_id, milestone: event.milestone };
+  await ctx.db.batch([
+    ctx.db.update(events).set({ is_completed: done, completed_at }).where(eq(events.id, id)),
+    auditInsert(ctx, actor, "events", id, "UPDATE", { ...summary, is_completed: event.is_completed }, { ...summary, is_completed: done, completed_at }),
+  ]);
 }
 
 /** Deletes a task. Renewal milestones go only when the renewal date changes. */
