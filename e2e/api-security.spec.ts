@@ -119,6 +119,24 @@ test("an agent cannot open another agent's lead or visiting card", async ({ requ
   expect(card.status()).toBe(404);
 });
 
+test("only admins download the monthly report or see the team's activity", async ({ request }) => {
+  const anonymous = await request.get("/admin/activity/report?month=2026-11", { maxRedirects: 0 });
+  expect([307, 401]).toContain(anonymous.status());
+
+  const agent = await sessionCookie(request, "amit");
+  expect((await request.get("/admin/activity/report?month=2026-11", { headers: { cookie: agent } })).status()).toBe(403);
+  const page = await request.get("/admin/activity?tab=log", { headers: { cookie: agent }, maxRedirects: 0 });
+  expect(await page.text()).not.toContain("API Neha Co");
+
+  const admin = await sessionCookie(request, "admin");
+  expect((await request.get("/admin/activity/report?month=2026-13", { headers: { cookie: admin } })).status()).toBe(400);
+  const report = await request.get("/admin/activity/report?month=2026-11", { headers: { cookie: admin } });
+  expect(report.status()).toBe(200);
+  expect(report.headers()["content-type"]).toContain("spreadsheetml");
+  expect(report.headers()["content-disposition"]).toContain("capitup-lms-report-2026-11.xlsx");
+  expect([...(await report.body()).subarray(0, 2)]).toEqual([0x50, 0x4b]); // a zip, as .xlsx files are
+});
+
 test("the owner gets the card as an image that cannot run as a page", async ({ request }) => {
   const cookie = await sessionCookie(request, "neha");
   const card = await request.get(`/leads/${nehaLead}/card`, { headers: { cookie } });

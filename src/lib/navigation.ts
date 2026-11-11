@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   BarChart3,
   CalendarClock,
   CopyCheck,
@@ -86,6 +87,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/duplicates",
         icon: CopyCheck,
         description: "Companies being pursued by more than one agent, with resolution.",
+      },
+      {
+        title: "Team activity",
+        href: "/admin/activity",
+        icon: Activity,
+        description: "Live leads tracker, every agent action, and the monthly Excel report.",
       },
       {
         title: "Analytics",

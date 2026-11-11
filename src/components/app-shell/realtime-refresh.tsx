@@ -13,9 +13,10 @@ const MAX_STALE_MS = 10 * 60_000;
  * re-renders the page only when it did. Re-rendering every minute regardless
  * cost a full page of Worker CPU and D1 reads per open tab per minute.
  * `stamp` is the change stamp the page was drawn with. router.refresh() keeps
- * what the user is typing.
+ * what the user is typing. A page that is watched live (the admins' leads
+ * tracker) can ask more often with `intervalMs`: the check reads one row.
  */
-export function RealtimeRefresh({ stamp }: { stamp: number }) {
+export function RealtimeRefresh({ stamp, intervalMs = INTERVAL_MS }: { stamp: number; intervalMs?: number }) {
   const router = useRouter();
   const seen = useRef(stamp);
   const drawnAt = useRef(0);
@@ -52,16 +53,16 @@ export function RealtimeRefresh({ stamp }: { stamp: number }) {
         busy = false;
       }
     };
-    const timer = setInterval(check, INTERVAL_MS);
+    const timer = setInterval(check, intervalMs);
     const onVisible = () => {
-      if (Date.now() - last > INTERVAL_MS / 2) void check();
+      if (Date.now() - last > intervalMs / 2) void check();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [router]);
+  }, [router, intervalMs]);
 
   return null;
 }
