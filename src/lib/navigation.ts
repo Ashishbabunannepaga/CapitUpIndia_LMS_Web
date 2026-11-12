@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  HeartPulse,
   Activity,
   BarChart3,
   CalendarClock,
@@ -105,6 +106,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/ai-usage",
         icon: IndianRupee,
         description: "AI calls, tokens and INR cost by agent and feature.",
+      },
+      {
+        title: "System health",
+        href: "/admin/health",
+        icon: HeartPulse,
+        description: "Uptime checks every 5 minutes, server and browser errors, and where alerts go.",
       },
       {
         title: "Team",
