@@ -121,7 +121,7 @@ describe("calendar colours", () => {
     const byTitle = new Map(events.map((e) => [e.title, e.categories]));
     expect(byTitle.get("Renewal due: Cal Corporate (Health)")).toEqual(["gmc_renewal"]);
     expect(byTitle.get("Renewal due: Cal Motor (Motor)")).toEqual(["retail_renewal"]);
-    expect(byTitle.get("Renewal due: Cal Retail Active (Health)")).toEqual(["retail_renewal", "active_client"]);
+    expect(byTitle.get("Renewal due: Cal Retail Active (Health)")).toEqual(["active_client"]);
     expect(byTitle.get("Cal visit")).toEqual(["active_client"]);
     expect(byTitle.get("Cal plain task")).toEqual(["task"]);
     expect(byTitle.has("Cal Neha task")).toBe(false);

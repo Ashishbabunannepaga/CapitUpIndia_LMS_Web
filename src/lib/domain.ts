@@ -145,7 +145,9 @@ export function isEventKind(value: unknown): value is EventKind {
  * retail account or a motor policy (the old app also treated 2- and
  * 4-wheeler and motor entries as retail), otherwise GMC. A meeting is a
  * meeting. Renewals and meetings for an active client (Closed Won) also get
- * that colour; any other task for one is coloured as the client's.
+ * that colour; any other task for one is coloured as the client's. A retail
+ * renewal for an active client turns green: it shows only as an active
+ * client, not as a red retail renewal.
  */
 export function calendarCategories(
   isRenewal: boolean,
@@ -156,6 +158,7 @@ export function calendarCategories(
   const alsoActive = active ? (["active_client"] as const) : [];
   if (isRenewal) {
     const retail = lead?.business_type === "Retail" || lead?.policy_product === "Motor";
+    if (retail && active) return ["active_client"];
     return [retail ? "retail_renewal" : "gmc_renewal", ...alsoActive];
   }
   if (kind === "meeting") return ["meeting", ...alsoActive];

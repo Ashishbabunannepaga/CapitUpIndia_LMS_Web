@@ -22,12 +22,13 @@ describe("calendar colours", () => {
     expect(calendarCategories(true, lead({ policy_product: "Motor" }))).toEqual(["retail_renewal"]);
   });
 
-  it("a renewal for an active client carries both colours", () => {
+  it("a GMC renewal for an active client carries both colours", () => {
     expect(calendarCategories(true, lead({ status: "Closed Won" }))).toEqual(["gmc_renewal", "active_client"]);
-    expect(calendarCategories(true, lead({ business_type: "Retail", status: "Closed Won" }))).toEqual([
-      "retail_renewal",
-      "active_client",
-    ]);
+  });
+
+  it("a retail renewal turns green (active client only) once the lead is Closed Won", () => {
+    expect(calendarCategories(true, lead({ business_type: "Retail", status: "Closed Won" }))).toEqual(["active_client"]);
+    expect(calendarCategories(true, lead({ policy_product: "Motor", status: "Closed Won" }))).toEqual(["active_client"]);
   });
 
   it("other entries are tasks, unless they are for an active client (Closed Won)", () => {
