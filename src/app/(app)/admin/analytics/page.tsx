@@ -23,7 +23,6 @@ export const metadata: Metadata = { title: "Analytics" };
 const STATUS_BAR: Record<LeadStatus, string> = {
   Prospect: "bg-slate-400",
   Quoted: "bg-sky-500",
-  "Active Client": "bg-brand-500",
   "Follow-up": "bg-amber-500",
   "Closed Won": "bg-green-600",
   "Closed Lost": "bg-rose-500",
@@ -150,8 +149,9 @@ export default async function AnalyticsPage() {
                   <th className="px-3 py-2 text-right">Leads</th>
                   <th className="px-3 py-2 text-right">Follow-ups</th>
                   <th className="px-3 py-2 text-right">Quoted</th>
-                  <th className="px-3 py-2 text-right">Active</th>
-                  <th className="px-3 py-2 text-right">Won</th>
+                  <th className="px-3 py-2 text-right" title="Closed Won leads are the agent's active clients">
+                    Won (active clients)
+                  </th>
                   <th className="px-3 py-2 text-right">Win rate</th>
                   <th className="px-3 py-2 text-right">Renewals 30d</th>
                   <th className="py-2 pl-3 text-right">Overdue</th>
@@ -174,7 +174,6 @@ export default async function AnalyticsPage() {
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.total)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.follow_up)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.quoted)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.active_client)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.won)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{percent(agent.won, agent.won + agent.lost)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.renewals_30d)}</td>

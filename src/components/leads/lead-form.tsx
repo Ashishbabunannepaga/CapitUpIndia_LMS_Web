@@ -41,7 +41,7 @@ const EMPTY: Record<string, string> = {
   client_name: "",
   type: "New",
   business_type: "Corporate",
-  policy_product: "Health",
+  policy_product: "Not Specified",
   sub_product_name: "",
   address: "",
   renewal_date: "",

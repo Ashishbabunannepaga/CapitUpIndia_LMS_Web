@@ -28,7 +28,7 @@ export const leadFormSchema = z
     client_name: z.string().trim().min(1, "Enter the client or company name.").max(300),
     type: z.enum(LEAD_TYPES as [string, ...string[]]).default("New"),
     business_type: z.enum(BUSINESS_TYPES as [string, ...string[]]).default("Corporate"),
-    policy_product: z.enum(POLICY_PRODUCTS as [string, ...string[]]).default("Health"),
+    policy_product: z.enum(POLICY_PRODUCTS as [string, ...string[]]).default("Not Specified"),
     sub_product_name: text(200),
     address: text(1000),
     renewal_date: z

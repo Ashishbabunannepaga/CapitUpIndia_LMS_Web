@@ -16,10 +16,10 @@ type LeadForMilestones = {
 };
 
 export function renewalEventTitle(milestone: string, clientName: string, product: string): string {
+  // An unknown product says nothing useful in a title.
+  const suffix = product && product !== "Not Specified" ? ` (${product})` : "";
   const title =
-    milestone === "DUE"
-      ? `Renewal due: ${clientName} (${product})`
-      : `${milestone} renewal reminder: ${clientName} (${product})`;
+    milestone === "DUE" ? `Renewal due: ${clientName}${suffix}` : `${milestone} renewal reminder: ${clientName}${suffix}`;
   return title.slice(0, 300);
 }
 

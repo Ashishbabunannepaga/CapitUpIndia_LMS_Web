@@ -209,7 +209,7 @@ export async function updateCallRequest(
 
 // --- Hand-over to an agent -----------------------------------------------------
 
-const PRODUCT: Record<string, "Health" | "Motor" | "Life"> = { health: "Health", motor: "Motor", life: "Life" };
+const PRODUCT: Record<string, "Health" | "Motor" | "Life" | "Not Specified"> = { health: "Health", motor: "Motor", life: "Life" };
 const SOURCE_LABEL: Record<string, string> = {
   policy: "gap report",
   whatsapp: "report on WhatsApp",
@@ -247,7 +247,7 @@ export function leadFromOffice(client: Pick<OfficeClient, "lead" | "policies">, 
     client_name: lead.name.trim().slice(0, 300) || "Website client",
     type: (policy?.expires_on ? "Renewal" : "New") as "Renewal" | "New",
     business_type: "Retail" as const,
-    policy_product: PRODUCT[policy?.policy_type ?? ""] ?? ("Health" as const),
+    policy_product: PRODUCT[policy?.policy_type ?? ""] ?? ("Not Specified" as const),
     renewal_date: policy?.expires_on ?? null,
     poc_name: lead.name.trim().slice(0, 120),
     poc_contact_number: (lead.phone ?? "").trim().slice(0, 32),

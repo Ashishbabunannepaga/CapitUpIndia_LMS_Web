@@ -40,8 +40,10 @@ describe("My Day", () => {
   beforeAll(async () => {
     await createLead(w.ctx, w.amit, { client_name: "Day Due Soon", renewal_date: addDays(today, 3), status: "Quoted" });
     await createLead(w.ctx, w.amit, { client_name: "Day Overdue", renewal_date: addDays(today, -2), status: "Follow-up" });
-    await createLead(w.ctx, w.amit, { client_name: "Day Closed", renewal_date: addDays(today, 2), status: "Closed Won" });
-    await createLead(w.ctx, w.neha, { client_name: "Day Neha", renewal_date: addDays(today, 4), status: "Active Client" });
+    // Closed Lost renewals are no longer chased; Closed Won is an active client whose renewal still is.
+    await createLead(w.ctx, w.amit, { client_name: "Day Lost", renewal_date: addDays(today, 2), status: "Closed Lost" });
+    await createLead(w.ctx, w.amit, { client_name: "Day Won", renewal_date: addDays(today, 2), status: "Closed Won" });
+    await createLead(w.ctx, w.neha, { client_name: "Day Neha", renewal_date: addDays(today, 4), status: "Closed Won" });
     await createLead(w.ctx, w.admin, { client_name: "Day Nobody" });
     const neha = await createLead(w.ctx, w.admin, { client_name: "Day Shared", assigned_agent_id: w.amit.id });
     await addLeadNote(w.ctx, w.admin, neha, "Admin looked at this");
@@ -55,13 +57,13 @@ describe("My Day", () => {
 
   it("an agent sees only their own leads, tasks and notes", async () => {
     const day = await myDay(w.ctx, w.amit);
-    expect(day.counts).toEqual({ activeClients: 0, quoted: 1, followUps: 1, overdueRenewals: 1 });
-    expect(day.renewals.map((l) => l.client_name)).toEqual(["Day Due Soon"]);
+    expect(day.counts).toEqual({ activeClients: 1, quoted: 1, followUps: 1, overdueRenewals: 1 });
+    expect(day.renewals.map((l) => l.client_name)).toEqual(["Day Won", "Day Due Soon"]);
     expect(day.overdueRenewals.map((l) => l.client_name)).toEqual(["Day Overdue"]);
     // The week ahead: tasks and renewal due dates; earlier milestones are background reminders.
     const titles = day.openTasks.map((e) => e.title);
     expect(titles).toContain("Call today");
-    expect(titles).toContain("Renewal due: Day Due Soon (Health)");
+    expect(titles).toContain("Renewal due: Day Due Soon");
     expect(titles).not.toContain("Call next month");
     expect(titles.filter((t) => !t.startsWith("Renewal due") && t !== "Call today")).toEqual([]);
     expect(day.openTasks.every((e) => e.assigned_agent_id === w.amit.id && !e.is_background_reminder)).toBe(true);
@@ -83,8 +85,8 @@ describe("My Day", () => {
 
   it("an admin sees every lead, the unassigned queue and only their own tasks", async () => {
     const day = await myDay(w.ctx, w.admin);
-    expect(day.counts.activeClients).toBe(1);
-    expect(day.renewals.map((l) => l.client_name)).toEqual(["Day Due Soon", "Day Neha"]);
+    expect(day.counts.activeClients).toBe(2);
+    expect(day.renewals.map((l) => l.client_name)).toEqual(["Day Won", "Day Due Soon", "Day Neha"]);
     expect(day.openTasks).toEqual([]);
     expect(day.unassigned?.count).toBe(1);
     expect(day.unassigned?.leads.map((l) => l.client_name)).toEqual(["Day Nobody"]);
@@ -97,15 +99,16 @@ describe("calendar colours", () => {
   const range = { from: businessDateTimeToIso(addDays(today, -1), "00:00"), to: businessDateTimeToIso(addDays(today, 40), "23:59") };
 
   beforeAll(async () => {
-    await createLead(w.ctx, w.amit, { client_name: "Cal Corporate", renewal_date: addDays(today, 30) });
+    await createLead(w.ctx, w.amit, { client_name: "Cal Corporate", renewal_date: addDays(today, 30), policy_product: "Health" });
     await createLead(w.ctx, w.amit, { client_name: "Cal Motor", renewal_date: addDays(today, 31), policy_product: "Motor" });
     await createLead(w.ctx, w.amit, {
       client_name: "Cal Retail Active",
       renewal_date: addDays(today, 32),
       business_type: "Retail",
-      status: "Active Client",
+      policy_product: "Health",
+      status: "Closed Won",
     });
-    const active = await createLead(w.ctx, w.amit, { client_name: "Cal Active", status: "Active Client" });
+    const active = await createLead(w.ctx, w.amit, { client_name: "Cal Active", status: "Closed Won" });
     await createTask(w.ctx, w.amit, { title: "Cal visit", event_timestamp: businessDateTimeToIso(addDays(today, 33), "11:00"), lead_id: active });
     await createTask(w.ctx, w.amit, { title: "Cal plain task", event_timestamp: businessDateTimeToIso(addDays(today, 34), "11:00") });
     await createTask(w.ctx, w.neha, { title: "Cal Neha task", event_timestamp: businessDateTimeToIso(addDays(today, 34), "12:00") });

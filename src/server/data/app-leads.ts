@@ -24,7 +24,7 @@ import { createLead } from "./leads";
 /** The marker that makes the withdrawal note idempotent. */
 export const WITHDRAWN_MARKER = "[App] Do not contact:";
 
-const PRODUCT: Record<string, "Health" | "Motor" | "Life"> = { health: "Health", motor: "Motor", life: "Life" };
+const PRODUCT: Record<string, "Health" | "Motor" | "Life" | "Not Specified"> = { health: "Health", motor: "Motor", life: "Life" };
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -72,7 +72,7 @@ export function leadFromApp(item: AppLead, today = new Date().toISOString().slic
     client_name: (name || item.phone || "App user").slice(0, 300),
     type: (policy?.end_date ? "Renewal" : "New") as "Renewal" | "New",
     business_type: "Retail" as const,
-    policy_product: PRODUCT[policy?.policy_type ?? ""] ?? ("Health" as const),
+    policy_product: PRODUCT[policy?.policy_type ?? ""] ?? ("Not Specified" as const),
     renewal_date: policy?.end_date ?? null,
     poc_name: name.slice(0, 120),
     poc_contact_number: (item.phone ?? "").trim().slice(0, 32),

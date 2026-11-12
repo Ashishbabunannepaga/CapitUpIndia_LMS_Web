@@ -14,8 +14,20 @@ import { blob, check, index, integer, primaryKey, real, sqliteTable, text, uniqu
 export const USER_ROLES = ["ADMIN", "AGENT"] as const;
 export const LEAD_TYPES = ["New", "Renewal", "Rollover"] as const;
 export const BUSINESS_TYPES = ["Corporate", "Retail"] as const;
-export const POLICY_PRODUCTS = ["Health", "Fire or Property", "Life", "Motor", "Liability", "Travel", "Marine", "Credit"] as const;
-export const LEAD_STATUSES = ["Prospect", "Quoted", "Active Client", "Follow-up", "Closed Won", "Closed Lost"] as const;
+/** "Not Specified" (the default) is for leads whose product is not known yet. */
+export const POLICY_PRODUCTS = ["Not Specified", "Health", "Fire or Property", "Life", "Motor", "Liability", "Travel", "Marine", "Credit"] as const;
+/** What the original `policy_product` column allows (see `leads.policy_product`). */
+const LEGACY_POLICY_PRODUCTS = ["Health", "Fire or Property", "Life", "Motor", "Liability", "Travel", "Marine", "Credit"] as const;
+/** Closed Won is an active client; "Active Client" was folded into it (migration 0009). */
+export const LEAD_STATUSES = ["Prospect", "Quoted", "Follow-up", "Closed Won", "Closed Lost"] as const;
+/**
+ * What the status column's CHECK still allows. "Active Client" stays in it
+ * only because SQLite changes a CHECK by rebuilding the table, which on D1
+ * deletes every event and note. The app never writes it (zod and the data
+ * layer accept LEAD_STATUSES only) and migration 0009 moved every such lead.
+ */
+const STORED_LEAD_STATUSES = ["Prospect", "Quoted", "Active Client", "Follow-up", "Closed Won", "Closed Lost"] as const;
+export const EVENT_KINDS = ["task", "meeting"] as const; // Mirrored in src/lib/domain.ts.
 export const AI_FEATURES = ["lead_intake", "card_ocr", "follow_up", "follow_up_rephrase", "bulk_mapping", "other"] as const;
 
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
@@ -133,7 +145,15 @@ export const leads = sqliteTable(
     /** Unused since migration 0006 (see `type`). Kept because dropping it needs a table rebuild. */
     legacy_type: text("type", { enum: ["New", "Renewal"] }).notNull().default("New"),
     business_type: text("business_type", { enum: BUSINESS_TYPES }).notNull().default("Corporate"),
-    policy_product: text("policy_product", { enum: POLICY_PRODUCTS }).notNull().default("Health"),
+    /**
+     * The policy product, "Not Specified" until someone knows it. Stored in
+     * `product`: the original `policy_product` column's CHECK has no "Not
+     * Specified", and changing a CHECK means a table rebuild that would delete
+     * every event and note (migration 0009, same as `type` in 0006).
+     */
+    policy_product: text("product", { enum: POLICY_PRODUCTS }).notNull().default("Not Specified"),
+    /** Unused since migration 0009 (see `policy_product`). Kept because dropping it needs a table rebuild. */
+    legacy_policy_product: text("policy_product", { enum: LEGACY_POLICY_PRODUCTS }).notNull().default("Health"),
     sub_product_name: text("sub_product_name").notNull().default(""),
     renewal_date: text("renewal_date"),
     poc_name: text("poc_name").notNull().default(""),
@@ -180,8 +200,9 @@ export const leads = sqliteTable(
     check("leads_type", sql`${t.legacy_type} in ('New', 'Renewal')`),
     check("leads_lead_type", sql`${t.type} in (${inList(LEAD_TYPES)})`),
     check("leads_business_type", sql`${t.business_type} in (${inList(BUSINESS_TYPES)})`),
-    check("leads_policy_product", sql`${t.policy_product} in (${inList(POLICY_PRODUCTS)})`),
-    check("leads_status", sql`${t.status} in (${inList(LEAD_STATUSES)})`),
+    check("leads_policy_product", sql`${t.legacy_policy_product} in (${inList(LEGACY_POLICY_PRODUCTS)})`),
+    check("leads_product", sql`${t.policy_product} in (${inList(POLICY_PRODUCTS)})`),
+    check("leads_status", sql`${t.status} in (${inList(STORED_LEAD_STATUSES)})`),
     check("leads_renewal_date", sql`${t.renewal_date} is null or coalesce(${t.renewal_date} = date(${t.renewal_date}), 0)`),
     check("leads_sub_product_len", sql`length(${t.sub_product_name}) <= 200`),
     check("leads_poc_name_len", sql`length(${t.poc_name}) <= 120 and length(${t.poc2_name}) <= 120`),
@@ -226,6 +247,8 @@ export const events = sqliteTable(
     title: text("title").notNull(),
     event_timestamp: text("event_timestamp").notNull(),
     notes: text("notes").notNull().default(""),
+    /** What someone planned: a task (call, send a quote) or a meeting. Renewal milestones are tasks. */
+    kind: text("kind", { enum: EVENT_KINDS }).notNull().default("task"),
     milestone: text("milestone"),
     is_completed: bool("is_completed").notNull().default(false),
     completed_at: text("completed_at"),
@@ -248,6 +271,7 @@ export const events = sqliteTable(
       .where(sql`${t.is_background_reminder} = 1 and ${t.reminder_sent_at} is null`),
     check("events_title_len", sql`length(trim(${t.title})) between 1 and 300`),
     check("events_notes_len", sql`length(${t.notes}) <= 5000`),
+    check("events_kind", sql`${t.kind} in (${inList(EVENT_KINDS)})`),
     check(
       "events_system_milestone",
       sql`not ${t.is_system_generated} or (${t.lead_id} is not null and ${t.milestone} is not null)`,
@@ -324,6 +348,8 @@ export const notifications = sqliteTable(
     milestone: text("milestone"),
     created_at: createdAt(),
     read_at: text("read_at"),
+    /** When the cron pushed it to the person's browsers (or decided there was nothing to push to). */
+    pushed_at: text("pushed_at"),
   },
   (t) => [
     index("notifications_user_idx").on(t.user_id, t.read_at, t.created_at),
@@ -331,6 +357,32 @@ export const notifications = sqliteTable(
     check("notifications_kind", sql`${t.kind} in ('renewal_reminder', 'other')`),
     check("notifications_title_len", sql`length(${t.title}) between 1 and 300`),
     check("notifications_body_len", sql`length(${t.body}) <= 2000`),
+  ],
+);
+
+/**
+ * Browsers that agreed to push notifications (Web Push). One row per browser;
+ * a person signed in on a laptop and a phone has two. Rows are removed when
+ * the push service says the subscription is gone (404 or 410).
+ */
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    user_agent: text("user_agent").notNull().default(""),
+    created_at: createdAt(),
+    last_sent_at: text("last_sent_at"),
+  },
+  (t) => [
+    index("push_subscriptions_user_idx").on(t.user_id),
+    check("push_subscriptions_endpoint", sql`${t.endpoint} like 'https://%' and length(${t.endpoint}) <= 1000`),
+    check("push_subscriptions_keys_len", sql`length(${t.p256dh}) <= 200 and length(${t.auth}) <= 100`),
   ],
 );
 

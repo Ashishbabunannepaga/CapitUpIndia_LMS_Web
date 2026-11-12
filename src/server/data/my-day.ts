@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, desc, eq, gte, isNotNull, isNull, lt, lte, notInArray, sql, type SQL } from "drizzle-orm";
 
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES } from "@/lib/domain";
+import { ACTIVE_CLIENT_STATUS, CLOSED_STATUSES } from "@/lib/domain";
 
 import { events, leads } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
@@ -61,7 +61,8 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     unreadNotes,
     unreadNoteCount,
   ] = await ctx.db.batch([
-    countLeads(eq(leads.status, "Active Client")),
+    // Closed Won leads are the active clients.
+    countLeads(eq(leads.status, ACTIVE_CLIENT_STATUS)),
     countLeads(eq(leads.status, "Quoted")),
     countLeads(eq(leads.status, "Follow-up")),
     // Every overdue renewal, like the list the KPI links to; the panel shows the last 30 days.

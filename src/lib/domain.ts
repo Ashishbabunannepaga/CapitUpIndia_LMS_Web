@@ -2,7 +2,11 @@ import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/da
 
 // Business vocabulary shared by every screen. Values match the database enums.
 
+/** What a new lead starts with until someone knows the product. */
+export const UNSPECIFIED_PRODUCT: PolicyProduct = "Not Specified";
+
 export const POLICY_PRODUCTS: readonly PolicyProduct[] = [
+  "Not Specified",
   "Health",
   "Fire or Property",
   "Life",
@@ -13,10 +17,11 @@ export const POLICY_PRODUCTS: readonly PolicyProduct[] = [
   "Credit",
 ];
 
+// There is no "Active Client" status: a Closed Won lead is an active client
+// (it was folded into Closed Won in migration 0009).
 export const LEAD_STATUSES: readonly LeadStatus[] = [
   "Prospect",
   "Quoted",
-  "Active Client",
   "Follow-up",
   "Closed Won",
   "Closed Lost",
@@ -67,14 +72,20 @@ export function formatNoteLine(agentName: string, createdAt: string | Date, cont
   return `[${agentName} - ${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}]: ${content}`;
 }
 
-/** Statuses that end the pipeline; their renewals and follow-ups are no longer chased. */
-export const CLOSED_STATUSES: readonly LeadStatus[] = ["Closed Won", "Closed Lost"];
+/** The status that makes a lead an active client of CapitUp. */
+export const ACTIVE_CLIENT_STATUS: LeadStatus = "Closed Won";
+
+/**
+ * Statuses whose renewals are no longer chased: only Closed Lost. A Closed
+ * Won lead is an active client, so its renewal countdown, reminders and
+ * overdue warnings carry on.
+ */
+export const CLOSED_STATUSES: readonly LeadStatus[] = ["Closed Lost"];
 
 /** Tailwind classes per status, shared by badges, Kanban columns and charts. */
 export const STATUS_STYLES: Record<LeadStatus, { badge: string; dot: string }> = {
   Prospect: { badge: "border-slate-200 bg-slate-100 text-slate-700", dot: "bg-slate-400" },
   Quoted: { badge: "border-sky-200 bg-sky-50 text-sky-700", dot: "bg-sky-500" },
-  "Active Client": { badge: "border-brand-200 bg-brand-50 text-brand-800", dot: "bg-brand-500" },
   "Follow-up": { badge: "border-amber-200 bg-amber-50 text-amber-800", dot: "bg-amber-500" },
   "Closed Won": { badge: "border-green-300 bg-green-100 text-green-800", dot: "bg-green-600" },
   "Closed Lost": { badge: "border-rose-200 bg-rose-50 text-rose-700", dot: "bg-rose-500" },
@@ -84,7 +95,6 @@ export const STATUS_STYLES: Record<LeadStatus, { badge: string; dot: string }> =
 export const STATUS_COLORS: Record<LeadStatus, string> = {
   Prospect: "#94a3b8",
   Quoted: "#0ea5e9",
-  "Active Client": "#1aab93",
   "Follow-up": "#f59e0b",
   "Closed Won": "#16a34a",
   "Closed Lost": "#f43f5e",
@@ -99,15 +109,17 @@ export function isPolicyProduct(value: unknown): value is PolicyProduct {
 }
 
 // Calendar colours, as in the Android app's planner: renewals split into GMC
-// (corporate) and retail, entries for active clients, and everything else as
-// tasks. One entry can carry two colours (a renewal for an active client).
-export const CALENDAR_CATEGORIES = ["gmc_renewal", "retail_renewal", "active_client", "task"] as const;
+// (corporate) and retail, entries for active clients (Closed Won), meetings,
+// and everything else as tasks. One entry can carry two colours (a renewal or
+// a meeting for an active client).
+export const CALENDAR_CATEGORIES = ["gmc_renewal", "retail_renewal", "active_client", "meeting", "task"] as const;
 export type CalendarCategory = (typeof CALENDAR_CATEGORIES)[number];
 
 export const CALENDAR_CATEGORY_LABELS: Record<CalendarCategory, string> = {
   gmc_renewal: "GMC Renewal",
   retail_renewal: "Retail Renewal",
   active_client: "Active Clients",
+  meeting: "Meetings",
   task: "Tasks",
 };
 
@@ -116,25 +128,37 @@ export const CALENDAR_CATEGORY_STYLES: Record<CalendarCategory, { pill: string; 
   gmc_renewal: { pill: "bg-indigo-100 text-indigo-900", dot: "bg-indigo-600", chip: "border-indigo-300 bg-indigo-600 text-white" },
   retail_renewal: { pill: "bg-rose-100 text-rose-900", dot: "bg-rose-500", chip: "border-rose-300 bg-rose-500 text-white" },
   active_client: { pill: "bg-brand-100 text-brand-900", dot: "bg-brand-500", chip: "border-brand-300 bg-brand-600 text-white" },
+  meeting: { pill: "bg-violet-100 text-violet-900", dot: "bg-violet-600", chip: "border-violet-300 bg-violet-600 text-white" },
   task: { pill: "bg-orange-100 text-orange-900", dot: "bg-orange-500", chip: "border-orange-300 bg-orange-500 text-white" },
 };
+
+/** What people put on the calendar besides renewals. */
+export const EVENT_KINDS = ["task", "meeting"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+export const EVENT_KIND_LABELS: Record<EventKind, string> = { task: "Task", meeting: "Meeting" };
+export function isEventKind(value: unknown): value is EventKind {
+  return typeof value === "string" && (EVENT_KINDS as readonly string[]).includes(value);
+}
 
 /**
  * The colours of one calendar entry. A renewal is retail when its lead is a
  * retail account or a motor policy (the old app also treated 2- and
- * 4-wheeler and motor entries as retail), otherwise GMC. Entries for an
- * active client also get that colour; anything else that is not a renewal
- * is a task.
+ * 4-wheeler and motor entries as retail), otherwise GMC. A meeting is a
+ * meeting. Renewals and meetings for an active client (Closed Won) also get
+ * that colour; any other task for one is coloured as the client's.
  */
 export function calendarCategories(
   isRenewal: boolean,
   lead: { business_type: BusinessType; policy_product: PolicyProduct; status: LeadStatus } | null,
+  kind: EventKind = "task",
 ): CalendarCategory[] {
-  const active = lead?.status === "Active Client";
+  const active = lead?.status === ACTIVE_CLIENT_STATUS;
+  const alsoActive = active ? (["active_client"] as const) : [];
   if (isRenewal) {
     const retail = lead?.business_type === "Retail" || lead?.policy_product === "Motor";
-    return [retail ? "retail_renewal" : "gmc_renewal", ...(active ? (["active_client"] as const) : [])];
+    return [retail ? "retail_renewal" : "gmc_renewal", ...alsoActive];
   }
+  if (kind === "meeting") return ["meeting", ...alsoActive];
   return [active ? "active_client" : "task"];
 }
 

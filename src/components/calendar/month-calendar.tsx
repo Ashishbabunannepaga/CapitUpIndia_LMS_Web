@@ -68,6 +68,8 @@ function cellLabel(category: CalendarCategory, n: number): string {
       return "retail";
     case "active_client":
       return "active";
+    case "meeting":
+      return n === 1 ? "meeting" : "meetings";
     case "task":
       return n === 1 ? "task" : "tasks";
   }

@@ -275,7 +275,6 @@ function RenewalRadar({
 const STATUS_FIELDS: Record<LeadStatus, keyof AgentPipeline> = {
   Prospect: "prospect",
   Quoted: "quoted",
-  "Active Client": "active_client",
   "Follow-up": "follow_up",
   "Closed Won": "won",
   "Closed Lost": "lost",
@@ -495,7 +494,7 @@ export default async function MyDayPage() {
         <StatCard
           label="Active clients"
           value={day.counts.activeClients}
-          href={leadsHref({ status: "Active Client" })}
+          href={leadsHref({ status: "Closed Won" })}
           tone="success"
         />
       </div>

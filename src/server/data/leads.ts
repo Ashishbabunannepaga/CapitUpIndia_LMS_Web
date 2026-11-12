@@ -432,7 +432,7 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
   // highest id: nothing else can write in between.
   const newId = sql<number>`(select max(${leads.id}) from ${leads})`;
   const milestones = milestoneEvents(
-    { client_name: row.client_name, policy_product: row.policy_product ?? "Health", renewal_date: row.renewal_date ?? null, assigned_agent_id: owner },
+    { client_name: row.client_name, policy_product: row.policy_product ?? "Not Specified", renewal_date: row.renewal_date ?? null, assigned_agent_id: owner },
     renewal.offsets,
     renewal.dueTime,
   );

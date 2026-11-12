@@ -502,7 +502,7 @@ describe("tasks", () => {
 });
 
 describe("renewal reminders", () => {
-  it("notify the agent once for the latest due milestone; unassigned leads notify admins; closed leads stay quiet", async () => {
+  it("notify the agent once for the latest due milestone; unassigned leads notify admins; lost leads stay quiet, won (active) clients are still reminded", async () => {
     const soon = new Date(Date.now() + 2 * 86_400_000);
     const date = soon.toISOString().slice(0, 10);
     const assigned = await createLead(w.ctx, w.admin, {
@@ -511,9 +511,11 @@ describe("renewal reminders", () => {
       assigned_agent_id: w.amit.id,
       poc_name: "Sunil",
       poc_contact_number: "9845011111",
+      policy_product: "Health",
     });
     const unassigned = await createLead(w.ctx, w.admin, { client_name: "Orphan Co", renewal_date: date });
-    const closed = await createLead(w.ctx, w.admin, { client_name: "Closed Renewal Co", renewal_date: date, assigned_agent_id: w.amit.id, status: "Closed Won" });
+    const closed = await createLead(w.ctx, w.admin, { client_name: "Lost Renewal Co", renewal_date: date, assigned_agent_id: w.amit.id, status: "Closed Lost" });
+    const won = await createLead(w.ctx, w.admin, { client_name: "Won Renewal Co", renewal_date: date, assigned_agent_id: w.amit.id, status: "Closed Won" });
 
     // Pretend it is just after the renewal is due: everything is due.
     const later = new Date(Date.parse(`${date}T05:00:00Z`));
@@ -525,6 +527,8 @@ describe("renewal reminders", () => {
     expect(remind[0].title).toBe("T-5 Minutes: Remind Co renewal (Health)");
     expect(remind[0].body).toContain("Contact: Sunil (9845011111)");
     expect(amitBell.items.some((n) => n.lead_id === closed)).toBe(false);
+    // An unknown product is left out of the title.
+    expect(amitBell.items.find((n) => n.lead_id === won)?.title).toBe("T-5 Minutes: Won Renewal Co renewal");
 
     const adminBell = await recentNotifications(w.ctx, w.admin);
     const orphan = adminBell.items.filter((n) => n.lead_id === unassigned);
@@ -533,7 +537,7 @@ describe("renewal reminders", () => {
     expect((await recentNotifications(w.ctx, w.neha)).items.some((n) => n.lead_id === assigned)).toBe(false);
 
     // Everything due was marked sent, including the closed lead's; a second run sends nothing.
-    expect(await sqlRows("select id from events where is_background_reminder = 1 and reminder_sent_at is null and lead_id in (?, ?, ?)", assigned, unassigned, closed)).toEqual([]);
+    expect(await sqlRows("select id from events where is_background_reminder = 1 and reminder_sent_at is null and lead_id in (?, ?, ?, ?)", assigned, unassigned, closed, won)).toEqual([]);
     expect(await deliverDueReminders(w.ctx, later)).toBe(0);
   });
 

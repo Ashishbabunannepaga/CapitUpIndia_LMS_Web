@@ -49,7 +49,7 @@ describe("normalizeProduct", () => {
     ["Group Mediclaim", "Health"],
     ["GMC", "Health"],
     ["health cover for office staff", "Health"],
-    ["Shopkeeper policy", "Health"],
+    ["Shopkeeper policy", "Not Specified"],
     ["shop insurance", "Fire or Property"],
     ["Car insurance", "Motor"],
     ["two wheeler", "Motor"],
@@ -63,15 +63,16 @@ describe("normalizeProduct", () => {
     ["Trade credit", "Credit"],
     ["Overseas travel", "Travel"],
     ["fire or property", "Fire or Property"],
-    ["something unknown", "Health"],
+    ["something unknown", "Not Specified"],
+    ["Not specified", "Not Specified"],
   ];
   it.each(cases)("%s -> %s", (input, product) => {
     expect(normalizeProduct(input)).toBe(product);
   });
 
-  it("defaults to Health for empty input", () => {
-    expect(normalizeProduct(null)).toBe("Health");
-    expect(normalizeProduct(undefined)).toBe("Health");
+  it("never guesses: empty input is Not Specified", () => {
+    expect(normalizeProduct(null)).toBe("Not Specified");
+    expect(normalizeProduct(undefined)).toBe("Not Specified");
   });
 });
 
