@@ -1,5 +1,5 @@
-import type { LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
-import { isLeadStatus, isPolicyProduct, LEAD_TYPES } from "@/lib/domain";
+import type { LeadStatus, LeadTag, LeadType, PolicyProduct } from "@/lib/database.types";
+import { isLeadStatus, isLeadTag, isPolicyProduct, LEAD_TYPES } from "@/lib/domain";
 
 // Leads screen filters live in the URL so views are shareable and the server
 // renders the filtered list. Unknown values are ignored.
@@ -35,6 +35,9 @@ export type LeadFilters = {
   agent: string | null;
   renewal: RenewalWindow | null;
   duplicates: boolean;
+  /** Only open leads with no activity for longer than the stale threshold. */
+  stale: boolean;
+  tag: LeadTag | null;
   sort: LeadSort;
   /** 1-based page of the table and card views. */
   page: number;
@@ -65,6 +68,8 @@ export function parseLeadFilters(params: RawParams): LeadFilters {
     agent: agent === "unassigned" || /^[0-9a-f-]{36}$/i.test(agent) ? agent : null,
     renewal: Object.hasOwn(RENEWAL_WINDOWS, renewal) ? (renewal as RenewalWindow) : null,
     duplicates: one(params, "duplicates") === "1",
+    stale: one(params, "stale") === "1",
+    tag: isLeadTag(one(params, "tag")) ? (one(params, "tag") as LeadTag) : null,
     sort: Object.hasOwn(LEAD_SORTS, sort) ? (sort as LeadSort) : "updated",
     page: parsePage(one(params, "page")),
   };
@@ -88,6 +93,8 @@ export function leadsHref(filters: Partial<LeadFilters>): string {
   if (filters.agent) params.set("agent", filters.agent);
   if (filters.renewal) params.set("renewal", filters.renewal);
   if (filters.duplicates) params.set("duplicates", "1");
+  if (filters.stale) params.set("stale", "1");
+  if (filters.tag) params.set("tag", filters.tag);
   if (filters.sort && filters.sort !== "updated") params.set("sort", filters.sort);
   if (filters.page && filters.page > 1 && filters.view !== "kanban") params.set("page", String(filters.page));
   const query = params.toString();

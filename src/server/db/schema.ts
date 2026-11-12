@@ -28,6 +28,8 @@ export const LEAD_STATUSES = ["Prospect", "Quoted", "Follow-up", "Closed Won", "
  */
 const STORED_LEAD_STATUSES = ["Prospect", "Quoted", "Active Client", "Follow-up", "Closed Won", "Closed Lost"] as const;
 export const EVENT_KINDS = ["task", "meeting"] as const; // Mirrored in src/lib/domain.ts.
+/** Labels agents put on leads; admins filter by them. Mirrored in src/lib/domain.ts. */
+export const LEAD_TAGS = ["Hot", "VIP", "Price sensitive", "Referral", "Cold"] as const;
 export const AI_FEATURES = ["lead_intake", "card_ocr", "follow_up", "follow_up_rephrase", "bulk_mapping", "other"] as const;
 
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
@@ -295,6 +297,28 @@ export const leadNotes = sqliteTable(
     index("lead_notes_lead_idx").on(t.lead_id, t.created_at),
     index("lead_notes_created_idx").on(t.created_at),
     check("lead_notes_content_len", sql`length(trim(${t.content})) between 1 and 5000`),
+  ],
+);
+
+/**
+ * Labels on a lead ("Hot", "VIP", ...), one row per tag. A separate table so
+ * adding it did not touch `leads` (changing that table means a rebuild that
+ * deletes every event and note on D1).
+ */
+export const leadTags = sqliteTable(
+  "lead_tags",
+  {
+    lead_id: integer("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    tag: text("tag", { enum: LEAD_TAGS }).notNull(),
+    created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.lead_id, t.tag] }),
+    index("lead_tags_tag_idx").on(t.tag, t.lead_id),
+    check("lead_tags_tag", sql`${t.tag} in (${inList(LEAD_TAGS)})`),
   ],
 );
 

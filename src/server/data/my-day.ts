@@ -5,9 +5,11 @@ import { and, asc, count, desc, eq, getTableColumns, gte, isNotNull, isNull, lt,
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
 import { ACTIVE_CLIENT_STATUS, CLOSED_STATUSES } from "@/lib/domain";
 
-import { events, leads } from "../db/schema";
-import { isAdmin, type Actor } from "./actor";
+import { events, leads, profiles } from "../db/schema";
+import { assertAdmin, isAdmin, type Actor } from "./actor";
 import type { DataContext } from "./context";
+import { InvalidInputError } from "./errors";
+import { isStale } from "./stale";
 import { countUnreadLeadNotesQuery, unreadLeadNotesQuery, type Lead, type LeadEvent, type UnreadNote } from "./leads";
 
 // Everything the My Day screen shows, in one call. Lead numbers cover the
@@ -16,7 +18,7 @@ import { countUnreadLeadNotesQuery, unreadLeadNotesQuery, type Lead, type LeadEv
 export type TaskWithLead = LeadEvent & { lead_name: string | null };
 
 export type MyDay = {
-  counts: { activeClients: number; quoted: number; followUps: number; overdueRenewals: number };
+  counts: { activeClients: number; quoted: number; followUps: number; overdueRenewals: number; stale: number };
   /** Open leads renewing in the next 30 days, soonest first. */
   renewals: Lead[];
   /** Open leads whose renewal passed in the last 30 days, latest first. */
@@ -54,6 +56,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     quoted,
     followUps,
     overdueRenewalCount,
+    staleCount,
     renewals,
     overdueRenewals,
     openTasks,
@@ -70,6 +73,8 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     countLeads(eq(leads.status, "Follow-up")),
     // Every overdue renewal, like the list the KPI links to; the panel shows the last 30 days.
     countLeads(lt(leads.renewal_date, today), open),
+    // Open leads nobody has touched for the admins' stale threshold.
+    countLeads(isStale),
     ctx.db
       .select()
       .from(leads)
@@ -114,6 +119,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
       quoted: quoted[0]?.n ?? 0,
       followUps: followUps[0]?.n ?? 0,
       overdueRenewals: overdueRenewalCount[0]?.n ?? 0,
+      stale: staleCount[0]?.n ?? 0,
     },
     renewals,
     overdueRenewals,
@@ -124,4 +130,17 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     unreadNotes,
     unreadNoteCount: unreadNoteCount[0]?.n ?? 0,
   };
+}
+
+/**
+ * The agent whose My Day an admin wants to look at ("View as agent"): their
+ * profile, to pass as the actor to read-only screens (myDay,
+ * pipelineAnalytics). Admins only, and only agents: no session changes hands
+ * and nothing is written as the agent.
+ */
+export async function agentForView(ctx: DataContext, actor: Actor, agentId: string): Promise<Actor> {
+  assertAdmin(actor);
+  const agent = await ctx.db.query.profiles.findFirst({ where: eq(profiles.id, agentId) });
+  if (!agent || agent.role !== "AGENT") throw new InvalidInputError("That agent no longer exists.");
+  return agent;
 }

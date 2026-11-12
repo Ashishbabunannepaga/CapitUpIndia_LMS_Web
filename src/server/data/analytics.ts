@@ -206,3 +206,100 @@ export async function nextRoundRobinAgents(ctx: DataContext, actor: Actor, n: nu
     .onConflictDoUpdate({ target: appSettings.key, set: { value: next } });
   return picked;
 }
+
+// --- Agent workload and renewal pipeline (admins) ----------------------------
+
+export type AgentWorkload = {
+  agent_id: string;
+  agent_name: string;
+  /** Leads not yet Closed Won or Closed Lost. */
+  open_leads: number;
+  /** Their tasks, meetings and renewal due dates not ticked off before today. */
+  overdue_followups: number;
+  /** Their leads (not Closed Lost) renewing today or in the next 7 days. */
+  renewals_week: number;
+};
+
+/**
+ * Per active team member: open leads, overdue follow-ups and renewals due
+ * this week, side by side. Admins with nothing on their plate are left out.
+ */
+export async function agentWorkload(ctx: DataContext, actor: Actor, now: Date = new Date()): Promise<AgentWorkload[]> {
+  assertAdmin(actor);
+  const today = todayInBusinessTz(now);
+  const todayStart = startOfBusinessDay(today);
+  const in7 = addDays(today, 7);
+  const rows = await ctx.db.all<AgentWorkload & { role: string }>(sql`
+    select p.id as agent_id, p.full_name as agent_name, p.role,
+      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.status not in ('Closed Won', 'Closed Lost')) as open_leads,
+      (select count(*) from events e where e.assigned_agent_id = p.id and e.is_completed = 0
+        and e.is_background_reminder = 0 and e.event_timestamp < ${todayStart}) as overdue_followups,
+      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.status != 'Closed Lost'
+        and l.renewal_date >= ${today} and l.renewal_date <= ${in7}) as renewals_week
+    from ${profiles} p
+    where p.is_active = 1
+    order by p.full_name, p.id`);
+  return rows
+    .filter((r) => r.role === "AGENT" || r.open_leads + r.overdue_followups + r.renewals_week > 0)
+    .map(({ role: _role, ...r }) => r);
+}
+
+export type RenewalWindow = "0-30" | "31-60" | "61-90";
+
+export type RenewalReportRow = {
+  id: number;
+  client_name: string;
+  agent_name: string;
+  policy_product: string;
+  sub_product_name: string;
+  type: string;
+  business_type: string;
+  status: string;
+  renewal_date: string;
+  days_left: number;
+  window: RenewalWindow;
+  poc_name: string;
+  poc_contact_number: string;
+  poc_email_id: string;
+};
+
+/**
+ * Leads (not Closed Lost) renewing in the next 90 days, with the 30-day window
+ * each falls in, sorted by agent, product and date. Admins only.
+ */
+export async function renewalPipeline(ctx: DataContext, actor: Actor, now: Date = new Date()): Promise<{ today: string; rows: RenewalReportRow[] }> {
+  assertAdmin(actor);
+  const today = todayInBusinessTz(now);
+  const rows = await ctx.db
+    .select({
+      id: leads.id,
+      client_name: leads.client_name,
+      agent_name: sql<string>`coalesce(${profiles.full_name}, 'Unassigned')`,
+      policy_product: leads.policy_product,
+      sub_product_name: leads.sub_product_name,
+      type: leads.type,
+      business_type: leads.business_type,
+      status: leads.status,
+      renewal_date: sql<string>`${leads.renewal_date}`,
+      poc_name: leads.poc_name,
+      poc_contact_number: leads.poc_contact_number,
+      poc_email_id: leads.poc_email_id,
+    })
+    .from(leads)
+    .leftJoin(profiles, eq(profiles.id, leads.assigned_agent_id))
+    .where(
+      and(
+        ne(leads.status, "Closed Lost"),
+        gte(leads.renewal_date, today),
+        sql`${leads.renewal_date} <= ${addDays(today, 90)}`,
+      ),
+    )
+    .orderBy(sql`${profiles.full_name} is null`, asc(profiles.full_name), asc(leads.policy_product), asc(leads.renewal_date), asc(leads.id));
+  return {
+    today,
+    rows: rows.map((r) => {
+      const days = Math.round((Date.parse(r.renewal_date) - Date.parse(today)) / 86_400_000);
+      return { ...r, days_left: days, window: days <= 30 ? "0-30" : days <= 60 ? "31-60" : "61-90" };
+    }),
+  };
+}

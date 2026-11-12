@@ -1,12 +1,12 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNull, lt, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { BatchItem } from "drizzle-orm/batch";
 
 import { normalizeCompanyName } from "@/lib/company-name";
 import { addDays, formatDate, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isContactChannel, isLeadStatus } from "@/lib/domain";
+import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isContactChannel, isLeadStatus, isLeadTag } from "@/lib/domain";
 import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 
@@ -16,6 +16,7 @@ import {
   leadContactLogs,
   leadNoteReads,
   leadNotes,
+  leadTags,
   leads,
   notifications,
   profiles,
@@ -28,6 +29,7 @@ import type { DataContext } from "./context";
 import { duplicateState } from "./duplicates";
 import { AccessDeniedError, InvalidInputError } from "./errors";
 import { clientWithProduct, milestoneEvents } from "./milestones";
+import { isStale, lastActivityAt } from "./stale";
 
 // Leads, their notes and contacts. These carry the rules the Supabase RLS
 // policies and triggers enforced:
@@ -44,6 +46,12 @@ export type LeadWithAgent = Lead & { agent_name: string | null };
 export type LeadNote = typeof leadNotes.$inferSelect;
 export type LeadEvent = typeof events.$inferSelect;
 export type LeadContactLog = typeof leadContactLogs.$inferSelect;
+export type LeadTag = (typeof leadTags.$inferSelect)["tag"];
+/** A lead as the leads screens list it: with its owner's name, tags and whether it has gone stale. */
+export type ListedLead = LeadWithAgent & { tags: LeadTag[]; is_stale: boolean; last_activity_at: string };
+
+/** At most this many leads in one bulk reassignment or export. */
+export const BULK_LIMIT = 200;
 
 /** Leads per page in the table and card views. */
 export const LEAD_PAGE_SIZE = 100;
@@ -194,6 +202,7 @@ export async function getLead(ctx: DataContext, actor: Actor, id: number): Promi
 
 export type LeadPage = {
   lead: LeadWithAgent;
+  tags: LeadTag[];
   notes: LeadNote[];
   /** Like getLeadEvents. */
   events: LeadEvent[];
@@ -211,7 +220,7 @@ export type LeadPage = {
  * getLeadNotes / getLeadEvents / getLeadContactLog.
  */
 export async function getLeadPage(ctx: DataContext, actor: Actor, id: number): Promise<LeadPage | null> {
-  const [found, team, notes, leadEvents, contacts, unread] = await ctx.db.batch([
+  const [found, team, notes, leadEvents, contacts, unread, tags] = await ctx.db.batch([
     ctx.db.select().from(leads).where(and(eq(leads.id, id), scope(actor))).limit(1),
     ctx.db
       .select({ id: profiles.id, full_name: profiles.full_name, role: profiles.role, is_active: profiles.is_active })
@@ -234,11 +243,20 @@ export async function getLeadPage(ctx: DataContext, actor: Actor, id: number): P
       .from(leadNotes)
       .innerJoin(leads, eq(leads.id, leadNotes.lead_id))
       .where(unreadWhere(actor, id)),
+    ctx.db.select({ tag: leadTags.tag }).from(leadTags).where(eq(leadTags.lead_id, id)).orderBy(asc(leadTags.created_at)),
   ]);
   const lead = found[0];
   if (!lead) return null;
   const [named] = withNames([lead], new Map(team.map((m) => [m.id, m.full_name])));
-  return { lead: named, notes, events: leadEvents, contacts, team, unreadNoteIds: unread.map((n) => n.id) };
+  return {
+    lead: named,
+    tags: tags.map((t) => t.tag),
+    notes,
+    events: leadEvents,
+    contacts,
+    team,
+    unreadNoteIds: unread.map((n) => n.id),
+  };
 }
 
 function escapeLike(term: string): string {
@@ -283,6 +301,10 @@ function filterConditions(actor: Actor, filters: LeadFilters, today: string): SQ
   if (filters.agent === "unassigned") conditions.push(isNull(leads.assigned_agent_id));
   else if (filters.agent) conditions.push(eq(leads.assigned_agent_id, filters.agent));
   if (filters.duplicates) conditions.push(eq(leads.is_duplicate, true));
+  if (filters.stale) conditions.push(isStale);
+  if (filters.tag) {
+    conditions.push(sql`exists (select 1 from ${leadTags} t where t.lead_id = ${leads.id} and t.tag = ${filters.tag})`);
+  }
   switch (filters.renewal) {
     case "overdue":
       conditions.push(lt(leads.renewal_date, today), notInArray(leads.status, [...CLOSED_STATUSES]));
@@ -309,8 +331,15 @@ export async function listLeads(
   ctx: DataContext,
   actor: Actor,
   filters: LeadFilters,
-): Promise<{ leads: LeadWithAgent[]; truncated: boolean }> {
+): Promise<{ leads: ListedLead[]; truncated: boolean }> {
   const where = and(...filterConditions(actor, filters, todayInBusinessTz()));
+  // Tags and staleness come with the rows, so the list stays one query.
+  const listed = {
+    ...getTableColumns(leads),
+    tag_list: sql<string | null>`(select group_concat(t.tag, '|') from ${leadTags} t where t.lead_id = ${leads.id})`,
+    is_stale: sql<number>`${isStale}`,
+    last_activity_at: lastActivityAt,
+  };
   const order = {
     name: [asc(leads.client_name_normalized), asc(leads.id)],
     renewal_asc: [sql`${leads.renewal_date} is null`, asc(leads.renewal_date), asc(leads.id)],
@@ -331,7 +360,7 @@ export async function listLeads(
       .where(where)
       .as("ranked");
     query = ctx.db
-      .select()
+      .select(listed)
       .from(leads)
       .where(
         and(where, inArray(leads.id, ctx.db.select({ id: ranked.id }).from(ranked).where(lte(ranked.rank, KANBAN_COLUMN_LIMIT + 1)))),
@@ -339,7 +368,7 @@ export async function listLeads(
       .orderBy(...order);
   } else {
     query = ctx.db
-      .select()
+      .select(listed)
       .from(leads)
       .where(where)
       .orderBy(...order)
@@ -348,7 +377,7 @@ export async function listLeads(
   }
   const [rows, team] = await Promise.all([query, teamNames(ctx)]);
 
-  let kept: Lead[];
+  let kept: typeof rows;
   let truncated: boolean;
   if (filters.view === "kanban") {
     const perStatus = new Map<string, number>();
@@ -362,7 +391,12 @@ export async function listLeads(
     kept = rows.slice(0, LEAD_PAGE_SIZE);
     truncated = rows.length > LEAD_PAGE_SIZE;
   }
-  return { leads: withNames(kept, team), truncated };
+  const shaped = kept.map(({ tag_list, is_stale, ...lead }) => ({
+    ...lead,
+    tags: (tag_list ? tag_list.split("|") : []).filter(isLeadTag),
+    is_stale: Boolean(is_stale),
+  }));
+  return { leads: withNames(shaped, team), truncated };
 }
 
 export type LeadChoice = { id: number; client_name: string };
@@ -483,6 +517,22 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
 
 /** Applies a change to a lead with everything that follows from it, in one batch. */
 async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Partial<Lead>): Promise<void> {
+  const statements = await leadChangeStatements(ctx, actor, before, patch);
+  if (statements.length > 0) await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+}
+
+/**
+ * The statements that apply a change to a lead: the row, its renewal
+ * milestones, the audit row and (unless `notifyOwner` is off) the new owner's
+ * bell message. Empty when nothing changes.
+ */
+async function leadChangeStatements(
+  ctx: DataContext,
+  actor: Actor,
+  before: Lead,
+  patch: Partial<Lead>,
+  { notifyOwner = true }: { notifyOwner?: boolean } = {},
+): Promise<BatchItem<"sqlite">[]> {
   const stamp = now();
   const after: Lead = { ...before, ...patch };
   if (after.assigned_agent_id !== before.assigned_agent_id) after.assigned_at = after.assigned_agent_id ? stamp : null;
@@ -493,7 +543,7 @@ async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Pa
       duplicate_resolved_by: null,
     });
   }
-  if (!changed(before, after)) return;
+  if (!changed(before, after)) return [];
   after.updated_at = stamp;
 
   const { id, ...values } = after;
@@ -524,10 +574,15 @@ async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Pa
     }
   }
   statements.push(auditInsert(ctx, actor, "leads", id, "UPDATE", before, after));
-  if (after.assigned_agent_id && after.assigned_agent_id !== before.assigned_agent_id && after.assigned_agent_id !== actor.id) {
+  if (
+    notifyOwner &&
+    after.assigned_agent_id &&
+    after.assigned_agent_id !== before.assigned_agent_id &&
+    after.assigned_agent_id !== actor.id
+  ) {
     statements.push(ctx.db.insert(notifications).values(assignmentNotice(actor, after.assigned_agent_id, after, id)));
   }
-  await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  return statements;
 }
 
 /** One bell (and push) message for many leads given to an agent at once (bulk import). Admins only. */
@@ -586,6 +641,83 @@ export async function assignLead(ctx: DataContext, actor: Actor, id: number, age
   assertAdmin(actor);
   await assertAssignable(ctx, agentId);
   await writeLead(ctx, actor, await findVisible(ctx, actor, id), { assigned_agent_id: agentId });
+}
+
+/**
+ * Gives many leads to one active team member (or unassigns them) in a single
+ * batch, with an audit row per lead and one bell message for the new owner.
+ * Admins only. Returns how many leads changed hands.
+ */
+export async function reassignLeads(ctx: DataContext, actor: Actor, ids: number[], agentId: string | null): Promise<number> {
+  assertAdmin(actor);
+  const unique = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
+  if (unique.length === 0) throw new InvalidInputError("Select at least one lead.");
+  if (unique.length > BULK_LIMIT) throw new InvalidInputError(`Reassign at most ${BULK_LIMIT} leads at a time.`);
+  await assertAssignable(ctx, agentId);
+  const befores = await ctx.db.select().from(leads).where(inArray(leads.id, unique));
+  const statements: BatchItem<"sqlite">[] = [];
+  let moved = 0;
+  for (const before of befores) {
+    if (before.assigned_agent_id === agentId) continue;
+    statements.push(...(await leadChangeStatements(ctx, actor, before, { assigned_agent_id: agentId }, { notifyOwner: false })));
+    moved++;
+  }
+  if (moved === 0) return 0;
+  if (agentId && agentId !== actor.id) {
+    statements.push(
+      ctx.db.insert(notifications).values({
+        user_id: agentId,
+        kind: "other",
+        title: moved === 1 ? "1 lead reassigned to you" : `${moved} leads reassigned to you`,
+        body: `${actor.full_name} reassigned them to you. Open Leads to see them.`.slice(0, 2000),
+      }),
+    );
+  }
+  await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  return moved;
+}
+
+/** Leads by id for an Excel export, in the order given, with owner names and tags. Admins only. */
+export async function leadsForExport(ctx: DataContext, actor: Actor, ids: number[]): Promise<(LeadWithAgent & { tags: LeadTag[] })[]> {
+  assertAdmin(actor);
+  const unique = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
+  if (unique.length === 0) throw new InvalidInputError("Select at least one lead.");
+  if (unique.length > BULK_LIMIT) throw new InvalidInputError(`Export at most ${BULK_LIMIT} leads at a time.`);
+  const [rows, tags, team] = await Promise.all([
+    ctx.db.select().from(leads).where(inArray(leads.id, unique)),
+    ctx.db.select().from(leadTags).where(inArray(leadTags.lead_id, unique)),
+    teamNames(ctx),
+  ]);
+  const byLead = new Map<number, LeadTag[]>();
+  for (const t of tags) byLead.set(t.lead_id, [...(byLead.get(t.lead_id) ?? []), t.tag]);
+  const order = new Map(unique.map((id, i) => [id, i]));
+  return withNames(rows, team)
+    .map((lead) => ({ ...lead, tags: byLead.get(lead.id) ?? [] }))
+    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+}
+
+/**
+ * Replaces a lead's tags. Anyone who can see the lead can tag it; the change
+ * is audited so it shows in the lead's history.
+ */
+export async function setLeadTags(ctx: DataContext, actor: Actor, leadId: number, tags: unknown[]): Promise<LeadTag[]> {
+  if (!Array.isArray(tags) || !tags.every(isLeadTag)) throw new InvalidInputError("Unknown tag.");
+  const next = [...new Set(tags)] as LeadTag[];
+  await findVisible(ctx, actor, leadId);
+  const current = (await ctx.db.select({ tag: leadTags.tag }).from(leadTags).where(eq(leadTags.lead_id, leadId))).map((t) => t.tag);
+  const added = next.filter((t) => !current.includes(t));
+  const removed = current.filter((t) => !next.includes(t));
+  if (added.length === 0 && removed.length === 0) return current;
+  const statements: BatchItem<"sqlite">[] = [];
+  if (removed.length > 0) {
+    statements.push(ctx.db.delete(leadTags).where(and(eq(leadTags.lead_id, leadId), inArray(leadTags.tag, removed))));
+  }
+  if (added.length > 0) {
+    statements.push(ctx.db.insert(leadTags).values(added.map((tag) => ({ lead_id: leadId, tag, created_by: actor.id }))));
+  }
+  statements.push(auditInsert(ctx, actor, "lead_tags", leadId, "UPDATE", { tags: current }, { tags: next }));
+  await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  return next;
 }
 
 /** Clears a lead's duplicate flag and records who did it. Admins only. */

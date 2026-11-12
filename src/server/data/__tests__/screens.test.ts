@@ -57,7 +57,7 @@ describe("My Day", () => {
 
   it("an agent sees only their own leads, tasks and notes", async () => {
     const day = await myDay(w.ctx, w.amit);
-    expect(day.counts).toEqual({ activeClients: 1, quoted: 1, followUps: 1, overdueRenewals: 1 });
+    expect(day.counts).toEqual({ activeClients: 1, quoted: 1, followUps: 1, overdueRenewals: 1, stale: 0 });
     expect(day.renewals.map((l) => l.client_name)).toEqual(["Day Won", "Day Due Soon"]);
     expect(day.overdueRenewals.map((l) => l.client_name)).toEqual(["Day Overdue"]);
     // The week ahead: tasks and renewal due dates; earlier milestones are background reminders.
