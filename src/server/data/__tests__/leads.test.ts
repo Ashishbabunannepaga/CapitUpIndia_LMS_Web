@@ -22,13 +22,14 @@ import {
   logLeadContact,
   listLeads,
   markLeadNotesRead,
+  pickLeads,
   resolveDuplicate,
   setLeadStatus,
   unreadLeadNotes,
   updateLead,
 } from "../leads";
 import { findSimilarLeads, nameScore, similarity, trigrams } from "../duplicates";
-import { createTask, deleteTask, listEvents, setEventDone } from "../events";
+import { createTask, deleteTask, listEvents, setEventDone, updateTask } from "../events";
 import { deliverDueReminders, markNotificationsRead, recentNotifications } from "../notifications";
 import { setActive } from "../users";
 import { testWorld } from "./helpers";
@@ -498,6 +499,102 @@ describe("tasks", () => {
     const [due] = await sqlRows<{ id: number }>("select id from events where lead_id = ? and milestone = 'DUE'", lead);
     await setEventDone(w.ctx, w.neha, due.id, true);
     await expect(deleteTask(w.ctx, w.neha, due.id)).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+  it("meetings carry their details and an optional lead the planner can see", async () => {
+    const at = "2030-02-01T05:30:00.000Z";
+    const own = await createLead(w.ctx, w.amit, { client_name: "Meeting Owner Co" });
+    const other = await createLead(w.ctx, w.neha, { client_name: "Not Amit's Co" });
+    const meeting = await createTask(w.ctx, w.amit, {
+      title: "Meet XYZ",
+      event_timestamp: at,
+      kind: "meeting",
+      notes: " Scheduled a meet with XYZ about the GMC quote ",
+      lead_id: own,
+    });
+    expect(meeting).toMatchObject({ kind: "meeting", notes: "Scheduled a meet with XYZ about the GMC quote", lead_id: own });
+    expect((await createTask(w.ctx, w.amit, { title: "Plain", event_timestamp: at })).kind).toBe("task");
+    await expect(createTask(w.ctx, w.amit, { title: "Sneaky", event_timestamp: at, lead_id: other })).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(
+      createTask(w.ctx, w.amit, { title: "Odd", event_timestamp: at, kind: "party" as never }),
+    ).rejects.toThrow("Pick task or meeting.");
+  });
+
+  it("can be edited by their owner (and admins); milestones and other agents' tasks cannot", async () => {
+    const at = "2030-03-01T05:30:00.000Z";
+    const lead = await createLead(w.ctx, w.amit, { client_name: "Edit Task Co" });
+    const task = await createTask(w.ctx, w.amit, { title: "Call", event_timestamp: at });
+
+    const edited = await updateTask(w.ctx, w.amit, task.id, {
+      title: "Meet the HR head",
+      event_timestamp: "2030-03-02T09:00:00.000Z",
+      notes: "Bring the renewal quote",
+      lead_id: lead,
+      kind: "meeting",
+    });
+    expect(edited).toMatchObject({
+      title: "Meet the HR head",
+      event_timestamp: "2030-03-02T09:00:00.000Z",
+      notes: "Bring the renewal quote",
+      lead_id: lead,
+      kind: "meeting",
+      assigned_agent_id: w.amit.id,
+      created_by: w.amit.id,
+    });
+    // An edit is logged, but never as a completion.
+    const audit = await sqlRows<{ new_data: string }>("select new_data from audit_logs where table_name = 'events' and record_id = ?", String(task.id));
+    expect(audit).toHaveLength(1);
+    expect(JSON.parse(audit[0].new_data)).not.toHaveProperty("is_completed");
+
+    // Unlinking a lead.
+    expect((await updateTask(w.ctx, w.amit, task.id, { title: "Meet", event_timestamp: at, lead_id: null })).lead_id).toBeNull();
+    // Agents cannot touch others' tasks, hand their own to someone else, or link others' leads.
+    await expect(updateTask(w.ctx, w.neha, task.id, { title: "Mine now", event_timestamp: at })).rejects.toBeInstanceOf(InvalidInputError);
+    expect((await updateTask(w.ctx, w.amit, task.id, { title: "Meet", event_timestamp: at, assigned_agent_id: w.neha.id })).assigned_agent_id).toBe(
+      w.amit.id,
+    );
+    const nehaLead = await createLead(w.ctx, w.neha, { client_name: "Neha Edit Co" });
+    await expect(updateTask(w.ctx, w.amit, task.id, { title: "Meet", event_timestamp: at, lead_id: nehaLead })).rejects.toBeInstanceOf(
+      InvalidInputError,
+    );
+    await expect(updateTask(w.ctx, w.amit, task.id, { title: " ", event_timestamp: at })).rejects.toThrow("Describe the task.");
+
+    // Admins can move it to another active member, and keep its owner when they don't say.
+    expect((await updateTask(w.ctx, w.admin, task.id, { title: "Meet", event_timestamp: at })).assigned_agent_id).toBe(w.amit.id);
+    expect((await updateTask(w.ctx, w.admin, task.id, { title: "Meet", event_timestamp: at, assigned_agent_id: w.neha.id })).assigned_agent_id).toBe(
+      w.neha.id,
+    );
+
+    const renewal = await createLead(w.ctx, w.amit, { client_name: "Edit Milestone Co", renewal_date: "2030-09-09" });
+    const [due] = await sqlRows<{ id: number }>("select id from events where lead_id = ? and milestone = 'DUE'", renewal);
+    await expect(updateTask(w.ctx, w.amit, due.id, { title: "Moved", event_timestamp: at })).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(updateTask(w.ctx, w.admin, due.id, { title: "Moved", event_timestamp: at })).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+
+  it("lead picker finds only leads the caller can see", async () => {
+    await createLead(w.ctx, w.amit, { client_name: "Picker Alpha Pvt Ltd" });
+    await createLead(w.ctx, w.neha, { client_name: "Picker Beta Pvt Ltd" });
+    expect((await pickLeads(w.ctx, w.amit, "picker")).map((l) => l.client_name)).toEqual(["Picker Alpha Pvt Ltd"]);
+    expect((await pickLeads(w.ctx, w.admin, "PICKER")).map((l) => l.client_name)).toEqual(["Picker Alpha Pvt Ltd", "Picker Beta Pvt Ltd"]);
+    expect(await pickLeads(w.ctx, w.amit, "  ")).toEqual([]);
+    expect(await pickLeads(w.ctx, w.amit, "100%_")).toEqual([]);
+  });
+});
+
+describe("policy product", () => {
+  it("starts as Not Specified and the agent can change it later", async () => {
+    const id = await createLead(w.ctx, w.amit, { client_name: "Unknown Product Co" });
+    expect((await getLead(w.ctx, w.amit, id))?.policy_product).toBe("Not Specified");
+    await updateLead(w.ctx, w.amit, id, { policy_product: "Motor" });
+    expect((await getLead(w.ctx, w.amit, id))?.policy_product).toBe("Motor");
+    await updateLead(w.ctx, w.amit, id, { policy_product: "Not Specified" });
+    expect((await getLead(w.ctx, w.amit, id))?.policy_product).toBe("Not Specified");
+    await expect(updateLead(w.ctx, w.neha, id, { policy_product: "Life" })).rejects.toBeInstanceOf(InvalidInputError);
+  });
+
+  it("Active Client is no longer a status", async () => {
+    const id = await createLead(w.ctx, w.amit, { client_name: "Status Check Co" });
+    await expect(setLeadStatus(w.ctx, w.amit, id, "Active Client")).rejects.toThrow("Unknown status.");
+    await setLeadStatus(w.ctx, w.amit, id, "Closed Won");
   });
 });
 

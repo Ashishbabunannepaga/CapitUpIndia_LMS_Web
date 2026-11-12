@@ -4,14 +4,16 @@ import { useState } from "react";
 import { LeadLink } from "@/components/leads/lead-link";
 import { CalendarClock, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
 
-import { TaskList, type TaskItem } from "@/components/my-day/my-day-widgets";
+import { TaskList, type TaskEditing, type TaskItem } from "@/components/my-day/my-day-widgets";
 import { Button } from "@/components/ui/button";
-import { formatDate, formatTime } from "@/lib/dates";
+import { ClockTime } from "@/components/ui/clock";
+import { formatDate } from "@/lib/dates";
 import {
   CALENDAR_CATEGORIES,
   CALENDAR_CATEGORY_LABELS,
   CALENDAR_CATEGORY_STYLES,
   type CalendarCategory,
+  type EventKind,
 } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +24,10 @@ export type CalendarEntry = {
   date: string;
   timestamp: string;
   leadId: number | null;
+  leadName?: string | null;
+  kind: EventKind;
+  notes: string;
+  assigneeId?: string | null;
   isRenewal: boolean;
   /** Its colours: GMC or retail renewal, active client, task. */
   categories: CalendarCategory[];
@@ -81,11 +87,14 @@ export function MonthCalendar({
   today,
   initialMonth,
   showAgent,
+  editing,
 }: {
   entries: CalendarEntry[];
   today: string;
   initialMonth: string;
   showAgent: boolean;
+  /** Lets people edit their tasks and meetings from the day list. */
+  editing?: TaskEditing;
 }) {
   const [month, setMonth] = useState(initialMonth);
   const [selected, setSelected] = useState(today.startsWith(initialMonth) ? today : `${initialMonth}-01`);
@@ -112,10 +121,16 @@ export function MonthCalendar({
       id: e.id,
       title: e.title,
       leadId: e.leadId,
+      leadName: e.leadName,
+      timestamp: e.timestamp,
+      whenLabel: "",
+      kind: e.kind,
+      notes: e.notes,
+      assigneeId: e.assigneeId,
+      assigneeName: showAgent ? e.agentName : null,
       isCompleted: e.isCompleted,
       isSystem: e.isSystem,
       overdue: e.date < today && !e.isCompleted,
-      timeLabel: formatTime(e.timestamp),
     }));
   const renewals = dayEntries.filter((e) => e.isRenewal);
 
@@ -267,7 +282,7 @@ export function MonthCalendar({
                         <span className="font-medium">{entry.title}</span>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        {entry.categories.map((c) => CALENDAR_CATEGORY_LABELS[c]).join(" · ")} · {formatTime(entry.timestamp)}
+                        {entry.categories.map((c) => CALENDAR_CATEGORY_LABELS[c]).join(" · ")} · <ClockTime timestamp={entry.timestamp} />
                         {showAgent && entry.agentName ? ` · ${entry.agentName}` : ""}
                       </p>
                     </div>
@@ -277,8 +292,8 @@ export function MonthCalendar({
             )}
           </div>
           <div>
-            <h3 className="text-xs font-medium text-muted-foreground">Tasks</h3>
-            <TaskList tasks={tasks} emptyText="Nothing planned." />
+            <h3 className="text-xs font-medium text-muted-foreground">Meetings and tasks</h3>
+            <TaskList tasks={tasks} emptyText="Nothing planned." editing={editing} />
           </div>
         </div>
       </section>

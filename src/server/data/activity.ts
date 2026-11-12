@@ -119,7 +119,9 @@ function activitySources(from?: string, to?: string): [SQL, SQL] {
     select e.completed_at, 'task_completed', e.assigned_agent_id, null, e.lead_id, null, e.milestone, null, e.title
     from events e
     where e.is_completed = 1 and e.completed_at is not null and ${between(sql`e.completed_at`, from, to)}
-      and not exists (select 1 from audit_logs x where x.table_name = 'events' and x.record_id = cast(e.id as text))
+      -- Only completion rows count here; an edit of the task is logged too but is not a completion.
+      and not exists (select 1 from audit_logs x where x.table_name = 'events' and x.record_id = cast(e.id as text)
+        and json_extract(x.new_data, '$.is_completed') is not null)
     union all
     select c.created_at, 'contact', c.agent_id, c.agent_name, c.lead_id, null, c.channel, c.with_draft, null
     from lead_contact_logs c

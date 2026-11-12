@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 
-import { calendarCategories, type CalendarCategory } from "@/lib/domain";
+import { calendarCategories, isEventKind, type CalendarCategory, type EventKind } from "@/lib/domain";
 
 import { events, leads, profiles } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
@@ -11,8 +11,8 @@ import type { DataContext } from "./context";
 import { AccessDeniedError, InvalidInputError } from "./errors";
 
 // Calendar events: renewal milestones (made by the server, see leads.ts) and
-// tasks people add. Agents see and manage their own; admins everyone's.
-// Milestones cannot be edited or deleted by hand, only completed.
+// the tasks and meetings people add. Agents see and manage their own; admins
+// everyone's. Milestones cannot be edited or deleted by hand, only completed.
 
 export type CalendarEvent = typeof events.$inferSelect;
 
@@ -47,7 +47,7 @@ export async function listEvents(
     .limit(Math.min(range.limit ?? 1000, 2000));
 }
 
-export type CalendarEventWithCategories = CalendarEvent & { categories: CalendarCategory[] };
+export type CalendarEventWithCategories = CalendarEvent & { lead_name: string | null; categories: CalendarCategory[] };
 
 /**
  * The same events as listEvents, each with its calendar colours (GMC or
@@ -61,6 +61,7 @@ export async function listCalendarEvents(
   const rows = await ctx.db
     .select({
       event: events,
+      lead_name: leads.client_name,
       business_type: leads.business_type,
       policy_product: leads.policy_product,
       status: leads.status,
@@ -77,11 +78,13 @@ export async function listCalendarEvents(
     )
     .orderBy(asc(events.event_timestamp))
     .limit(Math.min(range.limit ?? 1000, 2000));
-  return rows.map(({ event, business_type, policy_product, status }) => ({
+  return rows.map(({ event, lead_name, business_type, policy_product, status }) => ({
     ...event,
+    lead_name,
     categories: calendarCategories(
       event.is_system_generated,
       business_type && policy_product && status ? { business_type, policy_product, status } : null,
+      event.kind,
     ),
   }));
 }
@@ -92,14 +95,20 @@ export type NewTask = {
   notes?: string;
   lead_id?: number | null;
   assigned_agent_id?: string | null;
+  /** Task (default) or meeting. */
+  kind?: EventKind;
 };
 
-/** A task. Agents plan for themselves; admins can assign to anyone active. */
-export async function createTask(ctx: DataContext, actor: Actor, input: NewTask): Promise<CalendarEvent> {
+/** Checks and tidies what someone typed for a task or meeting. */
+async function checkedTask(ctx: DataContext, actor: Actor, input: NewTask) {
   const title = input.title.trim();
   if (!title) throw new InvalidInputError("Describe the task.");
   if (title.length > 300) throw new InvalidInputError("Keep the task under 300 characters.");
   if (Number.isNaN(Date.parse(input.event_timestamp))) throw new InvalidInputError("Pick a valid date.");
+  const notes = (input.notes ?? "").trim();
+  if (notes.length > 5000) throw new InvalidInputError("Keep the details under 5,000 characters.");
+  const kind = input.kind ?? "task";
+  if (!isEventKind(kind)) throw new InvalidInputError("Pick task or meeting.");
 
   const assignee = input.assigned_agent_id || actor.id;
   if (assignee !== actor.id) {
@@ -113,18 +122,50 @@ export async function createTask(ctx: DataContext, actor: Actor, input: NewTask)
     });
     if (!lead) throw new InvalidInputError("That lead no longer exists or isn't yours.");
   }
+  return {
+    title,
+    event_timestamp: new Date(input.event_timestamp).toISOString(),
+    notes,
+    kind,
+    lead_id: input.lead_id || null,
+    assigned_agent_id: assignee,
+  };
+}
+
+/** A task or meeting. Agents plan for themselves; admins can assign to anyone active. */
+export async function createTask(ctx: DataContext, actor: Actor, input: NewTask): Promise<CalendarEvent> {
+  const values = await checkedTask(ctx, actor, input);
   const [event] = await ctx.db
     .insert(events)
-    .values({
-      title,
-      event_timestamp: new Date(input.event_timestamp).toISOString(),
-      notes: (input.notes ?? "").trim().slice(0, 5000),
-      lead_id: input.lead_id ?? null,
-      assigned_agent_id: assignee,
-      created_by: actor.id,
-    })
+    .values({ ...values, created_by: actor.id })
     .returning();
   return event;
+}
+
+/**
+ * Edits a task or meeting: what, when, details, linked lead and (admins) who.
+ * Renewal milestones follow the lead's renewal date, so they cannot be edited.
+ */
+export async function updateTask(ctx: DataContext, actor: Actor, id: number, input: NewTask): Promise<CalendarEvent> {
+  const event = await findVisible(ctx, actor, id);
+  if (event.is_system_generated) throw new AccessDeniedError("Renewal reminders follow the lead's renewal date.");
+  // An agent's own task stays theirs; admins may move it (or keep it with its current owner).
+  const values = await checkedTask(ctx, actor, {
+    ...input,
+    assigned_agent_id: isAdmin(actor) ? (input.assigned_agent_id ?? event.assigned_agent_id) : actor.id,
+  });
+  const summary = (e: Pick<CalendarEvent, "title" | "lead_id" | "event_timestamp" | "kind">) => ({
+    title: e.title,
+    lead_id: e.lead_id,
+    event_timestamp: e.event_timestamp,
+    kind: e.kind,
+  });
+  const [[updated]] = await ctx.db.batch([
+    ctx.db.update(events).set(values).where(eq(events.id, id)).returning(),
+    auditInsert(ctx, actor, "events", id, "UPDATE", summary(event), summary(values)),
+  ]);
+  if (!updated) throw new InvalidInputError("That task no longer exists or isn't yours.");
+  return updated;
 }
 
 export async function setEventDone(ctx: DataContext, actor: Actor, id: number, done: boolean): Promise<void> {

@@ -18,11 +18,13 @@ import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
 import { VisitingCardPanel } from "@/components/leads/visiting-card-panel";
+import { TaskList, type TaskItem } from "@/components/my-day/my-day-widgets";
+import { TaskForm } from "@/components/tasks/task-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
-import { formatDateTime, formatNoteTimestamp, nowMs } from "@/lib/dates";
+import { businessDateOf, formatDate, formatDateTime, formatNoteTimestamp, nowMs, todayInBusinessTz } from "@/lib/dates";
 import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS } from "@/lib/domain";
 import { findSimilarLeads, getLeadPage } from "@/lib/leads";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,8 @@ export const metadata: Metadata = { title: "Lead" };
 
 const SAVED_MESSAGES: Record<string, string> = {
   created: "Lead saved.",
+  created_meeting: "Lead saved, and the meeting is on your calendar.",
+  created_no_meeting: "Lead saved, but the meeting could not be added. Add it under Meetings and tasks below.",
   updated: "Changes saved.",
   merged: "Your contacts were added to this lead instead of creating a duplicate.",
 };
@@ -159,6 +163,26 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
   const closed = CLOSED_STATUSES.includes(lead.status);
   const now = nowMs();
   const visibleEvents = events.filter((e) => !e.is_background_reminder);
+  const renewalEvents = visibleEvents.filter((e) => e.is_system_generated);
+  const today = todayInBusinessTz();
+  const names = new Map(team.map((m) => [m.id, m.full_name]));
+  const plannedItems: TaskItem[] = visibleEvents
+    .filter((e) => !e.is_system_generated)
+    .map((e) => ({
+      id: e.id,
+      title: e.title,
+      leadId: e.lead_id,
+      leadName: lead.client_name,
+      timestamp: e.event_timestamp,
+      whenLabel: formatDate(businessDateOf(e.event_timestamp)),
+      kind: e.kind,
+      notes: e.notes,
+      assigneeId: e.assigned_agent_id,
+      assigneeName: admin && e.assigned_agent_id ? (names.get(e.assigned_agent_id) ?? null) : null,
+      isCompleted: e.is_completed,
+      isSystem: false,
+      overdue: !e.is_completed && Date.parse(e.event_timestamp) < now,
+    }));
   const pendingReminders = events.filter(
     (e) => e.is_background_reminder && !e.reminder_sent_at && Date.parse(e.event_timestamp) > now,
   );
@@ -423,14 +447,39 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             )}
           </Panel>
 
-          <Panel title="Calendar">
-            {visibleEvents.length === 0 && pendingReminders.length === 0 ? (
+          <Panel title="Meetings and tasks">
+            <TaskForm
+              today={today}
+              currentUserId={profile.id}
+              assignees={admin ? team.filter((m) => m.is_active).map(({ id: memberId, full_name }) => ({ id: memberId, full_name })) : undefined}
+              fixedLead={{ id: lead.id, client_name: lead.client_name }}
+              defaultKind="meeting"
+              compact
+            />
+            <div className="mt-4">
+              <TaskList
+                showLead={false}
+                tasks={plannedItems}
+                emptyText="No meetings or tasks yet. Plan one above; it also shows on the calendar."
+                editing={{
+                  today,
+                  currentUserId: profile.id,
+                  assignees: admin
+                    ? team.filter((m) => m.is_active).map(({ id: memberId, full_name }) => ({ id: memberId, full_name }))
+                    : undefined,
+                }}
+              />
+            </div>
+          </Panel>
+
+          <Panel title="Renewal countdown">
+            {renewalEvents.length === 0 && pendingReminders.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Nothing scheduled. Set a renewal date to schedule the renewal countdown.
               </p>
             ) : (
               <ul className="space-y-2 text-sm">
-                {visibleEvents.map((event) => (
+                {renewalEvents.map((event) => (
                   <li key={event.id} className="flex items-start gap-2">
                     {event.is_completed ? (
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />

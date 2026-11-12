@@ -95,6 +95,11 @@ export const LEAD_FORM_FIELDS = [
   "assigned_agent_id",
   "visiting_card_path",
   "confirm_duplicate",
+  // The optional first meeting on the new-lead form (meetingSchema).
+  "meeting_title",
+  "meeting_date",
+  "meeting_time",
+  "meeting_notes",
 ] as const;
 
 export function formDataToObject(formData: FormData): Record<string, string> {
@@ -105,6 +110,29 @@ export function formDataToObject(formData: FormData): Record<string, string> {
   }
   return out;
 }
+
+/**
+ * The optional meeting planned while creating a lead. Empty title means no
+ * meeting; with a title, the date is required.
+ */
+export const meetingSchema = z
+  .object({
+    meeting_title: z.string().trim().max(300, "Keep the meeting under 300 characters.").default(""),
+    meeting_date: z
+      .string()
+      .trim()
+      .refine((v) => v === "" || isValidIsoDate(v), "Pick a valid meeting date.")
+      .default(""),
+    meeting_time: z
+      .string()
+      .trim()
+      .refine((v) => v === "" || /^([01]\d|2[0-3]):[0-5]\d$/.test(v), "Pick a valid meeting time.")
+      .default(""),
+    meeting_notes: z.string().trim().max(5000, "Keep the meeting details under 5,000 characters.").default(""),
+  })
+  .refine((v) => !v.meeting_title || v.meeting_date !== "", { message: "Pick the meeting date.", path: ["meeting_date"] });
+
+export type MeetingValues = z.output<typeof meetingSchema>;
 
 export const contactSchema = z
   .object({

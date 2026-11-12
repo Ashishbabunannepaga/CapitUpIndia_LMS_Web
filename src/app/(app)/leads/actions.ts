@@ -7,9 +7,11 @@ import { friendlyError } from "@/lib/action-errors";
 import { getSession, isAdmin } from "@/lib/auth";
 import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
 import { isLeadStatus } from "@/lib/domain";
-import { contactSchema, formDataToObject, leadFormSchema, type LeadFormValues } from "@/lib/lead-schema";
+import { businessDateTimeToIso } from "@/lib/dates";
+import { contactSchema, formDataToObject, leadFormSchema, meetingSchema, type LeadFormValues } from "@/lib/lead-schema";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { attachCardToLead } from "@/server/data/cards";
+import { createTask } from "@/server/data/events";
 import { findSimilarLeads, type SimilarLead } from "@/server/data/duplicates";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 import * as leadData from "@/server/data/leads";
@@ -85,6 +87,16 @@ export async function createLead(_prev: LeadFormState, formData: FormData): Prom
   const parsed = parseLeadForm(formData);
   if (!parsed.ok) return parsed.state;
   const { values, raw } = parsed;
+  // Checked before the lead is saved, so a bad meeting date never leaves a lead without its meeting.
+  const meeting = meetingSchema.safeParse(raw);
+  if (!meeting.success) {
+    const issue = meeting.error.issues[0];
+    return {
+      error: "Check the highlighted fields.",
+      fieldErrors: { [String(issue?.path[0] ?? "meeting_date")]: issue?.message ?? "Check the meeting." },
+      values: raw,
+    };
+  }
 
   // Never create a competing company record without an explicit decision.
   const similar = await findSimilarLeads(ctx, actor, values.client_name);
@@ -106,8 +118,27 @@ export async function createLead(_prev: LeadFormState, formData: FormData): Prom
     return { error: friendlyError(error), values: raw };
   }
 
+  let saved = "created";
+  const { meeting_title, meeting_date, meeting_time, meeting_notes } = meeting.data;
+  if (meeting_title) {
+    try {
+      // The meeting is the creator's own, linked to the new lead.
+      await createTask(ctx, actor, {
+        title: meeting_title,
+        kind: "meeting",
+        notes: meeting_notes,
+        lead_id: id,
+        event_timestamp: businessDateTimeToIso(meeting_date, meeting_time || "10:00"),
+      });
+      saved = "created_meeting";
+    } catch {
+      // The lead is saved; say so and let them add the meeting on its page.
+      saved = "created_no_meeting";
+    }
+  }
+
   refreshWorkspace();
-  redirect(`/leads/${id}?saved=created`);
+  redirect(`/leads/${id}?saved=${saved}`);
 }
 
 export async function updateLead(leadId: number, _prev: LeadFormState, formData: FormData): Promise<LeadFormState> {

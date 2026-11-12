@@ -32,6 +32,10 @@ export default async function CalendarPage() {
     date: businessDateOf(event.event_timestamp),
     timestamp: event.event_timestamp,
     leadId: event.lead_id,
+    leadName: event.lead_name,
+    kind: event.kind,
+    notes: event.notes,
+    assigneeId: event.assigned_agent_id,
     isRenewal: event.is_system_generated,
     categories: event.categories,
     isCompleted: event.is_completed,
@@ -52,11 +56,20 @@ export default async function CalendarPage() {
             : "Your renewal due dates, meetings and tasks. Countdown reminders run in the background and arrive in your notifications."
         }
       />
-      <div className="mb-6 max-w-2xl rounded-2xl border bg-card p-4 shadow-card">
-        <h2 className="mb-2 text-sm font-semibold">Plan a task</h2>
-        <QuickTaskForm today={today} currentUserId={profile.id} assignees={admin ? agents : undefined} />
+      <div className="mb-6 max-w-3xl rounded-2xl border bg-card p-4 shadow-card">
+        <h2 className="text-sm font-semibold">Add a meeting or task</h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          For example &ldquo;Scheduled a meet with Rajesh at XYZ&rdquo;. Link it to a lead so it shows on the lead&apos;s page too.
+        </p>
+        <QuickTaskForm today={today} currentUserId={profile.id} assignees={admin ? agents : undefined} compact={false} />
       </div>
-      <MonthCalendar entries={entries} today={today} initialMonth={today.slice(0, 7)} showAgent={admin} />
+      <MonthCalendar
+        entries={entries}
+        today={today}
+        initialMonth={today.slice(0, 7)}
+        showAgent={admin}
+        editing={{ today, currentUserId: profile.id, assignees: admin ? agents : undefined }}
+      />
     </>
   );
 }

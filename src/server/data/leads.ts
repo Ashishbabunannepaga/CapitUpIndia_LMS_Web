@@ -349,6 +349,23 @@ export async function listLeads(
   return { leads: withNames(kept, team), truncated };
 }
 
+export type LeadChoice = { id: number; client_name: string };
+
+/**
+ * Leads the caller can see whose company name contains `query`, for linking
+ * a task or meeting to a lead. Agents only find their own.
+ */
+export async function pickLeads(ctx: DataContext, actor: Actor, query: string, limit = 8): Promise<LeadChoice[]> {
+  const term = query.trim().slice(0, 100);
+  if (!term) return [];
+  return ctx.db
+    .select({ id: leads.id, client_name: leads.client_name })
+    .from(leads)
+    .where(and(scope(actor), sql`${leads.client_name} like ${`%${escapeLike(term)}%`} escape '\\'`))
+    .orderBy(asc(leads.client_name_normalized), asc(leads.id))
+    .limit(Math.min(Math.max(limit, 1), 20));
+}
+
 /** How many leads match the filters in each status (board columns beyond the list limit). */
 export async function countLeadsByStatus(ctx: DataContext, actor: Actor, filters: LeadFilters) {
   const where = and(...filterConditions(actor, { ...filters, status: null }, todayInBusinessTz()));
