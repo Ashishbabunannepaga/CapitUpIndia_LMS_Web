@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Columns3, LayoutGrid, Loader2, Search, Table2, X } from "lucide-react";
+import { AlertTriangle, Columns3, LayoutGrid, Loader2, Search, Snowflake, Table2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
+import { LEAD_STATUSES, LEAD_TAGS, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
 import {
   LEAD_SORTS,
   leadsHref,
@@ -57,7 +57,15 @@ export function LeadFiltersBar({
   }, [q]);
 
   const active =
-    filters.q || filters.status || filters.product || filters.type || filters.agent || filters.renewal || filters.duplicates;
+    filters.q ||
+    filters.status ||
+    filters.product ||
+    filters.type ||
+    filters.agent ||
+    filters.renewal ||
+    filters.duplicates ||
+    filters.stale ||
+    filters.tag;
 
   return (
     <div className="mb-4 space-y-3">
@@ -174,6 +182,20 @@ export function LeadFiltersBar({
         ) : null}
         <NativeSelect
           size="sm"
+          aria-label="Tag"
+          className="lg:w-36"
+          value={filters.tag ?? ""}
+          onChange={(e) => apply({ tag: (e.target.value || null) as LeadFilters["tag"] })}
+        >
+          <option value="">Any tag</option>
+          {LEAD_TAGS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </NativeSelect>
+        <NativeSelect
+          size="sm"
           aria-label="Sort"
           className="lg:w-48"
           value={filters.sort}
@@ -195,6 +217,17 @@ export function LeadFiltersBar({
         >
           <AlertTriangle />
           Duplicates only
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={filters.stale ? "default" : "outline"}
+          aria-pressed={filters.stale}
+          onClick={() => apply({ stale: !filters.stale })}
+          className={cn(!filters.stale && "bg-card")}
+        >
+          <Snowflake />
+          Stale only
         </Button>
         {active ? (
           <Button

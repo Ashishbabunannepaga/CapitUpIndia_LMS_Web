@@ -106,6 +106,8 @@ describe("parseLeadFilters", () => {
       agent: null,
       renewal: null,
       duplicates: false,
+      stale: false,
+      tag: null,
       sort: "updated",
       page: 1,
     });

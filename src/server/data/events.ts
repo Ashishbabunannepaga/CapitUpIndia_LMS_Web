@@ -2,7 +2,9 @@ import "server-only";
 
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 
-import { calendarCategories, isEventKind, type CalendarCategory, type EventKind } from "@/lib/domain";
+import { businessHhmm } from "@/lib/clock";
+import { addDays, businessDateTimeToIso, todayInBusinessTz } from "@/lib/dates";
+import { calendarCategories, isEventKind, SNOOZE_DAYS, type CalendarCategory, type EventKind } from "@/lib/domain";
 
 import { events, leads, profiles } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
@@ -178,6 +180,33 @@ export async function setEventDone(ctx: DataContext, actor: Actor, id: number, d
     ctx.db.update(events).set({ is_completed: done, completed_at }).where(eq(events.id, id)),
     auditInsert(ctx, actor, "events", id, "UPDATE", { ...summary, is_completed: event.is_completed }, { ...summary, is_completed: done, completed_at }),
   ]);
+}
+
+/**
+ * Moves an open task or meeting to `days` days from today (1, 3 or 7), at the
+ * same time of day, without ticking it off. Renewal reminders follow the
+ * lead's renewal date, so they cannot be snoozed. Returns the new time.
+ */
+export async function snoozeTask(ctx: DataContext, actor: Actor, id: number, days: number, now: Date = new Date()): Promise<string> {
+  if (!(SNOOZE_DAYS as readonly number[]).includes(days)) throw new InvalidInputError("Snooze for 1 day, 3 days or a week.");
+  const event = await findVisible(ctx, actor, id);
+  if (event.is_system_generated) throw new AccessDeniedError("Renewal reminders follow the lead's renewal date.");
+  if (event.is_completed) throw new InvalidInputError("That task is already done.");
+  const event_timestamp = businessDateTimeToIso(addDays(todayInBusinessTz(now), days), businessHhmm(event.event_timestamp));
+  const summary = { title: event.title, lead_id: event.lead_id, kind: event.kind };
+  await ctx.db.batch([
+    ctx.db.update(events).set({ event_timestamp }).where(eq(events.id, id)),
+    auditInsert(
+      ctx,
+      actor,
+      "events",
+      id,
+      "UPDATE",
+      { ...summary, event_timestamp: event.event_timestamp },
+      { ...summary, event_timestamp, snoozed_days: days },
+    ),
+  ]);
+  return event_timestamp;
 }
 
 /** Deletes a task. Renewal milestones go only when the renewal date changes. */

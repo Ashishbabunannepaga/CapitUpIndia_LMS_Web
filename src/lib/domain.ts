@@ -1,4 +1,4 @@
-import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
+import type { BusinessType, LeadStatus, LeadTag, LeadType, PolicyProduct } from "@/lib/database.types";
 
 // Business vocabulary shared by every screen. Values match the database enums.
 
@@ -199,3 +199,28 @@ export const ACTIVITY_KIND_LABELS: Record<ActivityKind, string> = {
 export function isActivityKind(value: unknown): value is ActivityKind {
   return typeof value === "string" && (ACTIVITY_KINDS as readonly string[]).includes(value);
 }
+
+/** Labels agents put on a lead (the lead_tags table allows exactly these). */
+export const LEAD_TAGS: readonly LeadTag[] = ["Hot", "VIP", "Price sensitive", "Referral", "Cold"];
+
+export const TAG_STYLES: Record<LeadTag, string> = {
+  Hot: "border-red-200 bg-red-50 text-red-700",
+  VIP: "border-gold-300 bg-gold-50 text-gold-800",
+  "Price sensitive": "border-violet-200 bg-violet-50 text-violet-700",
+  Referral: "border-brand-200 bg-brand-50 text-brand-800",
+  Cold: "border-sky-200 bg-sky-50 text-sky-700",
+};
+
+export function isLeadTag(value: unknown): value is LeadTag {
+  return typeof value === "string" && (LEAD_TAGS as readonly string[]).includes(value);
+}
+
+/** Statuses that are finished pipeline work: never "stale" and not counted as open workload. */
+export const DONE_STATUSES: readonly LeadStatus[] = ["Closed Won", "Closed Lost"];
+
+/** Days without a note, status change, task or contact before a lead is flagged stale (admins can change it). */
+export const DEFAULT_STALE_DAYS = 7;
+
+/** Snooze choices for an overdue task on My Day, in days. */
+export const SNOOZE_DAYS = [1, 3, 7] as const;
+export type SnoozeDays = (typeof SNOOZE_DAYS)[number];

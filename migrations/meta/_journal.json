@@ -71,6 +71,13 @@
       "when": 1794471443589,
       "tag": "0009_meetings_push_product",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794476968755,
+      "tag": "0010_lead_tags",
+      "breakpoints": true
     }
   ]
 }

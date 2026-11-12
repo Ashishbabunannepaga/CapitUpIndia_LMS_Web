@@ -37,16 +37,22 @@ export function SidebarNav({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const sections = navForRole(role);
+  // The most specific match wins, so /leads/new lights up "Add lead", not "Leads".
+  const current = sections
+    .flatMap((section) => section.items.map((item) => item.href))
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <nav className="flex flex-col gap-6 px-3 py-4" aria-label="Main">
-      {navForRole(role).map((section) => (
+      {sections.map((section) => (
         <div key={section.title} className="space-y-0.5">
           <p className="px-3 pb-2 text-xs text-sidebar-foreground/50">
             {section.title}
           </p>
           {section.items.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active = item.href === current;
             const Icon = item.icon;
             return (
               <Link

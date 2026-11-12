@@ -65,7 +65,7 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
   await signIn(page, "amit");
   await expect(page).toHaveURL(/\/my-day/);
 
-  await page.goto("/leads/new");
+  await page.goto("/leads/new?mode=manual");
   await page.getByLabel("Client or company name").fill("UI Kaveri Textiles");
   await page.locator("#poc_name").fill("Priya");
   await page.locator("#poc_contact_number").fill("98450 12345");
@@ -130,7 +130,7 @@ test("a failed save shows a message instead of crashing the page", async ({ page
 
 test("the form explains invalid input instead of saving it", async ({ page }) => {
   await signIn(page, "amit");
-  await page.goto("/leads/new");
+  await page.goto("/leads/new?mode=manual");
   await page.getByLabel("Client or company name").fill("UI Bad Input Co");
   await page.locator("#poc_contact_number").fill("call me maybe");
   await page.getByRole("button", { name: "Save lead" }).click();
@@ -140,7 +140,7 @@ test("the form explains invalid input instead of saving it", async ({ page }) =>
 
 test("creating a company another agent owns shows who has it", async ({ page }) => {
   await signIn(page, "amit");
-  await page.goto("/leads/new");
+  await page.goto("/leads/new?mode=manual");
   await page.getByLabel("Client or company name").fill("UI Renee Systems Pvt Ltd");
   await expect(page.getByText("Handled by Neha E2E")).toBeVisible();
   await expect(page.getByText("Ask your admin before contacting them")).toBeVisible();
@@ -302,7 +302,7 @@ test("the security policy blocks nothing the app itself needs", async ({ page })
     if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
   });
   await signIn(page, "admin");
-  for (const path of ["/my-day", "/leads", "/leads?view=kanban", "/intake", "/calendar", "/admin/team", "/admin/analytics"]) {
+  for (const path of ["/my-day", "/leads", "/leads?view=kanban", "/leads/new", "/calendar", "/admin/team", "/admin/analytics"]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
   }

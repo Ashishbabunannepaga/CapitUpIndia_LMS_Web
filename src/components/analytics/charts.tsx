@@ -303,3 +303,81 @@ export function Donut({
     </div>
   );
 }
+
+export type GroupedSeries = { key: string; label: string; colorClass: string; swatch: string };
+export type GroupedDatum = { label: string; href?: string; values: Record<string, number> };
+
+/**
+ * Grouped columns: one group per item along the bottom, one bar per series
+ * side by side (e.g. each agent's open leads, overdue follow-ups and
+ * renewals this week). Scrolls sideways on narrow screens.
+ */
+export function GroupedBars({
+  data,
+  series,
+  emptyText = "No data yet.",
+}: {
+  data: GroupedDatum[];
+  series: GroupedSeries[];
+  emptyText?: string;
+}) {
+  if (data.length === 0) return <p className="py-2 text-sm text-muted-foreground">{emptyText}</p>;
+  const max = Math.max(1, ...data.flatMap((d) => series.map((s) => d.values[s.key] ?? 0)));
+  return (
+    <div>
+      <ul className="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {series.map((s) => (
+          <li key={s.key} className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm" style={{ background: s.swatch }} aria-hidden="true" />
+            {s.label}
+          </li>
+        ))}
+      </ul>
+      <div className="overflow-x-auto pb-1">
+        <div className="flex min-w-max items-end gap-6 border-b px-1 sm:min-w-0">
+          {data.map((group, gi) => (
+            <div
+              key={group.label}
+              role="img"
+              aria-label={`${group.label}: ${series.map((s) => `${s.label} ${group.values[s.key] ?? 0}`).join(", ")}`}
+              className="flex min-w-24 flex-1 flex-col items-center"
+            >
+              <div className="flex h-40 items-end gap-1">
+                {series.map((s, si) => {
+                  const value = group.values[s.key] ?? 0;
+                  return (
+                    <div key={s.key} className="group flex w-6 flex-col items-center justify-end gap-1 sm:w-7" title={`${s.label}: ${value}`}>
+                      <span className="font-mono text-[11px] text-muted-foreground tabular-nums group-hover:text-foreground">
+                        {value}
+                      </span>
+                      <div
+                        className={cn("w-full origin-bottom animate-grow-y rounded-t", value > 0 ? s.colorClass : "bg-muted")}
+                        style={{
+                          height: `${Math.max(3, Math.round((value / max) * 128))}px`,
+                          animationDelay: `${Math.min(gi * series.length + si, 12) * 30}ms`,
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex min-w-max gap-6 px-1 pt-2 sm:min-w-0">
+          {data.map((group) => (
+            <div key={group.label} className="min-w-24 flex-1 truncate text-center text-xs font-medium">
+              {group.href ? (
+                <Link href={group.href} className="hover:text-primary hover:underline">
+                  {group.label}
+                </Link>
+              ) : (
+                group.label
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

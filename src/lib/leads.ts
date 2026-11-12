@@ -15,6 +15,7 @@ import { listTeam } from "@/server/data/users";
 export type TeamMember = Pick<Profile, "id" | "full_name" | "role" | "is_active">;
 
 export type LeadWithAgent = leadData.LeadWithAgent;
+export type ListedLead = leadData.ListedLead;
 
 export const LEAD_PAGE_SIZE = leadData.LEAD_PAGE_SIZE;
 export const KANBAN_COLUMN_LIMIT = leadData.KANBAN_COLUMN_LIMIT;
@@ -26,7 +27,7 @@ export const getTeam = cache(async (): Promise<TeamMember[]> => {
   return team.map(({ id, full_name, role, is_active }) => ({ id, full_name, role, is_active }));
 });
 
-export async function listLeads(filters: LeadFilters): Promise<{ leads: LeadWithAgent[]; truncated: boolean }> {
+export async function listLeads(filters: LeadFilters): Promise<{ leads: ListedLead[]; truncated: boolean }> {
   const { ctx, actor } = await requireSession();
   return leadData.listLeads(ctx, actor, filters);
 }

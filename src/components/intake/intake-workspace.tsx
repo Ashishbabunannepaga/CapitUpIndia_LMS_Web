@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Camera, ImageUp, Info, Loader2, Mic, MicOff, ScanLine, ScanText, X } from "lucide-react";
+import { Camera, ImageUp, Info, Loader2, Mic, MicOff, PenLine, ScanLine, ScanText, Sparkles, X } from "lucide-react";
 
 import { extractLeadFromText, scanVisitingCard, type ExtractionResult } from "@/app/(app)/intake/actions";
 import { LeadForm } from "@/components/leads/lead-form";
@@ -10,12 +10,46 @@ import { Textarea } from "@/components/ui/textarea";
 import { cardFormData, prepareCardImages } from "@/lib/card-image";
 import { cn } from "@/lib/utils";
 
+export type IntakeMode = "ai" | "manual";
+
 type Props = {
   agents: { id: string; full_name: string }[];
   currentUserId: string;
   isAdmin: boolean;
   aiConfigured: boolean;
+  /** Which tab opens first: AI intake (default) or the plain form. */
+  initialMode?: IntakeMode;
+  /** In the quick-capture window, Cancel closes it instead of going to Leads. */
+  onCancel?: () => void;
 };
+
+/** "AI intake" | "Add manually": one page for adding a lead either way. */
+function ModeSwitch({ mode, onChange }: { mode: IntakeMode; onChange: (mode: IntakeMode) => void }) {
+  const tabs: { mode: IntakeMode; label: string; icon: typeof Sparkles }[] = [
+    { mode: "ai", label: "AI intake", icon: Sparkles },
+    { mode: "manual", label: "Add manually", icon: PenLine },
+  ];
+  return (
+    <div role="tablist" aria-label="How to add the lead" className="inline-flex items-center gap-1 rounded-lg border bg-card p-1">
+      {tabs.map((tab) => (
+        <button
+          key={tab.mode}
+          type="button"
+          role="tab"
+          aria-selected={mode === tab.mode}
+          onClick={() => onChange(tab.mode)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+            mode === tab.mode && "bg-accent text-accent-foreground",
+          )}
+        >
+          <tab.icon className="size-4" />
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type Extracted = Extract<ExtractionResult, { ok: true }> & { previewUrl?: string; from: "text" | "card" };
 
@@ -145,7 +179,8 @@ function WebcamCapture({ onCapture, onClose }: { onCapture: (blob: Blob) => void
 // Workspace
 // ---------------------------------------------------------------------------
 
-export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured }: Props) {
+export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured, initialMode = "ai", onCancel }: Props) {
+  const [mode, setMode] = useState<IntakeMode>(initialMode);
   const [notes, setNotes] = useState("");
   const [result, setResult] = useState<Extracted | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -212,8 +247,29 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured }
     ? Object.fromEntries(Object.entries(result.lead).map(([k, v]) => [k, String(v)]))
     : undefined;
 
+  if (mode === "manual") {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <ModeSwitch mode={mode} onChange={setMode} />
+          <p className="text-sm text-muted-foreground">Fill in the details yourself. Existing companies are flagged as you type.</p>
+        </div>
+        <LeadForm mode="create" agents={agents} currentUserId={currentUserId} isAdmin={isAdmin} onCancel={onCancel} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ModeSwitch mode={mode} onChange={setMode} />
+        <p className="text-sm text-muted-foreground">
+          Paste notes, dictate or scan a card. Prefer typing it in?{" "}
+          <button type="button" className="font-medium text-primary hover:underline" onClick={() => setMode("manual")}>
+            Add manually
+          </button>
+        </p>
+      </div>
       {!aiConfigured ? (
         <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           <Info className="mt-0.5 size-4 shrink-0" />
@@ -382,6 +438,7 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured }
               currentUserId={currentUserId}
               isAdmin={isAdmin}
               prefill={prefill}
+              onCancel={onCancel}
               card={result.cardPath && result.previewUrl ? { path: result.cardPath, previewUrl: result.previewUrl } : undefined}
             />
           </div>
