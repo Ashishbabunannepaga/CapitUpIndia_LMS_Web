@@ -12,7 +12,13 @@ import {
   CALENDAR_CATEGORIES,
   CALENDAR_CATEGORY_LABELS,
   CALENDAR_CATEGORY_STYLES,
+  CALENDAR_PILL_LABELS,
+  CALENDAR_PILL_STYLES,
+  CALENDAR_PILLS,
+  calendarPills,
+  pillMatchesFilter,
   type CalendarCategory,
+  type CalendarPill,
   type EventKind,
 } from "@/lib/domain";
 import { cn } from "@/lib/utils";
@@ -66,11 +72,12 @@ function gridDays(month: string): string[] {
 }
 
 /** Short label for a day cell, e.g. "2 GMC" or "1 task"; the full name is in its tooltip. */
-function cellLabel(category: CalendarCategory, n: number): string {
+function cellLabel(category: CalendarPill, n: number): string {
   switch (category) {
     case "gmc_renewal":
       return "GMC";
     case "retail_renewal":
+    case "retail_won":
       return "retail";
     case "active_client":
       return "active";
@@ -194,9 +201,9 @@ export function MonthCalendar({
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border bg-border">
           {days.map((day) => {
             const items = byDay.get(day) ?? [];
-            const counts = CALENDAR_CATEGORIES.map((c) => [c, items.filter((i) => i.categories.includes(c)).length] as const).filter(
-              ([c, n]) => n > 0 && (filter === "all" || filter === c),
-            );
+            const counts = CALENDAR_PILLS.map(
+              (c) => [c, items.filter((i) => calendarPills(i.categories).includes(c)).length] as const,
+            ).filter(([c, n]) => n > 0 && pillMatchesFilter(c, filter));
             const inMonth = day.startsWith(month);
             return (
               <button
@@ -222,13 +229,13 @@ export function MonthCalendar({
                   {counts.map(([c, n]) => (
                     <span
                       key={c}
-                      title={CALENDAR_CATEGORY_LABELS[c]}
+                      title={CALENDAR_PILL_LABELS[c]}
                       className={cn(
                         "flex items-center gap-1 truncate rounded px-1 text-[11px] font-medium",
-                        CALENDAR_CATEGORY_STYLES[c].pill,
+                        CALENDAR_PILL_STYLES[c].pill,
                       )}
                     >
-                      <span className={cn("size-1.5 shrink-0 rounded-full", CALENDAR_CATEGORY_STYLES[c].dot)} aria-hidden="true" />
+                      <span className={cn("size-1.5 shrink-0 rounded-full", CALENDAR_PILL_STYLES[c].dot)} aria-hidden="true" />
                       <span className="truncate tabular-nums">
                         {n}
                         <span className="hidden sm:inline"> {cellLabel(c, n)}</span>
@@ -241,10 +248,10 @@ export function MonthCalendar({
           })}
         </div>
         <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" aria-label="Colour key">
-          {CALENDAR_CATEGORIES.map((c) => (
+          {CALENDAR_PILLS.map((c) => (
             <li key={c} className="flex items-center gap-1.5">
-              <span className={cn("size-2.5 rounded-full", CALENDAR_CATEGORY_STYLES[c].dot)} aria-hidden="true" />
-              {CALENDAR_CATEGORY_LABELS[c]}
+              <span className={cn("size-2.5 rounded-full", CALENDAR_PILL_STYLES[c].dot)} aria-hidden="true" />
+              {CALENDAR_PILL_LABELS[c]}
             </li>
           ))}
         </ul>
@@ -269,8 +276,8 @@ export function MonthCalendar({
                       <CalendarClock className="mt-0.5 size-4 shrink-0 text-warning" />
                     )}
                     <span className="mt-1.5 flex shrink-0 gap-0.5" aria-hidden="true">
-                      {entry.categories.map((c) => (
-                        <span key={c} className={cn("size-2 rounded-full", CALENDAR_CATEGORY_STYLES[c].dot)} />
+                      {calendarPills(entry.categories).map((c) => (
+                        <span key={c} className={cn("size-2 rounded-full", CALENDAR_PILL_STYLES[c].dot)} />
                       ))}
                     </span>
                     <div className="min-w-0">
@@ -282,7 +289,7 @@ export function MonthCalendar({
                         <span className="font-medium">{entry.title}</span>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        {entry.categories.map((c) => CALENDAR_CATEGORY_LABELS[c]).join(" · ")} · <ClockTime timestamp={entry.timestamp} />
+                        {calendarPills(entry.categories).map((c) => CALENDAR_PILL_LABELS[c]).join(" · ")} · <ClockTime timestamp={entry.timestamp} />
                         {showAgent && entry.agentName ? ` · ${entry.agentName}` : ""}
                       </p>
                     </div>

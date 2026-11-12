@@ -132,6 +132,44 @@ export const CALENDAR_CATEGORY_STYLES: Record<CalendarCategory, { pill: string; 
   task: { pill: "bg-orange-100 text-orange-900", dot: "bg-orange-500", chip: "border-orange-300 bg-orange-500 text-white" },
 };
 
+/**
+ * What a day cell shows for one entry. A retail renewal for an active client
+ * (Closed Won) stays one "retail" tile but turns green ("retail_won") instead
+ * of showing a red retail tile next to a green active one.
+ */
+export type CalendarPill = CalendarCategory | "retail_won";
+
+export function calendarPills(categories: readonly CalendarCategory[]): CalendarPill[] {
+  if (categories.includes("retail_renewal") && categories.includes("active_client")) {
+    return ["retail_won", ...categories.filter((c) => c !== "retail_renewal" && c !== "active_client")];
+  }
+  return [...categories];
+}
+
+/** Order, labels and colours of day-cell tiles; the green retail tile sits next to the red one. */
+export const CALENDAR_PILLS: readonly CalendarPill[] = [
+  "gmc_renewal",
+  "retail_renewal",
+  "retail_won",
+  "active_client",
+  "meeting",
+  "task",
+];
+export const CALENDAR_PILL_LABELS: Record<CalendarPill, string> = {
+  ...CALENDAR_CATEGORY_LABELS,
+  retail_won: "Retail Renewal (Closed Won)",
+};
+export const CALENDAR_PILL_STYLES: Record<CalendarPill, { pill: string; dot: string }> = {
+  ...CALENDAR_CATEGORY_STYLES,
+  retail_won: { pill: "bg-emerald-100 text-emerald-900", dot: "bg-emerald-500" },
+};
+
+/** Whether a tile shows under a filter chip: a green retail tile counts as retail and as an active client. */
+export function pillMatchesFilter(pill: CalendarPill, filter: "all" | CalendarCategory): boolean {
+  if (filter === "all" || pill === filter) return true;
+  return pill === "retail_won" && (filter === "retail_renewal" || filter === "active_client");
+}
+
 /** What people put on the calendar besides renewals. */
 export const EVENT_KINDS = ["task", "meeting"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
