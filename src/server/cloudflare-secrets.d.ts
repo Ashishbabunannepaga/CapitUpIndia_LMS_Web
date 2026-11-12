@@ -26,4 +26,20 @@ interface CloudflareEnv {
   OFFICE_PASSWORD?: string;
   /** Not a secret (a var): the office site's address, default https://capitupindia.com. */
   OFFICE_PORTAL_URL?: string;
+  /**
+   * Monitoring alerts (src/server/monitoring/alerts.ts, docs/monitoring.md).
+   * All optional secrets; set the channels you use.
+   */
+  ALERT_NTFY_TOPIC?: string;
+  ALERT_NTFY_SERVER?: string;
+  ALERT_WEBHOOK_URL?: string;
+  ALERT_TELEGRAM_BOT_TOKEN?: string;
+  ALERT_TELEGRAM_CHAT_ID?: string;
+  /** Optional var: the URL the monitor loads instead of <BETTER_AUTH_URL>/api/health. */
+  MONITOR_URL?: string;
+  /**
+   * The deployed version's id, for /api/health ("version_metadata" in wrangler.jsonc).
+   * Declared here, as `wrangler types` would, because cloudflare-env.d.ts predates it.
+   */
+  CF_VERSION_METADATA: WorkerVersionMetadata;
 }

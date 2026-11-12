@@ -175,6 +175,22 @@ test("an agent cannot open another agent's lead or the admin pages", async ({ pa
 
   await page.goto("/admin/team");
   await expect(page).not.toHaveURL(/\/admin\/team/);
+  await page.goto("/admin/health");
+  await expect(page).not.toHaveURL(/\/admin\/health/);
+});
+
+test("the health check is public and the admin sees System health", async ({ page, request }) => {
+  const health = await request.get("/api/health");
+  expect(health.status()).toBe(200);
+  expect(health.headers()["cache-control"]).toContain("no-store");
+  expect(await health.json()).toMatchObject({ status: "ok", db: "ok" });
+
+  await signIn(page, "admin");
+  await page.goto("/admin/health");
+  await expect(page.getByRole("heading", { name: "System health" })).toBeVisible();
+  await expect(page.getByText("Uptime, 24 hours")).toBeVisible();
+  await page.getByRole("button", { name: "Send test alert" }).click();
+  await expect(page.getByText("No alert channel is set up yet", { exact: false })).toBeVisible();
 });
 
 test("the admin sees every agent's leads", async ({ page }) => {

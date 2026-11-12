@@ -11,18 +11,23 @@ export type DataContext = { db: DrizzleD1Database<typeof schema>; auth: Auth; ca
 
 const databases = new WeakMap<D1Database, DataContext["db"]>();
 
+/** The Drizzle wrapper for a D1 binding, reused for the isolate (it is stateless). */
+export function databaseFor(d1: D1Database): DataContext["db"] {
+  let db = databases.get(d1);
+  if (!db) {
+    db = drizzle(d1, { schema });
+    databases.set(d1, db);
+  }
+  return db;
+}
+
 export function createDataContext(
   d1: D1Database,
   env: Parameters<typeof createAuth>[1],
   cards: R2Bucket,
 ): DataContext {
   // Reused per binding, like the auth instance: both are stateless wrappers.
-  let db = databases.get(d1);
-  if (!db) {
-    db = drizzle(d1, { schema });
-    databases.set(d1, db);
-  }
-  return { db, auth: createAuth(d1, env), cards };
+  return { db: databaseFor(d1), auth: createAuth(d1, env), cards };
 }
 
 /** The data context for the current request's Worker environment. */

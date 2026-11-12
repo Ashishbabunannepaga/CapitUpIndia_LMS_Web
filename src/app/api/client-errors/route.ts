@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { getSession } from "@/lib/auth";
+import { recordAppError } from "@/server/data/monitoring";
 
 // Browser-side failures (src/lib/safe-action.ts and the error pages) are
-// written to the Worker log so they show up in Cloudflare Workers Logs.
-// Signed-in users only; nothing is stored and nothing is read back.
+// written to the Worker log so they show up in Cloudflare Workers Logs, and
+// counted for the monitor (Admin > System health), which alerts when many
+// pages crash at once. Signed-in users only.
 
 const MAX_BODY = 2_000;
 
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
     return new NextResponse(null, { status: 400 });
   }
 
-  console.error("[client-error]", {
+  const entry = {
     user: session.actor.id,
     where: text(report.where, 40),
     message: text(report.message, 500),
@@ -33,6 +35,16 @@ export async function POST(request: Request) {
     path: text(report.path, 200),
     online: report.online === true,
     agent: request.headers.get("user-agent")?.slice(0, 200),
-  });
+  };
+  console.error("[client-error]", entry);
+  // An offline browser failing to reach us is the connection, not the app.
+  if (entry.online) {
+    await recordAppError(session.ctx, {
+      source: "browser",
+      path: entry.path ?? null,
+      message: [entry.where, entry.message, entry.digest && `digest ${entry.digest}`].filter(Boolean).join(": ") || null,
+      userId: session.actor.id,
+    });
+  }
   return new NextResponse(null, { status: 204 });
 }

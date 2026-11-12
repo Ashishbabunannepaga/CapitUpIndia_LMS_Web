@@ -438,3 +438,45 @@ export const changeVersion = sqliteTable("change_version", {
   id: integer("id").primaryKey(),
   version: integer("version").notNull().default(0),
 });
+
+// --- Monitoring (src/server/data/monitoring.ts) ------------------------------
+
+/** One row per scheduled health check (every 5 minutes, from the cron). */
+export const healthChecks = sqliteTable(
+  "health_checks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    checked_at: text("checked_at").notNull(),
+    ok: bool("ok").notNull(),
+    db_ok: bool("db_ok").notNull(),
+    db_ms: integer("db_ms"),
+    /** HTTP status of the public /api/health; null when not checked, 0 for no answer. */
+    site_status: integer("site_status"),
+    site_ms: integer("site_ms"),
+    server_errors: integer("server_errors").notNull().default(0),
+    browser_errors: integer("browser_errors").notNull().default(0),
+    job_errors: integer("job_errors").notNull().default(0),
+    problem: text("problem"),
+  },
+  (t) => [index("health_checks_checked_idx").on(t.checked_at)],
+);
+
+/** Server 5xx responses, failed background jobs and browser-side crashes. */
+export const appErrors = sqliteTable(
+  "app_errors",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    created_at: text("created_at").notNull(),
+    source: text("source", { enum: ["server", "browser", "job"] }).notNull(),
+    path: text("path"),
+    status: integer("status"),
+    message: text("message"),
+    user_id: text("user_id"),
+  },
+  (t) => [
+    index("app_errors_created_idx").on(t.created_at),
+    check("app_errors_source", sql`${t.source} in ('server', 'browser', 'job')`),
+    check("app_errors_path_len", sql`length(${t.path}) <= 300`),
+    check("app_errors_message_len", sql`length(${t.message}) <= 1000`),
+  ],
+);

@@ -5,8 +5,9 @@ import { publicUrl, workersDevRedirect } from "@/lib/app-url";
 import { proxiedClientIp } from "@/lib/client-ip";
 
 // /api/auth is the sign-in API (src/server/auth.ts) and /setup the first-run
-// page (src/server/data/setup.ts); both do their own checks.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/setup"];
+// page (src/server/data/setup.ts); both do their own checks. /api/health is
+// the uptime check (src/app/api/health/route.ts) and shows no data.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/setup", "/api/health"];
 
 /**
  * Sends visitors without a session cookie to /login. This is a convenience
