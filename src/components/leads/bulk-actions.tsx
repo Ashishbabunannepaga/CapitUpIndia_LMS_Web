@@ -105,7 +105,7 @@ function BulkActionBar({ agents, onDone }: { agents: { id: string; full_name: st
     <div
       role="region"
       aria-label="Selected leads"
-      className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-6rem)] max-w-3xl -translate-x-1/2 flex-wrap items-center gap-2 rounded-2xl border bg-card px-4 py-3 shadow-lift sm:bottom-6 lg:ml-32"
+      className="fixed right-22 bottom-4 left-4 z-30 flex flex-wrap items-center gap-2 rounded-2xl border bg-card px-4 py-3 shadow-lift sm:right-24 sm:bottom-6 lg:left-72"
     >
       {ids.length > 0 ? (
         <>
