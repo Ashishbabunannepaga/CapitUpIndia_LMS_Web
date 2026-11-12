@@ -9,3 +9,8 @@ SETUP_CODE=local-setup-code-123
 # Leave empty to show only the link. Use a read-only (admin, not super admin) account.
 OFFICE_EMAIL=
 OFFICE_PASSWORD=
+
+# Browser push notifications (optional; docs/push-notifications.md).
+# Make a pair with: node scripts/vapid-keys.mjs
+# VAPID_PUBLIC_KEY=
+# VAPID_PRIVATE_KEY=

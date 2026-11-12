@@ -5,18 +5,29 @@ import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { BatchItem } from "drizzle-orm/batch";
 
 import { normalizeCompanyName } from "@/lib/company-name";
-import { addDays, todayInBusinessTz } from "@/lib/dates";
+import { addDays, formatDate, todayInBusinessTz } from "@/lib/dates";
 import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isContactChannel, isLeadStatus } from "@/lib/domain";
 import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 
-import { appSettings, events, leadContactLogs, leadNoteReads, leadNotes, leads, profiles, renewalMilestoneOffsets, visitingCardPreviews } from "../db/schema";
+import {
+  appSettings,
+  events,
+  leadContactLogs,
+  leadNoteReads,
+  leadNotes,
+  leads,
+  notifications,
+  profiles,
+  renewalMilestoneOffsets,
+  visitingCardPreviews,
+} from "../db/schema";
 import { isAdmin, assertAdmin, type Actor } from "./actor";
 import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
 import { duplicateState } from "./duplicates";
 import { AccessDeniedError, InvalidInputError } from "./errors";
-import { milestoneEvents } from "./milestones";
+import { clientWithProduct, milestoneEvents } from "./milestones";
 
 // Leads, their notes and contacts. These carry the rules the Supabase RLS
 // policies and triggers enforced:
@@ -70,6 +81,11 @@ export type NewLead = Partial<LeadFields> & {
   office_lead_id?: string | null;
   /** Set only by the app hand-over (admins): the CapitUp app user who opted in to be contacted. */
   app_user_id?: string | null;
+  /**
+   * Tell the owner when someone else assigns the lead to them (default on).
+   * Bulk import turns it off and sends one summary per agent instead.
+   */
+  notifyOwner?: boolean;
 };
 
 const FIELD_NAMES: (keyof LeadFields)[] = [
@@ -349,6 +365,23 @@ export async function listLeads(
   return { leads: withNames(kept, team), truncated };
 }
 
+export type LeadChoice = { id: number; client_name: string };
+
+/**
+ * Leads the caller can see whose company name contains `query`, for linking
+ * a task or meeting to a lead. Agents only find their own.
+ */
+export async function pickLeads(ctx: DataContext, actor: Actor, query: string, limit = 8): Promise<LeadChoice[]> {
+  const term = query.trim().slice(0, 100);
+  if (!term) return [];
+  return ctx.db
+    .select({ id: leads.id, client_name: leads.client_name })
+    .from(leads)
+    .where(and(scope(actor), sql`${leads.client_name} like ${`%${escapeLike(term)}%`} escape '\\'`))
+    .orderBy(asc(leads.client_name_normalized), asc(leads.id))
+    .limit(Math.min(Math.max(limit, 1), 20));
+}
+
 /** How many leads match the filters in each status (board columns beyond the list limit). */
 export async function countLeadsByStatus(ctx: DataContext, actor: Actor, filters: LeadFilters) {
   const where = and(...filterConditions(actor, { ...filters, status: null }, todayInBusinessTz()));
@@ -432,7 +465,7 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
   // highest id: nothing else can write in between.
   const newId = sql<number>`(select max(${leads.id}) from ${leads})`;
   const milestones = milestoneEvents(
-    { client_name: row.client_name, policy_product: row.policy_product ?? "Health", renewal_date: row.renewal_date ?? null, assigned_agent_id: owner },
+    { client_name: row.client_name, policy_product: row.policy_product ?? "Not Specified", renewal_date: row.renewal_date ?? null, assigned_agent_id: owner },
     renewal.offsets,
     renewal.dueTime,
   );
@@ -440,6 +473,10 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
     ctx.db.insert(leads).values(row).returning({ id: leads.id }),
     ...milestones.map((event) => ctx.db.insert(events).values({ ...event, lead_id: newId })),
     auditInsert(ctx, actor, "leads", sql`(select cast(max(${leads.id}) as text) from ${leads})`, "INSERT", null, row),
+    // An admin creating a lead for an agent tells the agent.
+    ...(owner && owner !== actor.id && input.notifyOwner !== false
+      ? [ctx.db.insert(notifications).values(assignmentNotice(actor, owner, { client_name: row.client_name, policy_product: row.policy_product ?? "Not Specified", renewal_date: row.renewal_date ?? null }, newId))]
+      : []),
   ]);
   return inserted[0].id;
 }
@@ -474,7 +511,7 @@ async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Pa
       statements.push(ctx.db.update(events).set({ assigned_agent_id: after.assigned_agent_id }).where(system));
     }
     if (after.client_name !== before.client_name || after.policy_product !== before.policy_product) {
-      const suffix = `${after.client_name} (${after.policy_product})`;
+      const suffix = clientWithProduct(after.client_name, after.policy_product);
       statements.push(
         ctx.db
           .update(events)
@@ -487,7 +524,38 @@ async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Pa
     }
   }
   statements.push(auditInsert(ctx, actor, "leads", id, "UPDATE", before, after));
+  if (after.assigned_agent_id && after.assigned_agent_id !== before.assigned_agent_id && after.assigned_agent_id !== actor.id) {
+    statements.push(ctx.db.insert(notifications).values(assignmentNotice(actor, after.assigned_agent_id, after, id)));
+  }
   await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+}
+
+/** One bell (and push) message for many leads given to an agent at once (bulk import). Admins only. */
+export async function notifyBulkAssignment(ctx: DataContext, actor: Actor, agentId: string, count: number, source: string): Promise<void> {
+  assertAdmin(actor);
+  if (count <= 0 || agentId === actor.id) return;
+  await ctx.db.insert(notifications).values({
+    user_id: agentId,
+    kind: "other",
+    title: `${count} new lead${count === 1 ? "" : "s"} assigned to you`,
+    body: `${actor.full_name} assigned them from ${source}. Open Leads to see them.`.slice(0, 2000),
+  });
+}
+
+/** The bell (and push) message telling someone a lead was given to them by someone else. */
+function assignmentNotice(
+  actor: Actor,
+  userId: string,
+  lead: Pick<Lead, "client_name" | "policy_product" | "renewal_date">,
+  leadId: number | SQL<number>,
+): typeof notifications.$inferInsert {
+  return {
+    user_id: userId,
+    kind: "other",
+    title: `New lead assigned: ${clientWithProduct(lead.client_name, lead.policy_product)}`.slice(0, 300),
+    body: `${actor.full_name} assigned it to you${lead.renewal_date ? `. Renews ${formatDate(lead.renewal_date)}` : ""}.`.slice(0, 2000),
+    lead_id: leadId as number,
+  };
 }
 
 /** Edits a lead's details. Only admins can change the owner. */

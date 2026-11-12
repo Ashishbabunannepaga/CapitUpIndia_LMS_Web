@@ -10,21 +10,24 @@ import type { Profile } from "@/lib/database.types";
 import { cn } from "@/lib/utils";
 import type { AppNotification } from "@/lib/database.types";
 import { NotificationBell } from "./notification-bell";
+import { PushBanner } from "./push-notifications";
 import { SidebarNav } from "./sidebar-nav";
 
 type ShellUser = Pick<Profile, "full_name" | "email" | "role">;
 
 
-type NotificationItem = Pick<AppNotification, "id" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
+type NotificationItem = Pick<AppNotification, "id" | "kind" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
 
 function UserPanel({
   user,
   notifications,
   unreadNotifications,
+  pushPublicKey,
 }: {
   user: ShellUser;
   notifications: NotificationItem[];
   unreadNotifications: number;
+  pushPublicKey: string | null;
 }) {
   const initials = user.full_name
     .split(/\s+/)
@@ -44,7 +47,7 @@ function UserPanel({
         </p>
         <p className="mt-0.5 text-xs text-sidebar-foreground/60">{user.role === "ADMIN" ? "Admin" : "Agent"}</p>
       </div>
-      <NotificationBell notifications={notifications} unread={unreadNotifications} />
+      <NotificationBell notifications={notifications} unread={unreadNotifications} pushPublicKey={pushPublicKey} />
       <form action="/auth/signout" method="post">
         <Button
           type="submit"
@@ -68,12 +71,14 @@ function SidebarContents({
   badges,
   notifications,
   unreadNotifications,
+  pushPublicKey,
   onNavigate,
 }: {
   user: ShellUser;
   badges?: NavBadges;
   notifications: NotificationItem[];
   unreadNotifications: number;
+  pushPublicKey: string | null;
   onNavigate?: () => void;
 }) {
   return (
@@ -85,7 +90,12 @@ function SidebarContents({
         <SidebarNav role={user.role} badges={badges} onNavigate={onNavigate} />
       </div>
       <div className="relative">
-        <UserPanel user={user} notifications={notifications} unreadNotifications={unreadNotifications} />
+        <UserPanel
+          user={user}
+          notifications={notifications}
+          unreadNotifications={unreadNotifications}
+          pushPublicKey={pushPublicKey}
+        />
       </div>
     </div>
   );
@@ -96,6 +106,7 @@ export function AppShell({
   badges,
   notifications = [],
   unreadNotifications = 0,
+  pushPublicKey = null,
   children,
 }: {
   user: ShellUser;
@@ -104,6 +115,8 @@ export function AppShell({
   /** Renewal reminders for the bell, newest first. */
   notifications?: NotificationItem[];
   unreadNotifications?: number;
+  /** The server's VAPID public key for browser push; null while push is not set up. */
+  pushPublicKey?: string | null;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -117,6 +130,7 @@ export function AppShell({
           badges={badges}
           notifications={notifications}
           unreadNotifications={unreadNotifications}
+          pushPublicKey={pushPublicKey}
         />
       </aside>
 
@@ -147,6 +161,7 @@ export function AppShell({
             badges={badges}
             notifications={notifications}
             unreadNotifications={unreadNotifications}
+            pushPublicKey={pushPublicKey}
             onNavigate={() => setMobileOpen(false)}
           />
           <Button
@@ -162,7 +177,10 @@ export function AppShell({
       </div>
 
       <main className="min-h-svh lg:pl-64">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
+          <PushBanner publicKey={pushPublicKey} />
+          {children}
+        </div>
       </main>
     </div>
   );

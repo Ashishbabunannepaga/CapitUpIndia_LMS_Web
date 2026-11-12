@@ -71,7 +71,7 @@ describe("leadFromApp", () => {
   });
 
   it("is a New lead when the app user has no policies yet", () => {
-    expect(leadFromApp(sita)).toMatchObject({ type: "New", renewal_date: null, policy_product: "Health" });
+    expect(leadFromApp(sita)).toMatchObject({ type: "New", renewal_date: null, policy_product: "Not Specified" });
   });
 });
 

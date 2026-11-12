@@ -24,8 +24,9 @@ import { DuplicateBadge, StatusBadge } from "@/components/leads/lead-badges";
 import { AssignAgentSelect } from "@/components/leads/lead-detail-actions";
 import { MarkAllReadButton, QuickTaskForm, TaskList, type TaskItem } from "@/components/my-day/my-day-widgets";
 import { Button } from "@/components/ui/button";
+import { ClockTime } from "@/components/ui/clock";
 import { isAdmin, requireSession } from "@/lib/auth";
-import type { LeadEvent, LeadStatus } from "@/lib/database.types";
+import type { LeadStatus } from "@/lib/database.types";
 import {
   addDays,
   businessDateOf,
@@ -41,7 +42,7 @@ import { LEAD_STATUSES, STATUS_COLORS } from "@/lib/domain";
 import { leadsHref } from "@/lib/lead-filters";
 import { getTeam, withAgentNames, type LeadWithAgent } from "@/lib/leads";
 import { pipelineAnalytics, type AgentPipeline } from "@/server/data/analytics";
-import { myDay } from "@/server/data/my-day";
+import { myDay, type TaskWithLead } from "@/server/data/my-day";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "My Day" };
@@ -132,22 +133,22 @@ function RenewalRow({ lead, today, showAgent }: { lead: LeadWithAgent; today: st
   );
 }
 
-function toTask(event: LeadEvent, today: string): TaskItem {
+function toTask(event: TaskWithLead, today: string): TaskItem {
   const day = businessDateOf(event.event_timestamp);
   const offset = daysBetween(today, day);
   return {
     id: event.id,
     title: event.title,
     leadId: event.lead_id,
+    leadName: event.lead_name,
+    timestamp: event.event_timestamp,
+    whenLabel: offset === 0 ? "Today" : offset === 1 ? "Tomorrow" : formatDate(day),
+    kind: event.kind,
+    notes: event.notes,
+    assigneeId: event.assigned_agent_id,
     isCompleted: event.is_completed,
     isSystem: event.is_system_generated,
     overdue: offset < 0,
-    timeLabel:
-      offset === 0
-        ? `Today ${formatTime(event.event_timestamp)}`
-        : offset === 1
-          ? `Tomorrow ${formatTime(event.event_timestamp)}`
-          : formatDateTime(event.event_timestamp),
   };
 }
 
@@ -158,6 +159,8 @@ type Upcoming = {
   kind: "renewal" | "task";
   title: string;
   detail: string;
+  /** A task's time, shown after `detail` in the person's 12h/24h format. */
+  at?: string;
   href: string | null;
   status?: LeadStatus;
 };
@@ -213,7 +216,15 @@ function UpcomingTimeline({ items, today }: { items: Upcoming[]; today: string }
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium group-hover:text-primary">{item.title}</span>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {item.detail}
+                    {item.at ? (
+                      <>
+                        {" · "}
+                        <ClockTime timestamp={item.at} />
+                      </>
+                    ) : null}
+                  </span>
                 </>
               );
               return (
@@ -275,7 +286,6 @@ function RenewalRadar({
 const STATUS_FIELDS: Record<LeadStatus, keyof AgentPipeline> = {
   Prospect: "prospect",
   Quoted: "quoted",
-  "Active Client": "active_client",
   "Follow-up": "follow_up",
   "Closed Won": "won",
   "Closed Lost": "lost",
@@ -365,13 +375,19 @@ export default async function MyDayPage() {
   const renewalsMonth = renewals.filter((l) => l.renewal_date! > weekEnd);
 
   const openEvents = day.openTasks;
-  const at = (e: LeadEvent) => Date.parse(e.event_timestamp);
+  const at = (e: TaskWithLead) => Date.parse(e.event_timestamp);
   const overdueTasks = openEvents.filter((e) => at(e) < Date.parse(todayStart)).map((e) => toTask(e, today));
   const todayTasks = openEvents
     .filter((e) => at(e) >= Date.parse(todayStart) && at(e) < Date.parse(tomorrowStart))
     .map((e) => toTask(e, today));
   const laterTasks = openEvents.filter((e) => at(e) >= Date.parse(tomorrowStart)).map((e) => toTask(e, today));
   const doneToday = day.doneToday.map((e) => toTask(e, today));
+
+  const taskEditing = {
+    today,
+    currentUserId: profile.id,
+    assignees: admin ? agents.map((a) => ({ id: a.id, full_name: a.full_name })) : undefined,
+  };
 
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const todaysWork = renewalsToday.length + overdueTasks.length + todayTasks.length;
@@ -398,7 +414,8 @@ export default async function MyDayPage() {
         sortKey: `${businessDateOf(e.event_timestamp)} ${formatTime(e.event_timestamp)}`,
         kind: "task" as const,
         title: e.title,
-        detail: `Task · ${formatTime(e.event_timestamp)}`,
+        detail: e.kind === "meeting" ? "Meeting" : "Task",
+        at: e.event_timestamp,
         href: e.lead_id ? `/leads/${e.lead_id}` : null,
       })),
   ]
@@ -495,7 +512,7 @@ export default async function MyDayPage() {
         <StatCard
           label="Active clients"
           value={day.counts.activeClients}
-          href={leadsHref({ status: "Active Client" })}
+          href={leadsHref({ status: "Closed Won" })}
           tone="success"
         />
       </div>
@@ -558,17 +575,17 @@ export default async function MyDayPage() {
                 {overdueTasks.length > 0 ? (
                   <div>
                     <h3 className="text-xs font-medium text-urgent">Overdue</h3>
-                    <TaskList tasks={overdueTasks} emptyText="" />
+                    <TaskList tasks={overdueTasks} emptyText="" editing={taskEditing} />
                   </div>
                 ) : null}
                 <div>
                   <h3 className="text-xs font-medium text-muted-foreground">Today</h3>
-                  <TaskList tasks={[...todayTasks, ...doneToday]} emptyText="Nothing planned for today." />
+                  <TaskList tasks={[...todayTasks, ...doneToday]} emptyText="Nothing planned for today." editing={taskEditing} />
                 </div>
                 {laterTasks.length > 0 ? (
                   <div>
                     <h3 className="text-xs font-medium text-muted-foreground">This week</h3>
-                    <TaskList tasks={laterTasks} emptyText="" />
+                    <TaskList tasks={laterTasks} emptyText="" editing={taskEditing} />
                   </div>
                 ) : null}
               </div>

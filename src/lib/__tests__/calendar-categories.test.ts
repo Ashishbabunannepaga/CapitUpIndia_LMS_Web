@@ -7,7 +7,7 @@ import { calendarCategories } from "@/lib/domain";
 const lead = (over: Partial<Parameters<typeof calendarCategories>[1] & object> = {}) => ({
   business_type: "Corporate" as const,
   policy_product: "Health" as const,
-  status: "Prospect" as const,
+  status: "Prospect" as "Prospect" | "Closed Won",
   ...over,
 });
 
@@ -23,17 +23,23 @@ describe("calendar colours", () => {
   });
 
   it("a renewal for an active client carries both colours", () => {
-    expect(calendarCategories(true, lead({ status: "Active Client" }))).toEqual(["gmc_renewal", "active_client"]);
-    expect(calendarCategories(true, lead({ business_type: "Retail", status: "Active Client" }))).toEqual([
+    expect(calendarCategories(true, lead({ status: "Closed Won" }))).toEqual(["gmc_renewal", "active_client"]);
+    expect(calendarCategories(true, lead({ business_type: "Retail", status: "Closed Won" }))).toEqual([
       "retail_renewal",
       "active_client",
     ]);
   });
 
-  it("other entries are tasks, unless they are for an active client", () => {
+  it("other entries are tasks, unless they are for an active client (Closed Won)", () => {
     expect(calendarCategories(false, null)).toEqual(["task"]);
     expect(calendarCategories(false, lead())).toEqual(["task"]);
-    expect(calendarCategories(false, lead({ status: "Active Client" }))).toEqual(["active_client"]);
+    expect(calendarCategories(false, lead({ status: "Closed Won" }))).toEqual(["active_client"]);
+  });
+
+  it("a meeting is a meeting, and also an active client's when the lead is Closed Won", () => {
+    expect(calendarCategories(false, null, "meeting")).toEqual(["meeting"]);
+    expect(calendarCategories(false, lead(), "meeting")).toEqual(["meeting"]);
+    expect(calendarCategories(false, lead({ status: "Closed Won" }), "meeting")).toEqual(["meeting", "active_client"]);
   });
 
   it("a renewal whose lead is gone still counts as GMC", () => {

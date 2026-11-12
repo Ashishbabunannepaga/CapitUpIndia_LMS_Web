@@ -51,7 +51,7 @@ describe("normalizeProduct", () => {
     expect(normalizeProduct("Package policy")).toBe("Fire or Property");
     expect(normalizeProduct("Cargo transit")).toBe("Marine");
     expect(normalizeProduct("Travel cover")).toBe("Travel");
-    expect(normalizeProduct("")).toBe("Health");
+    expect(normalizeProduct("")).toBe("Not Specified");
   });
 });
 

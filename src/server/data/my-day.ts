@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gte, isNotNull, isNull, lt, lte, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gte, isNotNull, isNull, lt, lte, notInArray, sql, type SQL } from "drizzle-orm";
 
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES } from "@/lib/domain";
+import { ACTIVE_CLIENT_STATUS, CLOSED_STATUSES } from "@/lib/domain";
 
 import { events, leads } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
@@ -13,15 +13,17 @@ import { countUnreadLeadNotesQuery, unreadLeadNotesQuery, type Lead, type LeadEv
 // Everything the My Day screen shows, in one call. Lead numbers cover the
 // caller's own leads (every lead, for admins); tasks are always the caller's own.
 
+export type TaskWithLead = LeadEvent & { lead_name: string | null };
+
 export type MyDay = {
   counts: { activeClients: number; quoted: number; followUps: number; overdueRenewals: number };
   /** Open leads renewing in the next 30 days, soonest first. */
   renewals: Lead[];
   /** Open leads whose renewal passed in the last 30 days, latest first. */
   overdueRenewals: Lead[];
-  /** The caller's open tasks up to a week ahead (overdue ones included). */
-  openTasks: LeadEvent[];
-  doneToday: LeadEvent[];
+  /** The caller's open tasks up to a week ahead (overdue ones included), with the linked lead's name. */
+  openTasks: TaskWithLead[];
+  doneToday: TaskWithLead[];
   /** Leads assigned in the last 7 days: to the caller, or to anyone for admins. */
   recentlyAssigned: Lead[];
   /** Admins only: the newest unassigned leads, and how many there are. */
@@ -41,6 +43,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
 
   const countLeads = (...conditions: (SQL | undefined)[]) =>
     ctx.db.select({ n: count().as("n") }).from(leads).where(and(scope, ...conditions));
+  const withLeadName = { ...getTableColumns(events), lead_name: leads.client_name };
   const myEvents = and(eq(events.assigned_agent_id, actor.id), eq(events.is_background_reminder, false));
   // The unassigned queue is for admins; for an agent the query matches nothing.
   const unassignedWhere = and(isNull(leads.assigned_agent_id), admin ? undefined : sql`0`);
@@ -61,7 +64,8 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     unreadNotes,
     unreadNoteCount,
   ] = await ctx.db.batch([
-    countLeads(eq(leads.status, "Active Client")),
+    // Closed Won leads are the active clients.
+    countLeads(eq(leads.status, ACTIVE_CLIENT_STATUS)),
     countLeads(eq(leads.status, "Quoted")),
     countLeads(eq(leads.status, "Follow-up")),
     // Every overdue renewal, like the list the KPI links to; the panel shows the last 30 days.
@@ -79,14 +83,16 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
       .orderBy(desc(leads.renewal_date), asc(leads.id))
       .limit(10),
     ctx.db
-      .select()
+      .select(withLeadName)
       .from(events)
+      .leftJoin(leads, eq(leads.id, events.lead_id))
       .where(and(myEvents, eq(events.is_completed, false), lt(events.event_timestamp, weekEndStart)))
       .orderBy(asc(events.event_timestamp))
       .limit(100),
     ctx.db
-      .select()
+      .select(withLeadName)
       .from(events)
+      .leftJoin(leads, eq(leads.id, events.lead_id))
       .where(and(myEvents, eq(events.is_completed, true), gte(events.completed_at, todayStart)))
       .orderBy(desc(events.completed_at))
       .limit(20),

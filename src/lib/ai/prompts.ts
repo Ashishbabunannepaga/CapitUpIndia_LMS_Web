@@ -16,7 +16,7 @@ function dateContext(today: string): string {
 const LEAD_FIELD_RULES = `- client_name: the company name, or the person's name for an individual (retail) policy.
 - type: "Rollover" if the client is moving (rolling over or porting) an existing policy from another insurer or broker to us; "Renewal" if a renewal, expiry or renewal date is mentioned; otherwise "New".
 - business_type: "Corporate" for companies, "Retail" for individuals, families or personal vehicles.
-- policy_product: exactly one of ${PRODUCTS}. "Fire" or "Property" means "Fire or Property"; workmen's compensation (WC) and other liability covers mean "Liability". Use "Health" only when the text is about health or does not say.
+- policy_product: exactly one of ${PRODUCTS}. "Fire" or "Property" means "Fire or Property"; workmen's compensation (WC) and other liability covers mean "Liability". Use "Health" only when the text is about health; use "Not Specified" when the text does not say which product.
 - sub_product_name: any plan, scheme or detailed policy name (e.g. "Floater Scheme", "Cargo Transit", "GMC"); empty if none.
 - renewal_date: YYYY-MM-DD. Use the 1st of the month when only a month is given. Empty if no date is given; never guess one.
 - poc_name / poc_designation / poc_contact_number / poc_email_id: the primary contact. The designation is only what the text states (e.g. "Rajesh (Director)" gives "Director"); otherwise "poc". Phone numbers are digits only, 10 digits for Indian mobiles.
@@ -43,7 +43,7 @@ Rules:
 - poc_email_id: the email printed on the card.
 - address: the postal address as printed, on one line.
 - notes: website, other phone numbers, GST number, tagline or anything else useful, one item per line.
-- type is "New", business_type is "Corporate", policy_product is "Health" unless the card clearly says otherwise; renewal_date is empty.
+- type is "New", business_type is "Corporate", policy_product is "Not Specified" unless the card clearly names a product; renewal_date is empty.
 - Never invent anything that is not printed on the card. Ignore obvious placeholder or sample data. Leave unknown fields as "".`;
 }
 

@@ -154,7 +154,7 @@ describe("monthly report", () => {
     const amit = summary.rows.find((r) => r[0] === "Amit Agent")!;
     const col = (name: string) => header.indexOf(name);
     expect(amit[col("Leads owned (now)")]).toBe(2);
-    expect(amit[col("Closed Won")]).toBe(1);
+    expect(amit[col("Closed Won (active clients)")]).toBe(1);
     expect(amit[col("Win rate % (won ÷ closed)")]).toBe(100);
     expect(amit[col("Conversion rate % (won ÷ owned)")]).toBe(50);
     expect(amit[col("Status updates (month)")]).toBe(2);

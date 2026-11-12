@@ -13,6 +13,7 @@ import {
   resolveDuplicate,
 } from "@/app/(app)/leads/actions";
 import { Button } from "@/components/ui/button";
+import { DictateButton } from "@/components/ui/dictate";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -71,6 +72,7 @@ export function AddNoteForm({ leadId }: { leadId: number }) {
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
 
   return (
     <form
@@ -93,17 +95,19 @@ export function AddNoteForm({ leadId }: { leadId: number }) {
         Add a note
       </Label>
       <Textarea
+        ref={noteRef}
         id="note-content"
         name="content"
         rows={3}
         maxLength={5000}
         required
-        placeholder="Call notes, visit feedback or quote details"
+        placeholder="Call notes, visit feedback or quote details. Tap Dictate to speak instead of typing."
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) formRef.current?.requestSubmit();
         }}
       />
       <div className="flex items-center justify-between gap-2">
+        <DictateButton target={noteRef} />
         <Feedback result={result} />
         <Button type="submit" size="sm" disabled={pending} className="ml-auto">
           {pending ? <Loader2 className="animate-spin" /> : <Send />}

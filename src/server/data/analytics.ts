@@ -19,7 +19,6 @@ export type AgentPipeline = {
   total: number;
   prospect: number;
   quoted: number;
-  active_client: number;
   follow_up: number;
   won: number;
   lost: number;
@@ -45,7 +44,6 @@ export type PipelineAnalytics = {
 const STATUS_KEYS = {
   Prospect: "prospect",
   Quoted: "quoted",
-  "Active Client": "active_client",
   "Follow-up": "follow_up",
   "Closed Won": "won",
   "Closed Lost": "lost",
@@ -139,7 +137,6 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
         total: 0,
         prospect: 0,
         quoted: 0,
-        active_client: 0,
         follow_up: 0,
         won: 0,
         lost: 0,
@@ -147,7 +144,9 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
         renewals_30d: 0,
       } satisfies AgentPipeline);
     agent.total += r.n;
-    agent[STATUS_KEYS[r.status]] += r.n;
+    // A status outside today's list (none since migration 0009) only counts in the total.
+    const statusKey = STATUS_KEYS[r.status] as (typeof STATUS_KEYS)[keyof typeof STATUS_KEYS] | undefined;
+    if (statusKey) agent[statusKey] += r.n;
     agent.overdue_renewals += r.overdue;
     agent.renewals_30d += r.due30;
     agents.set(key, agent);

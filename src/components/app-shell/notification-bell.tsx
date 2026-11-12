@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { AlarmClock, Bell, CheckCheck } from "lucide-react";
+import { AlarmClock, Bell, CheckCheck, UserPlus } from "lucide-react";
 
 import { markNotificationsRead } from "@/app/(app)/notifications/actions";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,23 @@ import { formatNoteTimestamp } from "@/lib/dates";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
-type Item = Pick<AppNotification, "id" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
+import { PushStatus, useLocalAlerts } from "./push-notifications";
 
-/** Renewal reminders delivered by the server job, with an unread count. */
-export function NotificationBell({ notifications, unread }: { notifications: Item[]; unread: number }) {
+type Item = Pick<AppNotification, "id" | "kind" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
+
+/** Renewal reminders and assignments delivered by the server, with an unread count and the device-alerts switch. */
+export function NotificationBell({
+  notifications,
+  unread,
+  pushPublicKey = null,
+}: {
+  notifications: Item[];
+  unread: number;
+  /** The server's VAPID public key; null while browser push is not set up. */
+  pushPublicKey?: string | null;
+}) {
   const [open, setOpen] = useState(false);
+  useLocalAlerts(notifications, Boolean(pushPublicKey));
   const [, startTransition] = useTransition();
   const panel = useRef<HTMLDivElement>(null);
 
@@ -55,7 +67,7 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
       {open ? (
         <div className="absolute bottom-full left-0 z-50 mb-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lift">
           <div className="flex items-center justify-between border-b px-3 py-2">
-            <p className="text-sm font-semibold">Renewal reminders</p>
+            <p className="text-sm font-semibold">Notifications</p>
             {unread > 0 ? (
               <Button
                 type="button"
@@ -73,7 +85,7 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
           </div>
           {notifications.length === 0 ? (
             <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-              Nothing yet. Renewal reminders arrive from 30 days before a renewal date.
+              Nothing yet. Renewal reminders arrive from 30 days before a renewal date, and you hear here when a lead is assigned to you.
             </p>
           ) : (
             <ul className="max-h-96 divide-y overflow-y-auto">
@@ -90,7 +102,11 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
                     }}
                   >
                     <p className="flex items-start gap-1.5 text-sm font-medium">
-                      <AlarmClock className="mt-0.5 size-3.5 shrink-0 text-warning" />
+                      {item.kind === "renewal_reminder" ? (
+                        <AlarmClock className="mt-0.5 size-3.5 shrink-0 text-warning" />
+                      ) : (
+                        <UserPlus className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                      )}
                       {item.title}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">{item.body}</p>
@@ -100,6 +116,7 @@ export function NotificationBell({ notifications, unread }: { notifications: Ite
               ))}
             </ul>
           )}
+          <PushStatus publicKey={pushPublicKey} />
         </div>
       ) : null}
     </div>

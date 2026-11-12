@@ -10,10 +10,19 @@ import {
   type SiteProbe,
 } from "@/server/data/monitoring";
 import { deliverDueReminders } from "@/server/data/notifications";
+import { pushPendingNotifications, type PushSender } from "@/server/data/push";
+import { vapidKeysFrom } from "@/server/push/config";
+import { sendWebPush } from "@/server/push/web-push";
 import { alertSender, healthUrl, probeSite } from "@/server/monitoring/alerts";
 
 /** Swapped out in tests. */
-export type ScheduledDeps = { send?: AlertSender; probe?: SiteProbe; sleep?: (ms: number) => Promise<void> };
+export type ScheduledDeps = {
+  send?: AlertSender;
+  probe?: SiteProbe;
+  sleep?: (ms: number) => Promise<void>;
+  /** Browser push sender; by default Web Push with the VAPID secrets, when they are set. */
+  push?: PushSender | null;
+};
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -33,6 +42,20 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
   } catch (error) {
     console.error("Renewal reminder delivery failed", { message: message(error) });
     await recordAppError(ctx, { source: "job", path: "Renewal reminders", message: message(error) }, at);
+  }
+
+  // Whatever landed in a bell this minute (reminders, assignments) also goes
+  // to the person's browsers that allowed push. Needs the VAPID secrets.
+  const vapid = vapidKeysFrom(env);
+  const push = deps.push !== undefined ? deps.push : vapid ? ((target, msg) => sendWebPush(target, msg, vapid)) satisfies PushSender : null;
+  if (push) {
+    try {
+      const pushed = await pushPendingNotifications(ctx, push, at);
+      if (pushed > 0) console.log(`Pushed ${pushed} browser notification(s).`);
+    } catch (error) {
+      console.error("Browser push failed", { message: message(error) });
+      await recordAppError(ctx, { source: "job", path: "Browser push", message: message(error) }, at);
+    }
   }
 
   const minute = at.getUTCMinutes();

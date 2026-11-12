@@ -116,7 +116,7 @@ export function monthlyReportSheets(report: MonthlyReport): Sheet[] {
         "Role",
         "Active",
         "Leads owned (now)",
-        ...LEAD_STATUSES.map((s) => (s === "Active Client" ? "Active clients" : s)),
+        ...LEAD_STATUSES.map((s) => (s === "Closed Won" ? "Closed Won (active clients)" : s)),
         "Win rate % (won ÷ closed)",
         "Conversion rate % (won ÷ owned)",
         "Leads created (month)",

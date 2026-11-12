@@ -119,7 +119,9 @@ function activitySources(from?: string, to?: string): [SQL, SQL] {
     select e.completed_at, 'task_completed', e.assigned_agent_id, null, e.lead_id, null, e.milestone, null, e.title
     from events e
     where e.is_completed = 1 and e.completed_at is not null and ${between(sql`e.completed_at`, from, to)}
-      and not exists (select 1 from audit_logs x where x.table_name = 'events' and x.record_id = cast(e.id as text))
+      -- Only completion rows count here; an edit of the task is logged too but is not a completion.
+      and not exists (select 1 from audit_logs x where x.table_name = 'events' and x.record_id = cast(e.id as text)
+        and json_extract(x.new_data, '$.is_completed') is not null)
     union all
     select c.created_at, 'contact', c.agent_id, c.agent_name, c.lead_id, null, c.channel, c.with_draft, null
     from lead_contact_logs c
@@ -227,7 +229,7 @@ export async function listLeadTracker(ctx: DataContext, actor: Actor, filter: Tr
   return ctx.db.all<TrackedLead>(sql`
     select t.*, max(t.updated_at, coalesce(t.last_note_at, ''), coalesce(t.last_contact_at, '')) as last_activity_at
     from (
-      select l.id, l.client_name, l.lead_type as type, l.policy_product, l.status, l.renewal_date, l.assigned_agent_id,
+      select l.id, l.client_name, l.lead_type as type, l.product as policy_product, l.status, l.renewal_date, l.assigned_agent_id,
         p.full_name as agent_name, l.updated_at,
         (select max(n.created_at) from lead_notes n where n.lead_id = l.id) as last_note_at,
         (select max(c.created_at) from lead_contact_logs c where c.lead_id = l.id) as last_contact_at,

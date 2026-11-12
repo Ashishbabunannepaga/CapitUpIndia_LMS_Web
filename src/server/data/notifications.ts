@@ -114,7 +114,7 @@ export async function deliverDueReminders(ctx: DataContext, at: Date = new Date(
       rows.push({
         user_id,
         kind: "renewal_reminder",
-        title: `${event.milestone}: ${lead.client_name} renewal (${lead.policy_product})`.slice(0, 300),
+        title: `${event.milestone}: ${lead.client_name} renewal${lead.policy_product !== "Not Specified" ? ` (${lead.policy_product})` : ""}`.slice(0, 300),
         body: body.slice(0, 2000),
         lead_id: lead.id,
         event_id: event.id,

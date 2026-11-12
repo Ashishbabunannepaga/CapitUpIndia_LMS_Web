@@ -72,14 +72,18 @@ const PRODUCT_KEYWORDS: [RegExp, PolicyProduct][] = [
   [/\boffice\b|\bshop\b/, "Fire or Property"],
 ];
 
-/** One of the 8 products; keyword match on free text, Health when nothing fits. */
+/**
+ * One of the 8 products by keyword match on free text, or "Not Specified"
+ * when nothing fits: an unknown product is never guessed.
+ */
 export function normalizeProduct(value: string | null | undefined): PolicyProduct {
   const text = (value ?? "").toLowerCase();
   if (text === "fire or property") return "Fire or Property";
+  if (/^\s*(not specified|unspecified|unknown|n\/?a|-)?\s*$/.test(text)) return "Not Specified";
   for (const [pattern, product] of PRODUCT_KEYWORDS) {
     if (pattern.test(text)) return product;
   }
-  return "Health";
+  return "Not Specified";
 }
 
 const RETAIL_HINTS = /\bretail\b|individual|family|personal|self\b|4 ?wheeler|2 ?wheeler|two wheeler|four wheeler|\bcar\b|bike/;

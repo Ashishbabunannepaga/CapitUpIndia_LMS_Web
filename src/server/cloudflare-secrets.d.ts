@@ -35,6 +35,15 @@ interface CloudflareEnv {
   ALERT_WEBHOOK_URL?: string;
   ALERT_TELEGRAM_BOT_TOKEN?: string;
   ALERT_TELEGRAM_CHAT_ID?: string;
+  /**
+   * Browser push notifications (src/server/push, docs/push-notifications.md).
+   * Secrets made with `node scripts/vapid-keys.mjs`. Optional: without them
+   * the bell still works and push stays off.
+   */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  /** Optional: a mailto: or https: contact for push services; defaults to the app URL. */
+  VAPID_SUBJECT?: string;
   /** Optional var: the URL the monitor loads instead of <BETTER_AUTH_URL>/api/health. */
   MONITOR_URL?: string;
   /**

@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { ClockToggle, TimeField } from "@/components/ui/clock";
+import { DictateButton } from "@/components/ui/dictate";
 import type { Lead } from "@/lib/database.types";
 import { BUSINESS_TYPES, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS, needsRenewalDate } from "@/lib/domain";
 import { safeAction } from "@/lib/safe-action";
@@ -41,7 +43,7 @@ const EMPTY: Record<string, string> = {
   client_name: "",
   type: "New",
   business_type: "Corporate",
-  policy_product: "Health",
+  policy_product: "Not Specified",
   sub_product_name: "",
   address: "",
   renewal_date: "",
@@ -256,6 +258,7 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
   const [typeChoice, setTypeChoice] = useState({ key: formKey, type: values.type });
   const leadType = typeChoice.key === formKey ? typeChoice.type : values.type;
   const dateRequired = needsRenewalDate(leadType);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   return (
     <form
@@ -466,6 +469,7 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
         description="Background captured with the lead. Use the notes thread on the lead page for timestamped updates."
       >
         <Textarea
+          ref={notesRef}
           id="notes"
           name="notes"
           rows={4}
@@ -473,7 +477,52 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
           defaultValue={values.notes}
           placeholder="Current insurer, premium, family size, anything the next person should know"
         />
+        <DictateButton target={notesRef} className="mt-2" />
       </Section>
+
+      {mode === "create" ? (
+        <Section
+          title="Schedule a meeting (optional)"
+          description="Already fixed a meeting? Add it here and it goes on your calendar, linked to this lead."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Meeting" name="meeting_title" error={errors.meeting_title} className="md:col-span-2">
+              <Input
+                id="meeting_title"
+                name="meeting_title"
+                maxLength={300}
+                defaultValue={values.meeting_title ?? ""}
+                placeholder="e.g. Scheduled a meet with Rajesh at their office"
+              />
+            </Field>
+            <Field label="Date" name="meeting_date" error={errors.meeting_date}>
+              <Input
+                id="meeting_date"
+                name="meeting_date"
+                type="date"
+                defaultValue={values.meeting_date ?? ""}
+                aria-invalid={Boolean(errors.meeting_date)}
+              />
+            </Field>
+            <Field label="Time" name="meeting_time" error={errors.meeting_time}>
+              <div className="flex flex-wrap items-center gap-2">
+                <TimeField name="meeting_time" label="Meeting time" defaultValue={values.meeting_time || "10:00"} />
+                <ClockToggle />
+              </div>
+            </Field>
+            <Field label="Details" name="meeting_notes" error={errors.meeting_notes} className="md:col-span-2">
+              <Textarea
+                id="meeting_notes"
+                name="meeting_notes"
+                rows={2}
+                maxLength={5000}
+                defaultValue={values.meeting_notes ?? ""}
+                placeholder="Agenda, venue, who is attending"
+              />
+            </Field>
+          </div>
+        </Section>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button asChild variant="ghost">
