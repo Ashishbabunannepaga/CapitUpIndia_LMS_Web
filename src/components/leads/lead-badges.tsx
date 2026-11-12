@@ -1,9 +1,9 @@
-import { AlertTriangle, CalendarClock } from "lucide-react";
+import { AlertTriangle, CalendarClock, Snowflake } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import type { LeadStatus } from "@/lib/database.types";
+import type { LeadStatus, LeadTag } from "@/lib/database.types";
 import { formatDate, relativeDays, renewalUrgency, todayInBusinessTz, type Urgency } from "@/lib/dates";
-import { STATUS_STYLES } from "@/lib/domain";
+import { STATUS_STYLES, TAG_STYLES } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
 export function StatusBadge({ status, className }: { status: LeadStatus; className?: string }) {
@@ -57,5 +57,27 @@ export function RenewalDate({
         <span className="text-xs font-normal whitespace-nowrap opacity-80">({relativeDays(date, today)})</span>
       ) : null}
     </span>
+  );
+}
+
+export function TagBadge({ tag, className }: { tag: LeadTag; className?: string }) {
+  return (
+    <Badge variant="outline" className={cn(TAG_STYLES[tag], className)}>
+      {tag}
+    </Badge>
+  );
+}
+
+/** Amber "Stale" badge: an open lead nobody has touched for the admins' threshold. */
+export function StaleBadge({ since, className }: { since?: string; className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      title={since ? `No note, status change, task or contact since ${formatDate(since.slice(0, 10))}` : "No recent activity"}
+      className={cn("border-amber-300 bg-amber-50 text-amber-800", className)}
+    >
+      <Snowflake />
+      Stale
+    </Badge>
   );
 }

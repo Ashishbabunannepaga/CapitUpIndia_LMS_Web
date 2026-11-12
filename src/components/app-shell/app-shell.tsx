@@ -10,6 +10,8 @@ import type { Profile } from "@/lib/database.types";
 import { cn } from "@/lib/utils";
 import type { AppNotification } from "@/lib/database.types";
 import { NotificationBell } from "./notification-bell";
+import { OfflineBanner } from "./offline-banner";
+import { QuickLeadButton } from "./quick-lead";
 import { PushBanner } from "./push-notifications";
 import { SidebarNav } from "./sidebar-nav";
 
@@ -123,6 +125,7 @@ export function AppShell({
 
   return (
     <div className="min-h-svh">
+      <OfflineBanner />
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block">
         <SidebarContents
@@ -177,11 +180,13 @@ export function AppShell({
       </div>
 
       <main className="min-h-svh lg:pl-64">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
+        {/* Bottom padding keeps the floating "+" clear of the last row of content. */}
+        <div className="mx-auto w-full max-w-[1600px] px-4 pt-6 pb-24 sm:px-6 lg:px-8">
           <PushBanner publicKey={pushPublicKey} />
           {children}
         </div>
       </main>
+      <QuickLeadButton />
     </div>
   );
 }

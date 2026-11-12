@@ -3,16 +3,16 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { Dialog } from "radix-ui";
 import { LeadLink } from "@/components/leads/lead-link";
-import { CheckCheck, Loader2, Pencil, Trash2, Users, X } from "lucide-react";
+import { AlarmClockOff, CheckCheck, Loader2, MessageSquarePlus, Pencil, Send, Trash2, Users, X } from "lucide-react";
 
-import { markNotesRead } from "@/app/(app)/leads/actions";
-import { deleteTask, setTaskDone } from "@/app/(app)/my-day/actions";
+import { addLeadNote, markNotesRead } from "@/app/(app)/leads/actions";
+import { deleteTask, setTaskDone, snoozeTask } from "@/app/(app)/my-day/actions";
 import { TaskForm } from "@/components/tasks/task-form";
 import { Button } from "@/components/ui/button";
 import { ClockTime } from "@/components/ui/clock";
 import { businessHhmm } from "@/lib/clock";
 import { businessDateOf } from "@/lib/dates";
-import type { EventKind } from "@/lib/domain";
+import { SNOOZE_DAYS, type EventKind } from "@/lib/domain";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
@@ -90,17 +90,60 @@ function EditTaskDialog({ task, editing }: { task: TaskItem; editing: TaskEditin
   );
 }
 
+const SNOOZE_LABELS: Record<(typeof SNOOZE_DAYS)[number], string> = { 1: "1 day", 3: "3 days", 7: "1 week" };
+
+/** "Snooze" on an overdue task: moves it 1 day, 3 days or a week out without ticking it off. */
+function SnoozeSelect({ task, onSnoozed }: { task: TaskItem; onSnoozed: (error: string | null) => void }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <label className="relative inline-flex items-center" title="Snooze">
+      <span className="sr-only">Snooze “{task.title}”</span>
+      {pending ? (
+        <Loader2 className="pointer-events-none absolute left-1.5 size-3.5 animate-spin text-muted-foreground" />
+      ) : (
+        <AlarmClockOff className="pointer-events-none absolute left-1.5 size-3.5 text-muted-foreground" />
+      )}
+      <select
+        value=""
+        disabled={pending}
+        onChange={(event) => {
+          const days = Number(event.target.value);
+          if (!days) return;
+          startTransition(async () => {
+            const result = await safeAction(() => snoozeTask(task.id, days));
+            onSnoozed(result.ok ? null : result.error);
+          });
+        }}
+        className="h-7 cursor-pointer appearance-none rounded-md border bg-card pr-2 pl-6 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <option value="">Snooze</option>
+        {SNOOZE_DAYS.map((days) => (
+          <option key={days} value={days}>
+            {SNOOZE_LABELS[days]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function TaskList({
   tasks,
   emptyText,
   editing,
   showLead = true,
+  readOnly = false,
+  snooze = false,
 }: {
   tasks: TaskItem[];
   emptyText: string;
   editing?: TaskEditing;
   /** Off on a lead's own page, where every entry is about that lead. */
   showLead?: boolean;
+  /** Only looking (an admin viewing an agent's day): no ticking, editing or deleting. */
+  readOnly?: boolean;
+  /** Offer Snooze on open tasks (My Day's overdue list). */
+  snooze?: boolean;
 }) {
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +165,7 @@ export function TaskList({
               type="checkbox"
               aria-label={`Mark "${task.title}" ${task.isCompleted ? "not done" : "done"}`}
               checked={task.isCompleted}
+              disabled={readOnly}
               onChange={(event) => {
                 const done = event.target.checked;
                 setError(null);
@@ -131,7 +175,7 @@ export function TaskList({
                   if (!result.ok) setError(result.error);
                 });
               }}
-              className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
+              className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary disabled:cursor-default"
             />
             <div className="min-w-0 flex-1">
               <p className={cn("text-sm", task.isCompleted && "text-muted-foreground line-through")}>
@@ -155,7 +199,10 @@ export function TaskList({
                 {task.assigneeName ? ` · ${task.assigneeName}` : ""}
               </p>
             </div>
-            {!task.isSystem ? (
+            {snooze && !readOnly && !task.isSystem && !task.isCompleted ? (
+              <SnoozeSelect task={task} onSnoozed={setError} />
+            ) : null}
+            {!task.isSystem && !readOnly ? (
               <div className="flex shrink-0 items-center">
                 {editing ? <EditTaskDialog task={task} editing={editing} /> : null}
                 <button
@@ -214,5 +261,72 @@ export function MarkAllReadButton() {
       {pending ? <Loader2 className="animate-spin" /> : <CheckCheck />}
       Mark all read
     </Button>
+  );
+}
+
+/** A small "Note" button on a My Day lead row: adds a note to the lead without leaving the page. */
+export function QuickNoteButton({ leadId, clientName }: { leadId: number; clientName: string }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+          setResult(null);
+        }}
+        aria-label={`Add a note to ${clientName}`}
+        title={result?.ok ? result.text : "Add a note"}
+        className={cn(
+          "shrink-0 rounded p-1 transition-colors hover:bg-muted hover:text-primary",
+          result?.ok ? "text-success" : "text-muted-foreground",
+        )}
+      >
+        {result?.ok ? <CheckCheck className="size-4" /> : <MessageSquarePlus className="size-4" />}
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="flex w-full basis-full items-center gap-2 sm:basis-auto"
+      onSubmit={(event) => {
+        event.preventDefault();
+        startTransition(async () => {
+          const res = await safeAction(() => addLeadNote(leadId, text));
+          if (res.ok) {
+            setText("");
+            setOpen(false);
+            setResult({ ok: true, text: "Note added" });
+          } else setResult({ ok: false, text: res.error });
+        });
+      }}
+    >
+      <input
+        autoFocus
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setOpen(false);
+        }}
+        maxLength={5000}
+        required
+        aria-label={`Note on ${clientName}`}
+        placeholder={`Note on ${clientName}`}
+        className="h-8 min-w-0 flex-1 rounded-md border bg-card px-2 text-sm sm:w-56"
+      />
+      <Button type="submit" size="sm" disabled={pending || !text.trim()}>
+        {pending ? <Loader2 className="animate-spin" /> : <Send />}
+        <span className="sr-only sm:not-sr-only">Add</span>
+      </Button>
+      <button type="button" aria-label="Cancel note" onClick={() => setOpen(false)} className="rounded p-1 text-muted-foreground hover:text-foreground">
+        <X className="size-4" />
+      </button>
+      {result && !result.ok ? <span className="text-xs text-destructive">{result.text}</span> : null}
+    </form>
   );
 }

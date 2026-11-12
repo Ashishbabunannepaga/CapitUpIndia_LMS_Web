@@ -14,6 +14,8 @@ import {
   ResolveDuplicateButton,
 } from "@/components/leads/lead-detail-actions";
 import { ContactLink } from "@/components/leads/contact-link";
+import { CopySummaryButton, LeadTagsEditor, WhatsAppIconLink } from "@/components/leads/lead-extras";
+import { LeadHistory } from "@/components/leads/lead-history";
 import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
@@ -25,9 +27,10 @@ import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
 import { businessDateOf, formatDate, formatDateTime, formatNoteTimestamp, nowMs, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS } from "@/lib/domain";
+import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS, formatNoteLine } from "@/lib/domain";
 import { findSimilarLeads, getLeadPage } from "@/lib/leads";
 import { cn } from "@/lib/utils";
+import { leadHistory } from "@/server/data/history";
 
 export const metadata: Metadata = { title: "Lead" };
 
@@ -100,7 +103,12 @@ function PocCard({
             {name || "Contact"}
             {designation ? <span className="font-normal text-muted-foreground"> · {designation}</span> : null}
           </p>
-          {phone ? <p className="text-sm text-muted-foreground">{phone}</p> : null}
+          {phone ? (
+            <p className="flex items-center gap-1 text-sm text-muted-foreground">
+              {phone}
+              <WhatsAppIconLink leadId={leadId} phone={phone} />
+            </p>
+          ) : null}
           {email ? <p className="truncate text-sm text-muted-foreground">{email}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {tel ? (
@@ -134,13 +142,49 @@ function PocCard({
   );
 }
 
+/** The plain-text snapshot "Copy summary" puts on the clipboard. */
+function leadSummary(
+  lead: {
+    client_name: string;
+    policy_product: string;
+    sub_product_name: string;
+    status: string;
+    type: string;
+    renewal_date: string | null;
+    agent_name: string | null;
+  } & Record<"poc_name" | "poc_designation" | "poc_contact_number" | "poc_email_id", string>,
+  lastNote: { agent_name: string; created_at: string; content: string } | undefined,
+): string {
+  const poc = [
+    lead.poc_name || null,
+    lead.poc_designation && lead.poc_designation !== "poc" ? `(${lead.poc_designation})` : null,
+    lead.poc_contact_number || null,
+    lead.poc_email_id || null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    lead.client_name,
+    `Product: ${lead.policy_product}${lead.sub_product_name ? ` (${lead.sub_product_name})` : ""} · ${lead.type}`,
+    `Status: ${lead.status}`,
+    `POC: ${poc || "not added yet"}`,
+    `Renewal: ${lead.renewal_date ? formatDate(lead.renewal_date) : "no date yet"}`,
+    `Agent: ${lead.agent_name ?? "Unassigned"}`,
+    lastNote ? `Last note: ${formatNoteLine(lastNote.agent_name, lastNote.created_at, lastNote.content)}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export default async function LeadPage({ params, searchParams }: PageProps<"/leads/[id]">) {
-  const { actor: profile } = await requireSession();
+  const { ctx, actor: profile } = await requireSession();
   const admin = isAdmin(profile);
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const data = await getLeadPage(id);
+  const query = await searchParams;
+  const showHistory = query.tab === "history";
+  const [data, history] = await Promise.all([getLeadPage(id), showHistory ? leadHistory(ctx, profile, id) : null]);
   if (!data) notFound();
   const { lead, notes, events, contacts } = data;
   const team = admin ? data.team : [];
@@ -150,7 +194,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
   const cardVersion = lead.visiting_card_path?.split("/").pop()?.split(".")[0];
   const cardUrl = cardVersion ? `/leads/${id}/card?v=${cardVersion}` : null;
   const unreadIds = new Set(data.unreadNoteIds);
-  const saved = (await searchParams).saved;
+  const saved = query.saved;
   const savedMessage = typeof saved === "string" ? SAVED_MESSAGES[saved] : undefined;
 
   // Other records for the same company. A newer record is flagged as a
@@ -207,8 +251,10 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             <Badge variant="secondary">{lead.policy_product}</Badge>
             {lead.is_duplicate ? <DuplicateBadge label={lead.duplicate_label} /> : null}
           </div>
+          <LeadTagsEditor leadId={lead.id} tags={data.tags} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CopySummaryButton summary={leadSummary(lead, notes[0])} />
           <Button asChild variant="outline">
             <Link href={`/leads/${lead.id}/edit`}>
               <Pencil />
@@ -303,84 +349,114 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
           <VisitingCardPanel leadId={lead.id} clientName={lead.client_name} cardUrl={cardUrl} className="xl:hidden" />
         ) : null}
         <div className="min-w-0 space-y-6 xl:col-span-2">
-          <Panel title="Policy">
-            <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              <Fact label="Renewal date">
-                <RenewalDate date={lead.renewal_date} closed={closed} />
-              </Fact>
-              <Fact label="Product">
-                {lead.policy_product}
-                {lead.sub_product_name ? <span className="text-muted-foreground"> · {lead.sub_product_name}</span> : null}
-              </Fact>
-              <Fact label="Assigned agent">
-                {admin ? (
-                  <AssignAgentSelect
-                    leadId={lead.id}
-                    agentId={lead.assigned_agent_id}
-                    agents={team.filter((m) => m.is_active || m.id === lead.assigned_agent_id)}
-                  />
-                ) : (
-                  <AgentName name={lead.agent_name} />
+          <nav aria-label="Lead sections" className="flex gap-1 border-b">
+            {[
+              { label: "Details", href: `/leads/${lead.id}`, active: !showHistory },
+              { label: "History", href: `/leads/${lead.id}?tab=history`, active: showHistory },
+            ].map((tab) => (
+              <Link
+                key={tab.label}
+                href={tab.href}
+                scroll={false}
+                aria-current={tab.active ? "page" : undefined}
+                className={cn(
+                  "-mb-px border-b-2 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                  tab.active ? "border-primary text-foreground" : "border-transparent",
                 )}
-              </Fact>
-              {lead.relationship_manager ? (
-                <Fact label="RM (relationship manager)">
-                  <span className="whitespace-pre-wrap">{lead.relationship_manager}</span>
-                </Fact>
-              ) : null}
-              {lead.address ? (
-                <Fact label="Address">
-                  <span className="whitespace-pre-wrap">{lead.address}</span>
-                </Fact>
-              ) : null}
-              <Fact label="Added">{formatDateTime(lead.created_at)}</Fact>
-              <Fact label="Last updated">{formatDateTime(lead.updated_at)}</Fact>
-              {lead.assigned_at ? <Fact label="Assigned">{formatDateTime(lead.assigned_at)}</Fact> : null}
-            </dl>
-          </Panel>
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </nav>
+          {showHistory ? (
+            <Panel title="History">
+              <p className="mb-4 text-sm text-muted-foreground">
+                Status changes, edits field by field, tags, notes, tasks, assignments and contact presses (including AI follow-up
+                drafts), newest first.
+              </p>
+              <LeadHistory items={history ?? []} />
+            </Panel>
+          ) : (
+            <>
+              <Panel title="Policy">
+                <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  <Fact label="Renewal date">
+                    <RenewalDate date={lead.renewal_date} closed={closed} />
+                  </Fact>
+                  <Fact label="Product">
+                    {lead.policy_product}
+                    {lead.sub_product_name ? <span className="text-muted-foreground"> · {lead.sub_product_name}</span> : null}
+                  </Fact>
+                  <Fact label="Assigned agent">
+                    {admin ? (
+                      <AssignAgentSelect
+                        leadId={lead.id}
+                        agentId={lead.assigned_agent_id}
+                        agents={team.filter((m) => m.is_active || m.id === lead.assigned_agent_id)}
+                      />
+                    ) : (
+                      <AgentName name={lead.agent_name} />
+                    )}
+                  </Fact>
+                  {lead.relationship_manager ? (
+                    <Fact label="RM (relationship manager)">
+                      <span className="whitespace-pre-wrap">{lead.relationship_manager}</span>
+                    </Fact>
+                  ) : null}
+                  {lead.address ? (
+                    <Fact label="Address">
+                      <span className="whitespace-pre-wrap">{lead.address}</span>
+                    </Fact>
+                  ) : null}
+                  <Fact label="Added">{formatDateTime(lead.created_at)}</Fact>
+                  <Fact label="Last updated">{formatDateTime(lead.updated_at)}</Fact>
+                  {lead.assigned_at ? <Fact label="Assigned">{formatDateTime(lead.assigned_at)}</Fact> : null}
+                </dl>
+              </Panel>
 
-          <Panel title="Points of contact" actions={null}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <PocCard
-                leadId={lead.id}
-                label="Primary POC"
-                name={lead.poc_name}
-                designation={lead.poc_designation}
-                phone={lead.poc_contact_number}
-                email={lead.poc_email_id}
-              />
-              <PocCard
-                leadId={lead.id}
-                label="Secondary POC"
-                name={lead.poc2_name}
-                designation={lead.poc2_designation}
-                phone={lead.poc2_contact_number}
-                email={lead.poc2_email_id}
-              />
-            </div>
-            <div className="mt-4">
-              <AddContactForm leadId={lead.id} />
-            </div>
-          </Panel>
+              <Panel title="Points of contact" actions={null}>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <PocCard
+                    leadId={lead.id}
+                    label="Primary POC"
+                    name={lead.poc_name}
+                    designation={lead.poc_designation}
+                    phone={lead.poc_contact_number}
+                    email={lead.poc_email_id}
+                  />
+                  <PocCard
+                    leadId={lead.id}
+                    label="Secondary POC"
+                    name={lead.poc2_name}
+                    designation={lead.poc2_designation}
+                    phone={lead.poc2_contact_number}
+                    email={lead.poc2_email_id}
+                  />
+                </div>
+                <div className="mt-4">
+                  <AddContactForm leadId={lead.id} />
+                </div>
+              </Panel>
 
-          <Panel title="AI follow-up">
-            <FollowUpWriter
-              leadId={lead.id}
-              clientName={lead.client_name}
-              product={lead.policy_product}
-              phone={lead.poc_contact_number || lead.poc2_contact_number}
-              email={lead.poc_email_id || lead.poc2_email_id}
-            />
-          </Panel>
+              <Panel title="AI follow-up">
+                <FollowUpWriter
+                  leadId={lead.id}
+                  clientName={lead.client_name}
+                  product={lead.policy_product}
+                  phone={lead.poc_contact_number || lead.poc2_contact_number}
+                  email={lead.poc_email_id || lead.poc2_email_id}
+                />
+              </Panel>
 
-          <Panel title="Lead notes">
-            {lead.notes ? (
-              <p className="text-sm whitespace-pre-wrap">{lead.notes}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">No background notes. Add them with Edit.</p>
-            )}
-          </Panel>
-
+              <Panel title="Lead notes">
+                {lead.notes ? (
+                  <p className="text-sm whitespace-pre-wrap">{lead.notes}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No background notes. Add them with Edit.</p>
+                )}
+              </Panel>
+            </>
+          )}
         </div>
 
         <div className="min-w-0 space-y-6">
@@ -397,10 +473,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                 {notes.map((note) => (
                   <li
                     key={note.id}
-                    className={cn(
-                      "rounded-lg border p-3 text-sm",
-                      unreadIds.has(note.id) && "border-primary/40 bg-accent/50",
-                    )}
+                    className={cn("rounded-lg border p-3 text-sm", unreadIds.has(note.id) && "border-primary/40 bg-accent/50")}
                   >
                     <p className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span>
@@ -451,7 +524,11 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             <TaskForm
               today={today}
               currentUserId={profile.id}
-              assignees={admin ? team.filter((m) => m.is_active).map(({ id: memberId, full_name }) => ({ id: memberId, full_name })) : undefined}
+              assignees={
+                admin
+                  ? team.filter((m) => m.is_active).map(({ id: memberId, full_name }) => ({ id: memberId, full_name }))
+                  : undefined
+              }
               fixedLead={{ id: lead.id, client_name: lead.client_name }}
               defaultKind="meeting"
               compact
@@ -494,8 +571,8 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                 ))}
                 {pendingReminders.length > 0 ? (
                   <li className="pt-1 text-xs text-muted-foreground">
-                    {pendingReminders.length} countdown reminder{pendingReminders.length === 1 ? "" : "s"} scheduled,
-                    next {pendingReminders[0].milestone} on {formatDateTime(pendingReminders[0].event_timestamp)}.
+                    {pendingReminders.length} countdown reminder{pendingReminders.length === 1 ? "" : "s"} scheduled, next{" "}
+                    {pendingReminders[0].milestone} on {formatDateTime(pendingReminders[0].event_timestamp)}.
                   </li>
                 ) : null}
               </ul>

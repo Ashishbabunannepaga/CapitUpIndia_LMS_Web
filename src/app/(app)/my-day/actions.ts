@@ -131,3 +131,16 @@ export async function deleteTask(eventId: number): Promise<TaskResult> {
   revalidatePath("/", "layout");
   return { ok: true };
 }
+
+/** Pushes an open task or meeting 1, 3 or 7 days out without ticking it off. */
+export async function snoozeTask(eventId: number, days: number): Promise<TaskResult> {
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  try {
+    await events.snoozeTask(session.ctx, session.actor, eventId, Number(days));
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
+}

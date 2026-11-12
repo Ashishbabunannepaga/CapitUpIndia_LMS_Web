@@ -14,7 +14,9 @@ import { attachCardToLead } from "@/server/data/cards";
 import { createTask } from "@/server/data/events";
 import { findSimilarLeads, type SimilarLead } from "@/server/data/duplicates";
 import { isOwnCardPath } from "@/lib/visiting-cards";
+import { isAiConfigured } from "@/lib/ai/client";
 import * as leadData from "@/server/data/leads";
+import { listTeam } from "@/server/data/users";
 
 export type { SimilarLead };
 
@@ -289,4 +291,41 @@ export async function attachVisitingCard(leadId: number, formData: FormData): Pr
 
 export async function markNotesRead(leadId: number | null): Promise<void> {
   await run(({ ctx, actor }) => leadData.markLeadNotesRead(ctx, actor, leadId));
+}
+
+/** Bulk reassign from the leads table (admins). */
+export async function reassignLeads(leadIds: number[], agentId: string | null): Promise<ActionResult> {
+  let moved = 0;
+  const result = await run(async ({ ctx, actor }) => {
+    moved = await leadData.reassignLeads(ctx, actor, Array.isArray(leadIds) ? leadIds.map(Number) : [], agentId || null);
+  });
+  if (!result.ok) return result;
+  return { ok: true, message: moved === 0 ? "Those leads already belong there." : `Reassigned ${moved} lead${moved === 1 ? "" : "s"}.` };
+}
+
+/** Replaces a lead's tags ("Hot", "VIP", ...). */
+export async function setLeadTags(leadId: number, tags: string[]): Promise<ActionResult> {
+  return run(({ ctx, actor }) => leadData.setLeadTags(ctx, actor, leadId, Array.isArray(tags) ? tags : []));
+}
+
+export type QuickLeadSetup = {
+  agents: { id: string; full_name: string }[];
+  currentUserId: string;
+  isAdmin: boolean;
+  aiConfigured: boolean;
+};
+
+/** What the floating "+" quick-capture window needs, loaded only when it opens. */
+export async function quickLeadSetup(): Promise<QuickLeadSetup | null> {
+  const session = await getSession();
+  if (!session) return null;
+  const { ctx, actor } = session;
+  const admin = isAdmin(actor);
+  const team = admin ? await listTeam(ctx, actor) : [];
+  return {
+    agents: team.filter((m) => m.is_active).map(({ id, full_name }) => ({ id, full_name })),
+    currentUserId: actor.id,
+    isAdmin: admin,
+    aiConfigured: isAiConfigured(),
+  };
 }

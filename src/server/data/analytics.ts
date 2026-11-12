@@ -241,7 +241,13 @@ export async function agentWorkload(ctx: DataContext, actor: Actor, now: Date = 
     order by p.full_name, p.id`);
   return rows
     .filter((r) => r.role === "AGENT" || r.open_leads + r.overdue_followups + r.renewals_week > 0)
-    .map(({ role: _role, ...r }) => r);
+    .map((r) => ({
+      agent_id: r.agent_id,
+      agent_name: r.agent_name,
+      open_leads: r.open_leads,
+      overdue_followups: r.overdue_followups,
+      renewals_week: r.renewals_week,
+    }));
 }
 
 export type RenewalWindow = "0-30" | "31-60" | "61-90";

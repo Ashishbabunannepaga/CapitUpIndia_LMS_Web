@@ -1,28 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { PageHeader } from "@/components/app-shell/page-header";
-import { IntakeWorkspace } from "@/components/intake/intake-workspace";
-import { isAiConfigured } from "@/lib/ai/client";
-import { isAdmin, requireProfile } from "@/lib/auth";
-import { getTeam } from "@/lib/leads";
-
-export const metadata: Metadata = { title: "AI Intake" };
-
-export default async function IntakePage() {
-  const profile = await requireProfile();
-  const admin = isAdmin(profile);
-  const agents = admin
-    ? (await getTeam()).filter((member) => member.is_active).map(({ id, full_name }) => ({ id, full_name }))
-    : [];
-
-  return (
-    <div className="mx-auto max-w-6xl">
-      <PageHeader
-        eyebrow="Workspace"
-        title="AI Intake"
-        description="Turn messy notes, dictation or a visiting card into a lead. You review every field before it is saved."
-      />
-      <IntakeWorkspace agents={agents} currentUserId={profile.id} isAdmin={admin} aiConfigured={isAiConfigured()} />
-    </div>
-  );
+// AI Intake and New lead are one page now; old links and bookmarks land there.
+export default function IntakePage() {
+  redirect("/leads/new");
 }

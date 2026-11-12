@@ -37,6 +37,8 @@ type Props = {
   prefill?: Partial<Record<string, string>>;
   /** A scanned visiting card to attach to the new lead. */
   card?: { path: string; previewUrl: string };
+  /** Replaces the Cancel link (the quick-capture window closes instead). */
+  onCancel?: () => void;
 };
 
 const EMPTY: Record<string, string> = {
@@ -200,7 +202,7 @@ function DuplicatePanel({
   );
 }
 
-export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, prefill, card }: Props) {
+export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, prefill, card, onCancel }: Props) {
   // One action for the form: "Add my contacts to this lead" buttons carry
   // merge_into and go to the merge action; everything else saves.
   // A call that fails on the way (network, platform limit, new deploy) keeps
@@ -525,9 +527,15 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
       ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button asChild variant="ghost">
-          <Link href={lead ? `/leads/${lead.id}` : "/leads"}>Cancel</Link>
-        </Button>
+        {onCancel ? (
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Button asChild variant="ghost">
+            <Link href={lead ? `/leads/${lead.id}` : "/leads"}>Cancel</Link>
+          </Button>
+        )}
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="animate-spin" /> : null}
           {mode === "edit" ? "Save changes" : "Save lead"}

@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   HeartPulse,
+  History,
   Activity,
   BarChart3,
   CalendarClock,
@@ -54,10 +55,10 @@ export const NAV_SECTIONS: NavSection[] = [
         description: "Renewal due dates, meetings and follow-up tasks by day and week.",
       },
       {
-        title: "AI Intake",
-        href: "/intake",
+        title: "Add lead",
+        href: "/leads/new",
         icon: ScanText,
-        description: "Turn notes, speech or a visiting card photo into a structured lead.",
+        description: "AI intake from notes, speech or a visiting card photo, or add the lead manually.",
       },
       {
         title: "Office portal",
@@ -94,6 +95,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/activity",
         icon: Activity,
         description: "Live leads tracker, every agent action, and the monthly Excel report.",
+      },
+      {
+        title: "Audit log",
+        href: "/admin/audit",
+        icon: History,
+        description: "Every change to every lead: who, which field, old and new value, when.",
       },
       {
         title: "Analytics",

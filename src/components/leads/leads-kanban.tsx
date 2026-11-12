@@ -7,11 +7,12 @@ import { GripVertical, User } from "lucide-react";
 import { setLeadStatus } from "@/app/(app)/leads/actions";
 import type { LeadStatus } from "@/lib/database.types";
 import { CLOSED_STATUSES, LEAD_STATUSES, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
+import type { LeadTag } from "@/lib/database.types";
 import type { LeadWithAgent } from "@/lib/leads";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 import { DuplicateBadge, RenewalDate } from "./lead-badges";
-import { AgentName } from "./lead-views";
+import { AgentName, LeadFlags } from "./lead-views";
 
 type Move = { id: number; status: LeadStatus };
 
@@ -24,7 +25,7 @@ export function LeadsKanban({
   totals,
   showAgent,
 }: {
-  leads: LeadWithAgent[];
+  leads: (LeadWithAgent & { tags?: LeadTag[]; is_stale?: boolean; last_activity_at?: string })[];
   totals: Record<LeadStatus, number> | null;
   showAgent: boolean;
 }) {
@@ -136,6 +137,7 @@ export function LeadsKanban({
                           ) : null}
                           <div className="flex flex-wrap items-center gap-1.5">
                             {lead.is_duplicate ? <DuplicateBadge label={lead.duplicate_label} /> : null}
+                            <LeadFlags lead={lead} />
                             {showAgent ? (
                               <span className="text-xs text-muted-foreground">
                                 <AgentName name={lead.agent_name} />

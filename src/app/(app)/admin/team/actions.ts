@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { friendlyError } from "@/lib/action-errors";
 import { getSession, type Session } from "@/lib/auth";
+import { setStaleDays } from "@/server/data/stale";
 import { createUser, resetPassword, setActive, setRole } from "@/server/data/users";
 
 export type TeamResult = { ok: true; message?: string } | { ok: false; error: string };
@@ -46,4 +47,9 @@ export async function resetMemberPassword(userId: string, formData: FormData): P
     ({ ctx, actor }) => resetPassword(ctx, actor, userId, formData.get("password") ?? ""),
     "Password changed. They have been signed out everywhere and will choose their own at next sign-in.",
   );
+}
+
+/** The stale-lead threshold in days (Team page). */
+export async function changeStaleDays(days: number): Promise<TeamResult> {
+  return run(({ ctx, actor }) => setStaleDays(ctx, actor, Number(days)), `Leads with no activity for ${days} days are now flagged stale.`);
 }

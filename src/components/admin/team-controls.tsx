@@ -7,6 +7,7 @@ import {
   addTeamMember,
   changeMemberActive,
   changeMemberRole,
+  changeStaleDays,
   resetMemberPassword,
   type TeamResult,
 } from "@/app/(app)/admin/team/actions";
@@ -142,5 +143,52 @@ export function MemberControls({
       ) : null}
       <Feedback result={result} />
     </div>
+  );
+}
+
+/** The stale-lead threshold: open leads with no activity for this many days get a Stale badge. */
+export function StaleDaysForm({ days }: { days: number }) {
+  const [value, setValue] = useState(String(days));
+  const [pending, startTransition] = useTransition();
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setResult(null);
+        startTransition(async () => {
+          const res = await safeAction(() => changeStaleDays(Number(value)));
+          setResult(res.ok ? { ok: true, text: res.message ?? "Saved." } : { ok: false, text: res.error });
+        });
+      }}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="stale-days">Flag a lead as stale after</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="stale-days"
+            type="number"
+            min={1}
+            max={365}
+            step={1}
+            required
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            className="w-24"
+          />
+          <span className="text-sm text-muted-foreground">days without a note, status change, task or contact</span>
+        </div>
+      </div>
+      <Button type="submit" size="sm" disabled={pending || value === String(days)}>
+        {pending ? <Loader2 className="animate-spin" /> : null}
+        Save
+      </Button>
+      {result ? (
+        <p role="status" className={result.ok ? "w-full text-xs text-success" : "w-full text-xs text-destructive"}>
+          {result.text}
+        </p>
+      ) : null}
+    </form>
   );
 }

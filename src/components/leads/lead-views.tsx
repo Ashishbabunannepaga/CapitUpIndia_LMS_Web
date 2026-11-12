@@ -2,11 +2,28 @@ import { LeadLink } from "@/components/leads/lead-link";
 import { Building2, Mail, Phone, User, UserX } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import type { LeadTag } from "@/lib/database.types";
 import type { LeadWithAgent } from "@/lib/leads";
 import { CLOSED_STATUSES } from "@/lib/domain";
 import { cn } from "@/lib/utils";
-import { DuplicateBadge, RenewalDate } from "./lead-badges";
+import { RowCheckbox, SelectAllCheckbox } from "./bulk-actions";
+import { WhatsAppIconLink } from "./lead-extras";
+import { DuplicateBadge, RenewalDate, StaleBadge, TagBadge } from "./lead-badges";
 import { StatusSelect } from "./status-select";
+
+/** A lead as the list screens get it; tags and staleness come from listLeads. */
+type ListLead = LeadWithAgent & { tags?: LeadTag[]; is_stale?: boolean; last_activity_at?: string };
+
+/** Stale and tag badges, shown under the company name. */
+export function LeadFlags({ lead }: { lead: ListLead }) {
+  if (!lead.is_stale && !lead.tags?.length) return null;
+  return (
+    <>
+      {lead.is_stale ? <StaleBadge since={lead.last_activity_at} /> : null}
+      {lead.tags?.map((tag) => <TagBadge key={tag} tag={tag} />)}
+    </>
+  );
+}
 
 export function AgentName({ name }: { name: string | null }) {
   return name ? (
@@ -33,7 +50,10 @@ function PocSummary({ lead }: { lead: LeadWithAgent }) {
         {lead.poc2_name ? <span className="text-xs text-muted-foreground"> +1</span> : null}
       </p>
       {lead.poc_contact_number ? (
-        <p className="truncate text-xs text-muted-foreground">{lead.poc_contact_number}</p>
+        <p className="flex items-center text-xs text-muted-foreground">
+          <span className="truncate">{lead.poc_contact_number}</span>
+          <WhatsAppIconLink leadId={lead.id} phone={lead.poc_contact_number} />
+        </p>
       ) : lead.poc_email_id ? (
         <p className="truncate text-xs text-muted-foreground">{lead.poc_email_id}</p>
       ) : null}
@@ -53,13 +73,27 @@ export function EmptyLeads({ filtered }: { filtered: boolean }) {
   );
 }
 
-export function LeadsTable({ leads, showAgent }: { leads: LeadWithAgent[]; showAgent: boolean }) {
+export function LeadsTable({
+  leads,
+  showAgent,
+  selectable = false,
+}: {
+  leads: ListLead[];
+  showAgent: boolean;
+  /** Admins: checkboxes for bulk reassign and export (needs a LeadSelectionProvider around it). */
+  selectable?: boolean;
+}) {
   return (
     <div className="overflow-hidden rounded-2xl border bg-card shadow-card">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
             <tr>
+              {selectable ? (
+                <th className="w-10 py-3 pl-4">
+                  <SelectAllCheckbox />
+                </th>
+              ) : null}
               <th className="px-4 py-3">Client / company</th>
               <th className="px-4 py-3">Product</th>
               <th className="px-4 py-3">Primary POC</th>
@@ -75,6 +109,11 @@ export function LeadsTable({ leads, showAgent }: { leads: LeadWithAgent[]; showA
                 key={lead.id}
                 className={cn("align-top transition-colors hover:bg-muted/40", lead.is_duplicate && "bg-red-50/40")}
               >
+                {selectable ? (
+                  <td className="py-3 pl-4">
+                    <RowCheckbox id={lead.id} label={lead.client_name} />
+                  </td>
+                ) : null}
                 <td className="max-w-72 px-4 py-3">
                   <LeadLink href={`/leads/${lead.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
                     {lead.client_name}
@@ -84,6 +123,7 @@ export function LeadsTable({ leads, showAgent }: { leads: LeadWithAgent[]; showA
                     <span aria-hidden>·</span>
                     <span>{lead.business_type}</span>
                     {lead.is_duplicate ? <DuplicateBadge label={lead.duplicate_label} /> : null}
+                    <LeadFlags lead={lead} />
                   </div>
                 </td>
                 <td className="px-4 py-3">
@@ -118,7 +158,7 @@ export function LeadsTable({ leads, showAgent }: { leads: LeadWithAgent[]; showA
   );
 }
 
-export function LeadCards({ leads, showAgent }: { leads: LeadWithAgent[]; showAgent: boolean }) {
+export function LeadCards({ leads, showAgent }: { leads: ListLead[]; showAgent: boolean }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {leads.map((lead) => (
@@ -145,6 +185,7 @@ export function LeadCards({ leads, showAgent }: { leads: LeadWithAgent[]; showAg
             <Badge variant="secondary">{lead.type}</Badge>
             <Badge variant="secondary">{lead.business_type}</Badge>
             {lead.is_duplicate ? <DuplicateBadge label={lead.duplicate_label} /> : null}
+            <LeadFlags lead={lead} />
           </div>
           <dl className="space-y-1.5 text-sm">
             <div className="flex items-center gap-2">
@@ -165,7 +206,10 @@ export function LeadCards({ leads, showAgent }: { leads: LeadWithAgent[]; showAg
             {lead.poc_contact_number ? (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Phone className="size-3.5 shrink-0" />
-                <dd className="truncate">{lead.poc_contact_number}</dd>
+                <dd className="flex min-w-0 items-center">
+                  <span className="truncate">{lead.poc_contact_number}</span>
+                  <WhatsAppIconLink leadId={lead.id} phone={lead.poc_contact_number} />
+                </dd>
               </div>
             ) : null}
             {lead.poc_email_id ? (

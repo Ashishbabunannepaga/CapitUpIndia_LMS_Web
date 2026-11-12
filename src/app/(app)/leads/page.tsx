@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell/page-header";
 import { LeadFiltersBar } from "@/components/leads/lead-filters-bar";
+import { LeadSelectionProvider } from "@/components/leads/bulk-actions";
 import { EmptyLeads, LeadCards, LeadsTable } from "@/components/leads/lead-views";
 import { LeadsKanban } from "@/components/leads/leads-kanban";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,15 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
   const lastShown = firstShown + leads.length - 1;
   const agents = team.filter((member) => member.is_active);
   const filtered = Boolean(
-    effective.q || effective.status || effective.product || effective.type || effective.agent || effective.renewal || effective.duplicates,
+    effective.q ||
+      effective.status ||
+      effective.product ||
+      effective.type ||
+      effective.agent ||
+      effective.renewal ||
+      effective.duplicates ||
+      effective.stale ||
+      effective.tag,
   );
 
   return (
@@ -52,7 +61,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
           <Button asChild>
             <Link href="/leads/new">
               <Plus />
-              New lead
+              Add lead
             </Link>
           </Button>
         }
@@ -71,8 +80,12 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
         <LeadsKanban leads={leads} totals={columnTotals} showAgent={admin} />
       ) : filters.view === "cards" ? (
         <LeadCards leads={leads} showAgent={admin} />
+      ) : admin ? (
+        <LeadSelectionProvider ids={leads.map((lead) => lead.id)} agents={agents.map(({ id, full_name }) => ({ id, full_name }))}>
+          <LeadsTable leads={leads} showAgent selectable />
+        </LeadSelectionProvider>
       ) : (
-        <LeadsTable leads={leads} showAgent={admin} />
+        <LeadsTable leads={leads} showAgent={false} />
       )}
 
       {!kanban && (filters.page > 1 || truncated) ? (

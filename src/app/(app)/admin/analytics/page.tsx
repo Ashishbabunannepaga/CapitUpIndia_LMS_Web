@@ -4,19 +4,23 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import {
   BarChart3,
   CalendarRange,
+  Download,
   FilePlus2,
+  Gauge,
   PieChart,
   Shapes,
   Users,
   Building2,
 } from "lucide-react";
 
-import { BarList, Donut, MonthBars, Panel, StatCard } from "@/components/analytics/charts";
-import { requireAdmin } from "@/lib/auth";
+import { BarList, Donut, GroupedBars, MonthBars, Panel, StatCard } from "@/components/analytics/charts";
+import { Button } from "@/components/ui/button";
+import { requireSession } from "@/lib/auth";
 import { formatCount, getPipelineAnalytics } from "@/lib/analytics";
 import type { LeadStatus, PolicyProduct } from "@/lib/database.types";
 import { BUSINESS_TYPES, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS, STATUS_COLORS } from "@/lib/domain";
 import { leadsHref } from "@/lib/lead-filters";
+import { agentWorkload } from "@/server/data/analytics";
 
 export const metadata: Metadata = { title: "Analytics" };
 
@@ -33,8 +37,8 @@ function percent(part: number, whole: number): string {
 }
 
 export default async function AnalyticsPage() {
-  await requireAdmin();
-  const data = await getPipelineAnalytics();
+  const { ctx, actor } = await requireSession();
+  const [data, workload] = await Promise.all([getPipelineAnalytics(), agentWorkload(ctx, actor)]);
 
   const status = (s: LeadStatus) => data.by_status[s] ?? 0;
   const won = status("Closed Won");
@@ -48,6 +52,15 @@ export default async function AnalyticsPage() {
         eyebrow="Admin"
         title="Analytics"
         description="Pipeline, renewals and agent performance, computed live from the leads in the CRM."
+        actions={
+          <Button asChild variant="outline">
+            {/* A file download, not a page: a plain link so the router does not try to render it. */}
+            <a href="/admin/analytics/renewal-report" download>
+              <Download />
+              Download renewal report
+            </a>
+          </Button>
+        }
       />
 
       <div className="stagger mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -136,6 +149,27 @@ export default async function AnalyticsPage() {
           />
         </Panel>
       </div>
+
+      <Panel
+        title="Agent workload"
+        description="Open leads, overdue follow-ups and renewals due in the next 7 days, per person"
+        icon={Gauge}
+        className="mt-6"
+      >
+        <GroupedBars
+          emptyText="No active agents yet."
+          series={[
+            { key: "open", label: "Open leads", colorClass: "bg-brand-500", swatch: "#1aab93" },
+            { key: "overdue", label: "Overdue follow-ups", colorClass: "bg-urgent", swatch: "#dc2626" },
+            { key: "renewals", label: "Renewals this week", colorClass: "bg-gold-500", swatch: "#c9963f" },
+          ]}
+          data={workload.map((w) => ({
+            label: w.agent_name,
+            href: leadsHref({ agent: w.agent_id }),
+            values: { open: w.open_leads, overdue: w.overdue_followups, renewals: w.renewals_week },
+          }))}
+        />
+      </Panel>
 
       <Panel title="Agent performance" icon={Users} className="mt-6">
         {data.agents.length === 0 ? (
