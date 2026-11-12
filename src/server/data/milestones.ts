@@ -15,11 +15,14 @@ type LeadForMilestones = {
   assigned_agent_id: string | null;
 };
 
+/** "Acme (Health)", or just "Acme" while the product is Not Specified (it says nothing useful in a title). */
+export function clientWithProduct(clientName: string, product: string): string {
+  return product && product !== "Not Specified" ? `${clientName} (${product})` : clientName;
+}
+
 export function renewalEventTitle(milestone: string, clientName: string, product: string): string {
-  // An unknown product says nothing useful in a title.
-  const suffix = product && product !== "Not Specified" ? ` (${product})` : "";
-  const title =
-    milestone === "DUE" ? `Renewal due: ${clientName}${suffix}` : `${milestone} renewal reminder: ${clientName}${suffix}`;
+  const who = clientWithProduct(clientName, product);
+  const title = milestone === "DUE" ? `Renewal due: ${who}` : `${milestone} renewal reminder: ${who}`;
   return title.slice(0, 300);
 }
 

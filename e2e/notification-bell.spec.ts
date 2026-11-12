@@ -46,7 +46,7 @@ async function signIn(page: Page) {
 
 /** The panel's corners are the panel itself, not something drawn over it or cut away. */
 async function expectFullyVisible(page: Page) {
-  const panel = page.getByText("Renewal reminders", { exact: true }).locator("xpath=../..");
+  const panel = page.getByText("Notifications", { exact: true }).locator("xpath=../..");
   await expect(panel).toBeVisible();
   const box = await panel.boundingBox();
   expect(box).not.toBeNull();

@@ -19,7 +19,7 @@ import { fromCellMatrix, parsePastedSheet, rowsAsText, heuristicMapRow, type Par
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { nextRoundRobinAgents } from "@/server/data/analytics";
 import { findSimilarLeads } from "@/server/data/duplicates";
-import { addLeadContact, addLeadNote, createLead, getLead, updateLead } from "@/server/data/leads";
+import { addLeadContact, addLeadNote, createLead, getLead, notifyBulkAssignment, updateLead } from "@/server/data/leads";
 import { listActiveAgents } from "@/server/data/users";
 
 // Bulk ingestion for admins: paste TSV/CSV or upload a sheet, let the AI model map
@@ -327,6 +327,7 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
   };
 
   let ownerIndex = 0;
+  const assignedCounts = new Map<string, number>();
   for (const [key, groupRows] of groups) {
     const [first] = groupRows;
     const leadId = existing.get(key);
@@ -354,12 +355,14 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
           notes: first.notes,
           status: status as LeadStatus,
           assigned_agent_id: owner,
+          notifyOwner: false,
         });
       } catch (error) {
         fail(first.client_name, friendlyError(error));
         continue;
       }
       created++;
+      if (owner) assignedCounts.set(owner, (assignedCounts.get(owner) ?? 0) + 1);
       await addExtraContacts(session, id, groupRows.slice(1), first);
       continue;
     }
@@ -398,6 +401,15 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
       merged++;
     } catch (error) {
       fail(first.client_name, friendlyError(error));
+    }
+  }
+
+  // One message per agent, not one per lead.
+  for (const [agent, n] of assignedCounts) {
+    try {
+      await notifyBulkAssignment(ctx, profile, agent, n, "a bulk import");
+    } catch {
+      // The leads are in; a missed heads-up is not worth failing the import.
     }
   }
 

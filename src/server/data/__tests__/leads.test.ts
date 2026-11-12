@@ -619,16 +619,17 @@ describe("renewal reminders", () => {
     await deliverDueReminders(w.ctx, later);
 
     const amitBell = await recentNotifications(w.ctx, w.amit);
-    const remind = amitBell.items.filter((n) => n.lead_id === assigned);
+    // Asha assigning the lead also told Amit; this test is about the renewal reminders.
+    const remind = amitBell.items.filter((n) => n.lead_id === assigned && n.kind === "renewal_reminder");
     expect(remind).toHaveLength(1);
     expect(remind[0].title).toBe("T-5 Minutes: Remind Co renewal (Health)");
     expect(remind[0].body).toContain("Contact: Sunil (9845011111)");
-    expect(amitBell.items.some((n) => n.lead_id === closed)).toBe(false);
+    expect(amitBell.items.some((n) => n.lead_id === closed && n.kind === "renewal_reminder")).toBe(false);
     // An unknown product is left out of the title.
-    expect(amitBell.items.find((n) => n.lead_id === won)?.title).toBe("T-5 Minutes: Won Renewal Co renewal");
+    expect(amitBell.items.find((n) => n.lead_id === won && n.kind === "renewal_reminder")?.title).toBe("T-5 Minutes: Won Renewal Co renewal");
 
     const adminBell = await recentNotifications(w.ctx, w.admin);
-    const orphan = adminBell.items.filter((n) => n.lead_id === unassigned);
+    const orphan = adminBell.items.filter((n) => n.lead_id === unassigned && n.kind === "renewal_reminder");
     expect(orphan).toHaveLength(1);
     expect(orphan[0].body).toContain("This lead is unassigned.");
     expect((await recentNotifications(w.ctx, w.neha)).items.some((n) => n.lead_id === assigned)).toBe(false);

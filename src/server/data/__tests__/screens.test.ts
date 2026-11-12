@@ -77,7 +77,9 @@ describe("My Day", () => {
 
   it("the app frame's badge, bell and change stamp come from one batch", async () => {
     const amit = await shellSummary(w.ctx, w.amit);
-    expect(amit).toEqual({ stamp: await changeStamp(w.ctx, w.amit), unreadNotes: 1, notifications: [], unreadNotifications: 0 });
+    expect(amit).toMatchObject({ stamp: await changeStamp(w.ctx, w.amit), unreadNotes: 1, unreadNotifications: 1 });
+    // Asha gave Amit "Day Shared": that is in his bell.
+    expect(amit.notifications.map((n) => [n.kind, n.title])).toEqual([["other", "New lead assigned: Day Shared"]]);
     expect(amit.stamp).toBeGreaterThan(0);
     // Unread notes are scoped like the leads: Neha has none on Amit's lead.
     expect((await shellSummary(w.ctx, w.neha)).unreadNotes).toBe(0);

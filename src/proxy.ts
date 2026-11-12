@@ -6,8 +6,9 @@ import { proxiedClientIp } from "@/lib/client-ip";
 
 // /api/auth is the sign-in API (src/server/auth.ts) and /setup the first-run
 // page (src/server/data/setup.ts); both do their own checks. /api/health is
-// the uptime check (src/app/api/health/route.ts) and shows no data.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/setup", "/api/health"];
+// the uptime check (src/app/api/health/route.ts) and shows no data. The web
+// app manifest and the push service worker (public/sw.js) hold no data.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/auth", "/setup", "/api/health", "/manifest.webmanifest", "/sw.js"];
 
 /**
  * Sends visitors without a session cookie to /login. This is a convenience
