@@ -38,6 +38,7 @@ export default async function CalendarPage() {
     assigneeId: event.assigned_agent_id,
     isRenewal: event.is_system_generated,
     categories: event.categories,
+    productLabel: event.product_label,
     isCompleted: event.is_completed,
     isSystem: event.is_system_generated,
     agentName: event.assigned_agent_id ? (names.get(event.assigned_agent_id) ?? null) : null,

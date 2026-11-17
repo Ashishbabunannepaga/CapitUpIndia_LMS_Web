@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Columns3, LayoutGrid, Loader2, Search, Snowflake, Table2, X } from "lucide-react";
+import { AlertTriangle, Columns3, Download, LayoutGrid, Loader2, Search, Snowflake, Table2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { LEAD_STATUSES, LEAD_TAGS, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/dom
 import {
   LEAD_SORTS,
   leadsHref,
+  OUTCOME_FILTERS,
   RENEWAL_WINDOWS,
   type LeadFilters,
   type LeadView,
@@ -28,10 +29,13 @@ export function LeadFiltersBar({
   filters,
   agents,
   showAgentFilter,
+  canExport = false,
 }: {
   filters: LeadFilters;
   agents: { id: string; full_name: string }[];
   showAgentFilter: boolean;
+  /** Admins: download every lead matching these filters as Excel. */
+  canExport?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -65,7 +69,14 @@ export function LeadFiltersBar({
     filters.renewal ||
     filters.duplicates ||
     filters.stale ||
-    filters.tag;
+    filters.tag ||
+    filters.outcome ||
+    filters.startFrom ||
+    filters.startTo;
+  // The export takes the same filters as the list (view, sort and page aside).
+  const exportHref = `/leads/export?${new URLSearchParams(
+    leadsHref({ ...filters, view: "table", page: 1 }).split("?")[1] ?? "",
+  ).toString()}`;
 
   return (
     <div className="mb-4 space-y-3">
@@ -196,6 +207,44 @@ export function LeadFiltersBar({
         </NativeSelect>
         <NativeSelect
           size="sm"
+          aria-label="Closed"
+          className="lg:w-44"
+          value={filters.outcome ?? ""}
+          onChange={(e) => apply({ outcome: (e.target.value || null) as LeadFilters["outcome"] })}
+        >
+          <option value="">Open &amp; closed</option>
+          {Object.entries(OUTCOME_FILTERS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </NativeSelect>
+        <div
+          role="group"
+          aria-label="Policy start date"
+          className="col-span-2 flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs text-muted-foreground sm:col-span-3 lg:col-span-1"
+        >
+          <span className="shrink-0">Policy start</span>
+          <input
+            type="date"
+            aria-label="Policy start from"
+            value={filters.startFrom ?? ""}
+            max={filters.startTo ?? undefined}
+            onChange={(e) => apply({ startFrom: e.target.value || null })}
+            className="h-6 min-w-0 flex-1 rounded bg-transparent text-foreground outline-none"
+          />
+          <span aria-hidden="true">to</span>
+          <input
+            type="date"
+            aria-label="Policy start to"
+            value={filters.startTo ?? ""}
+            min={filters.startFrom ?? undefined}
+            onChange={(e) => apply({ startTo: e.target.value || null })}
+            className="h-6 min-w-0 flex-1 rounded bg-transparent text-foreground outline-none"
+          />
+        </div>
+        <NativeSelect
+          size="sm"
           aria-label="Sort"
           className="lg:w-48"
           value={filters.sort}
@@ -229,6 +278,15 @@ export function LeadFiltersBar({
           <Snowflake />
           Stale only
         </Button>
+        {canExport ? (
+          <Button asChild size="sm" variant="outline" className="bg-card">
+            {/* A file download, not a page: a plain link so the router does not try to render it. */}
+            <a href={exportHref} download title="Every lead matching these filters, as an Excel file">
+              <Download />
+              Export
+            </a>
+          </Button>
+        ) : null}
         {active ? (
           <Button
             type="button"

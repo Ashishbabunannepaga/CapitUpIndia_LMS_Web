@@ -58,7 +58,8 @@ type AgentRow = {
 
 function agentSummaryRow(row: AgentRow): Cell[] {
   const status = (s: string) => row.leads.filter((l) => l.status === s).length;
-  const won = status("Closed Won");
+  // Renewals count as wins: the client stayed with CapitUp.
+  const won = status("Closed Won") + status("Renewed");
   const lost = status("Closed Lost");
   const kind = (k: ActivityItem["kind"]) => row.activity.filter((a) => a.kind === k).length;
   const channel = (c: string) => row.activity.filter((a) => a.kind === "contact" && a.detail.startsWith(c)).length;
@@ -250,8 +251,8 @@ export function monthlyReportSheets(report: MonthlyReport): Sheet[] {
       ["Agent summary", "Leads owned and statuses are as of the download. Everything marked (month) counts that person's own actions in the month."],
       ["Leads", "Every lead in the LMS. Notes and tasks cover the lead's whole history; the (month) columns and the activity column cover only this month."],
       ["Activity log", "Every action in the month, oldest first: leads created, status changes, reassignments, edits, visiting cards, notes, tasks, calls, WhatsApp and emails."],
-      ["Win rate", "Closed Won ÷ (Closed Won + Closed Lost)."],
-      ["Conversion rate", "Closed Won ÷ all leads the agent owns."],
+      ["Win rate", "(Closed Won + Renewed) ÷ (Closed Won + Renewed + Closed Lost)."],
+      ["Conversion rate", "(Closed Won + Renewed) ÷ all leads the agent owns."],
     ],
     widths: [22, 110],
   };

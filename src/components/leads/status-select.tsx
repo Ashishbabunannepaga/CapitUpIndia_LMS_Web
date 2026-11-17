@@ -1,40 +1,70 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { Select } from "radix-ui";
 
 import { setLeadStatus } from "@/app/(app)/leads/actions";
 import type { LeadStatus } from "@/lib/database.types";
+import { todayInBusinessTz } from "@/lib/dates";
 import { LEAD_STATUSES, STATUS_STYLES } from "@/lib/domain";
+import { rolloverForStatusChange } from "@/lib/renewal-rollover";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
-/** Inline status changer used in the table, cards and lead header. */
+import { VerifyRenewalDialog } from "./lead-closing";
+
+/**
+ * Inline status changer used in the table, cards and lead header. Closing a
+ * lead whose renewal is near or past first asks for next year's renewal date.
+ */
 export function StatusSelect({
   leadId,
   status,
+  renewalDate = null,
   className,
 }: {
   leadId: number;
   status: LeadStatus;
+  /** The lead's renewal date, to suggest next year's when it is closed. */
+  renewalDate?: string | null;
   className?: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(status);
+  const [verify, setVerify] = useState<{ status: LeadStatus; suggested: string } | null>(null);
 
-  function changeStatus(value: string) {
-    if (!LEAD_STATUSES.includes(value as LeadStatus) || value === optimistic) return;
-    const next = value as LeadStatus;
-
+  function save(next: LeadStatus, nextRenewalDate?: string) {
     startTransition(async () => {
       setOptimistic(next);
-      const result = await safeAction(() => setLeadStatus(leadId, next));
+      const result = await safeAction(() => setLeadStatus(leadId, next, nextRenewalDate));
       if (!result.ok) window.alert(result.error);
     });
   }
 
+  function changeStatus(value: string) {
+    if (!LEAD_STATUSES.includes(value as LeadStatus) || value === optimistic) return;
+    const next = value as LeadStatus;
+    const suggested = rolloverForStatusChange({ status, renewal_date: renewalDate }, next, todayInBusinessTz());
+    if (suggested) setVerify({ status: next, suggested });
+    else save(next);
+  }
+
   return (
+    <>
+    {verify ? (
+      <VerifyRenewalDialog
+        open
+        status={verify.status}
+        currentDate={renewalDate}
+        suggestedDate={verify.suggested}
+        onCancel={() => setVerify(null)}
+        onConfirm={(date) => {
+          setVerify(null);
+          save(verify.status, date);
+        }}
+      />
+    ) : null}
     <Select.Root value={optimistic} onValueChange={changeStatus}>
       <Select.Trigger
         aria-label="Lead status"
@@ -84,5 +114,6 @@ export function StatusSelect({
         </Select.Content>
       </Select.Portal>
     </Select.Root>
+    </>
   );
 }

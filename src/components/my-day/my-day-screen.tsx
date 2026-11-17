@@ -302,6 +302,7 @@ const STATUS_FIELDS: Record<LeadStatus, keyof AgentPipeline> = {
   Quoted: "quoted",
   "Follow-up": "follow_up",
   "Closed Won": "won",
+  Renewed: "renewed",
   "Closed Lost": "lost",
 };
 
@@ -317,7 +318,8 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
           .join("")
           .slice(0, 2)
           .toUpperCase();
-        const winRate = agent.won + agent.lost > 0 ? Math.round((agent.won / (agent.won + agent.lost)) * 100) : null;
+        const wins = agent.won + agent.renewed;
+        const winRate = wins + agent.lost > 0 ? Math.round((wins / (wins + agent.lost)) * 100) : null;
         return (
           <li key={agent.agent_id ?? "unassigned"}>
             <Link
@@ -412,7 +414,9 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const todaysWork = renewalsToday.length + overdueTasks.length + todayTasks.length;
   const checklistTotal = overdueTasks.length + todayTasks.length + doneToday.length;
-  const openLeads = pipeline.total - (pipeline.by_status["Closed Won"] ?? 0) - (pipeline.by_status["Closed Lost"] ?? 0);
+  const wins = (pipeline.by_status["Closed Won"] ?? 0) + (pipeline.by_status["Renewed"] ?? 0);
+  const losses = pipeline.by_status["Closed Lost"] ?? 0;
+  const openLeads = pipeline.total - wins - losses;
 
   const upcoming: Upcoming[] = [
     ...renewals.map((lead) => ({
@@ -538,7 +542,7 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
         <StatCard
           label="Active clients"
           value={day.counts.activeClients}
-          href={leadsHref({ status: "Closed Won" })}
+          href={leadsHref({ outcome: "won" })}
           tone="success"
         />
         <StatCard
@@ -751,13 +755,7 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
                 </div>
                 <div>
                   <span className="block text-base font-medium tabular-nums">
-                    {(pipeline.by_status["Closed Won"] ?? 0) + (pipeline.by_status["Closed Lost"] ?? 0) === 0
-                      ? "—"
-                      : `${Math.round(
-                          ((pipeline.by_status["Closed Won"] ?? 0) /
-                            ((pipeline.by_status["Closed Won"] ?? 0) + (pipeline.by_status["Closed Lost"] ?? 0))) *
-                            100,
-                        )}%`}
+                    {wins + losses === 0 ? "—" : `${Math.round((wins / (wins + losses)) * 100)}%`}
                   </span>
                   <span className="text-xs text-muted-foreground">Win rate</span>
                 </div>

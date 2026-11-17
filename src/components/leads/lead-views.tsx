@@ -139,7 +139,7 @@ export function LeadsTable({
                   <RenewalDate date={lead.renewal_date} closed={CLOSED_STATUSES.includes(lead.status)} compact />
                 </td>
                 <td className="px-4 py-3">
-                  <StatusSelect leadId={lead.id} status={lead.status} />
+                  <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} />
                 </td>
                 {showAgent ? (
                   <td className="px-4 py-3">
@@ -179,7 +179,7 @@ export function LeadCards({ leads, showAgent }: { leads: ListLead[]; showAgent: 
                 {lead.sub_product_name ? ` · ${lead.sub_product_name}` : ""}
               </p>
             </div>
-            <StatusSelect leadId={lead.id} status={lead.status} />
+            <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} />
           </div>
           <div className="flex flex-wrap gap-1.5">
             <Badge variant="secondary">{lead.type}</Badge>

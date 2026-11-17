@@ -17,13 +17,16 @@ export const POLICY_PRODUCTS: readonly PolicyProduct[] = [
   "Credit",
 ];
 
-// There is no "Active Client" status: a Closed Won lead is an active client
-// (it was folded into Closed Won in migration 0009).
+// There is no "Active Client" status: a Closed Won or Renewed lead is an
+// active client ("Active Client" was folded into Closed Won in migration 0009).
+// Closed Won is new business won; Renewed is an existing client's policy
+// renewed for another year.
 export const LEAD_STATUSES: readonly LeadStatus[] = [
   "Prospect",
   "Quoted",
   "Follow-up",
   "Closed Won",
+  "Renewed",
   "Closed Lost",
 ];
 
@@ -72,13 +75,17 @@ export function formatNoteLine(agentName: string, createdAt: string | Date, cont
   return `[${agentName} - ${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}]: ${content}`;
 }
 
-/** The status that makes a lead an active client of CapitUp. */
-export const ACTIVE_CLIENT_STATUS: LeadStatus = "Closed Won";
+/** The statuses that make a lead an active client of CapitUp. */
+export const ACTIVE_CLIENT_STATUSES: readonly LeadStatus[] = ["Closed Won", "Renewed"];
+
+export function isActiveClientStatus(status: string | null | undefined): boolean {
+  return (ACTIVE_CLIENT_STATUSES as readonly string[]).includes(status ?? "");
+}
 
 /**
  * Statuses whose renewals are no longer chased: only Closed Lost. A Closed
- * Won lead is an active client, so its renewal countdown, reminders and
- * overdue warnings carry on.
+ * Won or Renewed lead is an active client, so its renewal countdown,
+ * reminders and overdue warnings carry on.
  */
 export const CLOSED_STATUSES: readonly LeadStatus[] = ["Closed Lost"];
 
@@ -88,6 +95,7 @@ export const STATUS_STYLES: Record<LeadStatus, { badge: string; dot: string }> =
   Quoted: { badge: "border-sky-200 bg-sky-50 text-sky-700", dot: "bg-sky-500" },
   "Follow-up": { badge: "border-amber-200 bg-amber-50 text-amber-800", dot: "bg-amber-500" },
   "Closed Won": { badge: "border-green-300 bg-green-100 text-green-800", dot: "bg-green-600" },
+  Renewed: { badge: "border-emerald-300 bg-emerald-50 text-emerald-800", dot: "bg-emerald-500" },
   "Closed Lost": { badge: "border-rose-200 bg-rose-50 text-rose-700", dot: "bg-rose-500" },
 };
 
@@ -97,6 +105,7 @@ export const STATUS_COLORS: Record<LeadStatus, string> = {
   Quoted: "#0ea5e9",
   "Follow-up": "#f59e0b",
   "Closed Won": "#16a34a",
+  Renewed: "#10b981",
   "Closed Lost": "#f43f5e",
 };
 
@@ -108,15 +117,15 @@ export function isPolicyProduct(value: unknown): value is PolicyProduct {
   return typeof value === "string" && (POLICY_PRODUCTS as readonly string[]).includes(value);
 }
 
-// Calendar colours, as in the Android app's planner: renewals split into GMC
-// (corporate) and retail, entries for active clients (Closed Won), meetings,
+// Calendar colours, as in the Android app's planner: renewals split into
+// corporate (indigo; the key is still "gmc_renewal") and retail, entries for active clients (Closed Won), meetings,
 // and everything else as tasks. One entry can carry two colours (a renewal or
 // a meeting for an active client).
 export const CALENDAR_CATEGORIES = ["gmc_renewal", "retail_renewal", "active_client", "meeting", "task"] as const;
 export type CalendarCategory = (typeof CALENDAR_CATEGORIES)[number];
 
 export const CALENDAR_CATEGORY_LABELS: Record<CalendarCategory, string> = {
-  gmc_renewal: "GMC Renewal",
+  gmc_renewal: "Corporate Renewal",
   retail_renewal: "Retail Renewal",
   active_client: "Active Clients",
   meeting: "Meetings",
@@ -190,7 +199,7 @@ export function calendarCategories(
   lead: { business_type: BusinessType; policy_product: PolicyProduct; status: LeadStatus } | null,
   kind: EventKind = "task",
 ): CalendarCategory[] {
-  const active = lead?.status === ACTIVE_CLIENT_STATUS;
+  const active = isActiveClientStatus(lead?.status);
   const alsoActive = active ? (["active_client"] as const) : [];
   if (isRenewal) {
     const retail = lead?.business_type === "Retail" || lead?.policy_product === "Motor";
@@ -198,6 +207,21 @@ export function calendarCategories(
   }
   if (kind === "meeting") return ["meeting", ...alsoActive];
   return [active ? "active_client" : "task"];
+}
+
+/**
+ * The product as the calendar names a renewal: the lead's own product, never
+ * a default. Corporate health is GMC (group medical cover), retail health is
+ * Health, and Fire or Property is shortened to Fire.
+ */
+export function calendarProductLabel(
+  product: PolicyProduct | null | undefined,
+  businessType: BusinessType | null | undefined,
+): string {
+  if (!product || product === UNSPECIFIED_PRODUCT) return "Renewal";
+  if (product === "Health") return businessType === "Retail" ? "Health" : "GMC";
+  if (product === "Fire or Property") return "Fire";
+  return product;
 }
 
 /** Ways an agent can reach a POC from the lead page; each click is logged on the lead. */
@@ -254,7 +278,7 @@ export function isLeadTag(value: unknown): value is LeadTag {
 }
 
 /** Statuses that are finished pipeline work: never "stale" and not counted as open workload. */
-export const DONE_STATUSES: readonly LeadStatus[] = ["Closed Won", "Closed Lost"];
+export const DONE_STATUSES: readonly LeadStatus[] = ["Closed Won", "Renewed", "Closed Lost"];
 
 /** Days without a note, status change, task or contact before a lead is flagged stale (admins can change it). */
 export const DEFAULT_STALE_DAYS = 7;

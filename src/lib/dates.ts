@@ -24,6 +24,21 @@ export function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Adds whole years to a YYYY-MM-DD date; 29 Feb becomes 28 Feb in a common year. */
+export function addYears(date: string, years: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const year = y + years;
+  const lastDay = new Date(Date.UTC(year, m, 0)).getUTCDate();
+  return `${String(year).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(Math.min(d, lastDay)).padStart(2, "0")}`;
+}
+
+/** Whether a string is a real YYYY-MM-DD calendar date. */
+export function isIsoDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
 /** Whole days from `from` to `date` (negative when `date` is earlier). */
 export function daysBetween(from: string, date: string): number {
   return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
