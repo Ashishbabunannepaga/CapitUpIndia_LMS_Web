@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql, type SQL } from "drizzle-orm";
 
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
-import { ACTIVE_CLIENT_STATUSES, CLOSED_STATUSES } from "@/lib/domain";
+import { ACTIVE_CLIENT_STATUSES, CLOSED_STATUSES, NO_OVERDUE_STATUSES } from "@/lib/domain";
 
 import { events, leads, profiles } from "../db/schema";
 import { assertAdmin, isAdmin, type Actor } from "./actor";
@@ -38,6 +38,8 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
   const admin = isAdmin(actor);
   const scope = admin ? undefined : eq(leads.assigned_agent_id, actor.id);
   const open = notInArray(leads.status, [...CLOSED_STATUSES]);
+  // Past renewal dates on won, renewed or lost leads are last cycle's, not overdue.
+  const canBeOverdue = notInArray(leads.status, [...NO_OVERDUE_STATUSES]);
   const today = todayInBusinessTz(now);
   const todayStart = startOfBusinessDay(today);
   const weekEndStart = startOfBusinessDay(addDays(today, 8));
@@ -72,7 +74,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     countLeads(eq(leads.status, "Quoted")),
     countLeads(eq(leads.status, "Follow-up")),
     // Every overdue renewal, like the list the KPI links to; the panel shows the last 30 days.
-    countLeads(lt(leads.renewal_date, today), open),
+    countLeads(lt(leads.renewal_date, today), canBeOverdue),
     // Open leads nobody has touched for the admins' stale threshold.
     countLeads(isStale),
     ctx.db
@@ -84,7 +86,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     ctx.db
       .select()
       .from(leads)
-      .where(and(scope, lt(leads.renewal_date, today), gte(leads.renewal_date, addDays(today, -30)), open))
+      .where(and(scope, lt(leads.renewal_date, today), gte(leads.renewal_date, addDays(today, -30)), canBeOverdue))
       .orderBy(desc(leads.renewal_date), asc(leads.id))
       .limit(10),
     ctx.db

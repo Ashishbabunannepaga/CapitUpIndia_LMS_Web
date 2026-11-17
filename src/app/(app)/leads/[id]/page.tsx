@@ -17,7 +17,7 @@ import { ContactLink } from "@/components/leads/contact-link";
 import { CopySummaryButton, LeadTagsEditor, WhatsAppIconLink } from "@/components/leads/lead-extras";
 import { LeadHistory } from "@/components/leads/lead-history";
 import { RollRenewalButton } from "@/components/leads/lead-closing";
-import { NoteEntry } from "@/components/leads/note-entry";
+import { LeadNotesField, NoteEntry } from "@/components/leads/note-entry";
 import { TransactionPanel } from "@/components/leads/transaction-panel";
 import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
 import { addYears, businessDateOf, formatDate, formatDateTime, nowMs, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS, formatNoteLine, isActiveClientStatus } from "@/lib/domain";
+import { CONTACT_CHANNEL_LABELS, formatNoteLine, isActiveClientStatus } from "@/lib/domain";
 import { closesCycle, nextRenewalDate } from "@/lib/renewal-rollover";
 import { findSimilarLeads, getLeadPage } from "@/lib/leads";
 import { cn } from "@/lib/utils";
@@ -208,7 +208,6 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
   // with, so they get the gentler same-company note instead of the warning.
   const ownDuplicate =
     !admin && lead.is_duplicate && sameCompany.length > 0 && sameCompany.every((m) => m.assigned_agent_id === profile.id);
-  const closed = CLOSED_STATUSES.includes(lead.status);
   const now = nowMs();
   const visibleEvents = events.filter((e) => !e.is_background_reminder);
   const renewalEvents = visibleEvents.filter((e) => e.is_system_generated);
@@ -391,7 +390,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                 <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   <Fact label="Renewal date">
                     <span className="flex flex-col items-start gap-2">
-                      <RenewalDate date={lead.renewal_date} closed={closed} />
+                      <RenewalDate date={lead.renewal_date} status={lead.status} />
                       {rollTo && lead.renewal_date ? (
                         <RollRenewalButton
                           leadId={lead.id}
@@ -487,11 +486,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               </Panel>
 
               <Panel title="Lead notes">
-                {lead.notes ? (
-                  <p className="text-sm whitespace-pre-wrap">{lead.notes}</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No background notes. Add them with Edit.</p>
-                )}
+                <LeadNotesField leadId={lead.id} notes={lead.notes} />
               </Panel>
             </>
           )}

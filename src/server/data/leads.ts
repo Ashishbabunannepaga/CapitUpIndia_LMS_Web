@@ -9,6 +9,7 @@ import { addDays, formatDate, isIsoDate, todayInBusinessTz } from "@/lib/dates";
 import {
   ACTIVE_CLIENT_STATUSES,
   CLOSED_STATUSES,
+  NO_OVERDUE_STATUSES,
   DEFAULT_POC_DESIGNATION,
   LEAD_STATUSES,
   isContactChannel,
@@ -337,7 +338,7 @@ function filterConditions(actor: Actor, filters: LeadFilters, today: string): SQ
   }
   switch (filters.renewal) {
     case "overdue":
-      conditions.push(lt(leads.renewal_date, today), notInArray(leads.status, [...CLOSED_STATUSES]));
+      conditions.push(lt(leads.renewal_date, today), notInArray(leads.status, [...NO_OVERDUE_STATUSES]));
       break;
     case "7":
     case "30":

@@ -280,6 +280,18 @@ export function isLeadTag(value: unknown): value is LeadTag {
 /** Statuses that are finished pipeline work: never "stale" and not counted as open workload. */
 export const DONE_STATUSES: readonly LeadStatus[] = ["Closed Won", "Renewed", "Closed Lost"];
 
+/**
+ * A renewal can only be overdue on a lead still being worked. A Closed Won,
+ * Renewed or Closed Lost lead has finished this cycle, so a past renewal date
+ * on it is last cycle's date (waiting to roll to next year), never overdue.
+ * Upcoming renewals of won and renewed clients still count as due.
+ */
+export const NO_OVERDUE_STATUSES: readonly LeadStatus[] = DONE_STATUSES;
+
+export function canBeOverdue(status: string | null | undefined): boolean {
+  return !(NO_OVERDUE_STATUSES as readonly string[]).includes(status ?? "");
+}
+
 /** Days without a note, status change, task or contact before a lead is flagged stale (admins can change it). */
 export const DEFAULT_STALE_DAYS = 7;
 

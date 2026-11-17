@@ -7,6 +7,7 @@ import { friendlyError } from "@/lib/action-errors";
 import { getSession, isAdmin } from "@/lib/auth";
 import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
 import { isLeadStatus } from "@/lib/domain";
+import { tidyLeadNotes } from "@/lib/lead-notes";
 import { businessDateTimeToIso, isIsoDate } from "@/lib/dates";
 import { contactSchema, formDataToObject, leadFormSchema, meetingSchema, type LeadFormValues } from "@/lib/lead-schema";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
@@ -248,6 +249,12 @@ export async function rollForwardClosedLeads(): Promise<ActionResult> {
   if (!result.ok) return result;
   const moved = `Moved ${outcome.rolled} lead${outcome.rolled === 1 ? "" : "s"} to next year's renewal date.`;
   return { ok: true, message: outcome.remaining > 0 ? `${moved} ${outcome.remaining} left: press again.` : moved };
+}
+
+/** Rewrites the lead's background notes field (anyone who can edit the lead). */
+export async function setLeadNotes(leadId: number, notes: string): Promise<ActionResult> {
+  if (notes.length > 20000) return { ok: false, error: "Keep the notes under 20,000 characters." };
+  return run(({ ctx, actor }) => leadData.updateLead(ctx, actor, leadId, { notes: tidyLeadNotes(notes) }));
 }
 
 /** Rewrites a note (agents: their own; admins: any). */
