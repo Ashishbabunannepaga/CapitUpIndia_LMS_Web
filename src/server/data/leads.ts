@@ -5,9 +5,18 @@ import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { BatchItem } from "drizzle-orm/batch";
 
 import { normalizeCompanyName } from "@/lib/company-name";
-import { addDays, formatDate, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, isContactChannel, isLeadStatus, isLeadTag } from "@/lib/domain";
+import { addDays, formatDate, isIsoDate, todayInBusinessTz } from "@/lib/dates";
+import {
+  ACTIVE_CLIENT_STATUSES,
+  CLOSED_STATUSES,
+  DEFAULT_POC_DESIGNATION,
+  LEAD_STATUSES,
+  isContactChannel,
+  isLeadStatus,
+  isLeadTag,
+} from "@/lib/domain";
 import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
+import { CYCLE_CLOSING_STATUSES, closesCycle, nextRenewalDate, rolloverForStatusChange } from "@/lib/renewal-rollover";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 
 import {
@@ -17,6 +26,7 @@ import {
   leadNoteReads,
   leadNotes,
   leadTags,
+  leadTransactions,
   leads,
   notifications,
   profiles,
@@ -145,6 +155,8 @@ function tidy<T extends Partial<LeadFields>>(fields: T): T {
   return out;
 }
 
+type RenewalSettings = Awaited<ReturnType<typeof renewalSettings>>;
+
 async function renewalSettings(ctx: DataContext) {
   const [offsets, dueTime] = await Promise.all([
     ctx.db
@@ -210,6 +222,8 @@ export type LeadPage = {
   team: Pick<Actor, "id" | "full_name" | "role" | "is_active">[];
   /** The caller's unread notes on this lead. */
   unreadNoteIds: number[];
+  /** Transaction details (won or renewed cycles), newest first. */
+  transactions: (typeof leadTransactions.$inferSelect)[];
 };
 
 /**
@@ -220,7 +234,7 @@ export type LeadPage = {
  * getLeadNotes / getLeadEvents / getLeadContactLog.
  */
 export async function getLeadPage(ctx: DataContext, actor: Actor, id: number): Promise<LeadPage | null> {
-  const [found, team, notes, leadEvents, contacts, unread, tags] = await ctx.db.batch([
+  const [found, team, notes, leadEvents, contacts, unread, tags, transactions] = await ctx.db.batch([
     ctx.db.select().from(leads).where(and(eq(leads.id, id), scope(actor))).limit(1),
     ctx.db
       .select({ id: profiles.id, full_name: profiles.full_name, role: profiles.role, is_active: profiles.is_active })
@@ -244,6 +258,11 @@ export async function getLeadPage(ctx: DataContext, actor: Actor, id: number): P
       .innerJoin(leads, eq(leads.id, leadNotes.lead_id))
       .where(unreadWhere(actor, id)),
     ctx.db.select({ tag: leadTags.tag }).from(leadTags).where(eq(leadTags.lead_id, id)).orderBy(asc(leadTags.created_at)),
+    ctx.db
+      .select()
+      .from(leadTransactions)
+      .where(eq(leadTransactions.lead_id, id))
+      .orderBy(desc(leadTransactions.transaction_date), desc(leadTransactions.id)),
   ]);
   const lead = found[0];
   if (!lead) return null;
@@ -256,6 +275,7 @@ export async function getLeadPage(ctx: DataContext, actor: Actor, id: number): P
     contacts,
     team,
     unreadNoteIds: unread.map((n) => n.id),
+    transactions,
   };
 }
 
@@ -304,6 +324,16 @@ function filterConditions(actor: Actor, filters: LeadFilters, today: string): SQ
   if (filters.stale) conditions.push(isStale);
   if (filters.tag) {
     conditions.push(sql`exists (select 1 from ${leadTags} t where t.lead_id = ${leads.id} and t.tag = ${filters.tag})`);
+  }
+  if (filters.outcome === "won") conditions.push(inArray(leads.status, [...ACTIVE_CLIENT_STATUSES]));
+  else if (filters.outcome === "lost") conditions.push(inArray(leads.status, [...CLOSED_STATUSES]));
+  else if (filters.outcome === "closed") conditions.push(inArray(leads.status, [...CYCLE_CLOSING_STATUSES]));
+  if (filters.startFrom || filters.startTo) {
+    // Any of the lead's transactions (one per policy cycle) starting in the range.
+    conditions.push(
+      sql`exists (select 1 from ${leadTransactions} x where x.lead_id = leads.id
+        and x.policy_start_date >= ${filters.startFrom ?? "0000-01-01"} and x.policy_start_date <= ${filters.startTo ?? "9999-12-31"})`,
+    );
   }
   switch (filters.renewal) {
     case "overdue":
@@ -531,7 +561,7 @@ async function leadChangeStatements(
   actor: Actor,
   before: Lead,
   patch: Partial<Lead>,
-  { notifyOwner = true }: { notifyOwner?: boolean } = {},
+  { notifyOwner = true, renewal: preloaded }: { notifyOwner?: boolean; renewal?: RenewalSettings } = {},
 ): Promise<BatchItem<"sqlite">[]> {
   const stamp = now();
   const after: Lead = { ...before, ...patch };
@@ -551,7 +581,7 @@ async function leadChangeStatements(
   const system = and(eq(events.lead_id, id), eq(events.is_system_generated, true));
 
   if (after.renewal_date !== before.renewal_date) {
-    const renewal = await renewalSettings(ctx);
+    const renewal = preloaded ?? (await renewalSettings(ctx));
     statements.push(ctx.db.delete(events).where(system));
     for (const event of milestoneEvents(after, renewal.offsets, renewal.dueTime)) {
       statements.push(ctx.db.insert(events).values({ ...event, lead_id: id }));
@@ -628,12 +658,79 @@ export async function updateLead(
     await assertAssignable(ctx, input.assigned_agent_id);
     patch.assigned_agent_id = input.assigned_agent_id;
   }
+  // Closing the lead on the edit form without touching the renewal date
+  // rolls it to next year, like the status menu does.
+  if (patch.status && (patch.renewal_date === undefined || patch.renewal_date === before.renewal_date)) {
+    const rolled = rolloverForStatusChange(before, patch.status, todayInBusinessTz());
+    if (rolled) patch.renewal_date = rolled;
+  }
   await writeLead(ctx, actor, before, patch);
 }
 
-export async function setLeadStatus(ctx: DataContext, actor: Actor, id: number, status: unknown): Promise<void> {
+/**
+ * Changes a lead's status. Closing it (Closed Won, Renewed or Closed Lost)
+ * ends this year's policy cycle, so the renewal date moves on a year and the
+ * countdown is rebuilt for the new date: to `opts.renewalDate` when the person
+ * confirmed or edited it (null clears it), otherwise to next year's date
+ * worked out here (see src/lib/renewal-rollover.ts).
+ */
+export async function setLeadStatus(
+  ctx: DataContext,
+  actor: Actor,
+  id: number,
+  status: unknown,
+  opts: { renewalDate?: string | null } = {},
+): Promise<void> {
   if (!isLeadStatus(status)) throw new InvalidInputError("Unknown status.");
-  await writeLead(ctx, actor, await findVisible(ctx, actor, id), { status });
+  const before = await findVisible(ctx, actor, id);
+  const patch: Partial<Lead> = { status };
+  if (opts.renewalDate !== undefined && closesCycle(status)) {
+    if (opts.renewalDate !== null && !isIsoDate(opts.renewalDate)) throw new InvalidInputError("Pick a valid renewal date.");
+    patch.renewal_date = opts.renewalDate;
+  } else {
+    const rolled = rolloverForStatusChange(before, status, todayInBusinessTz());
+    if (rolled) patch.renewal_date = rolled;
+  }
+  await writeLead(ctx, actor, before, patch);
+}
+
+/** How many closed leads (won, renewed or lost) the caller can see still carry a renewal date that has passed. */
+export async function countClosedLeadsToRoll(ctx: DataContext, actor: Actor, today: string = todayInBusinessTz()): Promise<number> {
+  const [row] = await ctx.db
+    .select({ n: count() })
+    .from(leads)
+    .where(and(scope(actor), inArray(leads.status, [...CYCLE_CLOSING_STATUSES]), lt(leads.renewal_date, today)));
+  return row?.n ?? 0;
+}
+
+/** At most this many leads per "roll forward" press, to keep one request's CPU small. */
+export const ROLL_FORWARD_BATCH = 100;
+
+/**
+ * Moves closed leads whose renewal date has passed to their next renewal
+ * date (whole years on, after today) and rebuilds their countdowns: the
+ * one-off catch-up for leads closed before the rollover existed. Admins only.
+ * Returns how many moved and how many are left for another press.
+ */
+export async function rollForwardClosedLeads(
+  ctx: DataContext,
+  actor: Actor,
+  today: string = todayInBusinessTz(),
+): Promise<{ rolled: number; remaining: number }> {
+  assertAdmin(actor);
+  const due = and(inArray(leads.status, [...CYCLE_CLOSING_STATUSES]), lt(leads.renewal_date, today));
+  const [rows, renewal] = await Promise.all([
+    ctx.db.select().from(leads).where(due).orderBy(asc(leads.renewal_date), asc(leads.id)).limit(ROLL_FORWARD_BATCH),
+    renewalSettings(ctx),
+  ]);
+  const statements: BatchItem<"sqlite">[] = [];
+  for (const before of rows) {
+    const next = nextRenewalDate(before.renewal_date, today);
+    if (!next) continue;
+    statements.push(...(await leadChangeStatements(ctx, actor, before, { renewal_date: next }, { renewal })));
+  }
+  if (statements.length > 0) await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  return { rolled: rows.length, remaining: await countClosedLeadsToRoll(ctx, actor, today) };
 }
 
 /** Gives a lead to an active team member, or unassigns it. Admins only. */
@@ -677,23 +774,78 @@ export async function reassignLeads(ctx: DataContext, actor: Actor, ids: number[
   return moved;
 }
 
+/** A lead as exports write it: owner name, tags and its newest transaction (won or renewed cycle). */
+export type ExportedLead = LeadWithAgent & {
+  tags: LeadTag[];
+  transaction: { transaction_date: string; policy_start_date: string | null; policy_status: string } | null;
+};
+
+/** At most this many leads in one filtered export (one Excel file). */
+export const EXPORT_LIMIT = 5000;
+
+// Tags and the newest transaction come with each row, so an export is one
+// query whatever its size (D1 caps bound parameters, so no long id lists).
+// `leads.id` is written out: in a select list Drizzle leaves a column of the
+// only table unqualified, and a bare "id" inside the subquery would be x.id.
+const exportColumns = () => ({
+  ...getTableColumns(leads),
+  tag_list: sql<string | null>`(select group_concat(t.tag, '|') from ${leadTags} t where t.lead_id = ${leads.id})`,
+  tx: sql<string | null>`(select json_object('transaction_date', x.transaction_date, 'policy_start_date', x.policy_start_date,
+    'policy_status', x.policy_status) from ${leadTransactions} x where x.lead_id = leads.id
+    order by x.transaction_date desc, x.id desc limit 1)`,
+});
+
+function shapeExport(rows: (Lead & { tag_list: string | null; tx: string | null })[], team: Map<string, string>): ExportedLead[] {
+  return withNames(
+    rows.map(({ tag_list, tx, ...lead }) => ({
+      ...lead,
+      tags: (tag_list ? tag_list.split("|") : []).filter(isLeadTag),
+      transaction: tx ? (JSON.parse(tx) as ExportedLead["transaction"]) : null,
+    })),
+    team,
+  );
+}
+
 /** Leads by id for an Excel export, in the order given, with owner names and tags. Admins only. */
-export async function leadsForExport(ctx: DataContext, actor: Actor, ids: number[]): Promise<(LeadWithAgent & { tags: LeadTag[] })[]> {
+export async function leadsForExport(ctx: DataContext, actor: Actor, ids: number[]): Promise<ExportedLead[]> {
   assertAdmin(actor);
   const unique = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
   if (unique.length === 0) throw new InvalidInputError("Select at least one lead.");
   if (unique.length > BULK_LIMIT) throw new InvalidInputError(`Export at most ${BULK_LIMIT} leads at a time.`);
-  const [rows, tags, team] = await Promise.all([
-    ctx.db.select().from(leads).where(inArray(leads.id, unique)),
-    ctx.db.select().from(leadTags).where(inArray(leadTags.lead_id, unique)),
+  const chunks: number[][] = [];
+  for (let i = 0; i < unique.length; i += 90) chunks.push(unique.slice(i, i + 90));
+  const [team, ...parts] = await Promise.all([
+    teamNames(ctx),
+    ...chunks.map((chunk) => ctx.db.select(exportColumns()).from(leads).where(inArray(leads.id, chunk))),
+  ]);
+  const order = new Map(unique.map((id, i) => [id, i]));
+  return shapeExport(parts.flat(), team).sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+}
+
+/**
+ * Every lead matching the leads screen's filters (status, product, closed
+ * outcome, policy start dates...), in the screen's sort order, for an Excel
+ * export. Admins only. `truncated` says more matched than EXPORT_LIMIT.
+ */
+export async function leadsForFilteredExport(
+  ctx: DataContext,
+  actor: Actor,
+  filters: LeadFilters,
+): Promise<{ leads: ExportedLead[]; truncated: boolean }> {
+  assertAdmin(actor);
+  const where = and(...filterConditions(actor, filters, todayInBusinessTz()));
+  const order = {
+    name: [asc(leads.client_name_normalized), asc(leads.id)],
+    renewal_asc: [sql`${leads.renewal_date} is null`, asc(leads.renewal_date), asc(leads.id)],
+    renewal_desc: [sql`${leads.renewal_date} is null`, desc(leads.renewal_date), asc(leads.id)],
+    created: [desc(leads.created_at), desc(leads.id)],
+    updated: [desc(leads.updated_at), desc(leads.id)],
+  }[filters.sort] ?? [desc(leads.updated_at), desc(leads.id)];
+  const [rows, team] = await Promise.all([
+    ctx.db.select(exportColumns()).from(leads).where(where).orderBy(...order).limit(EXPORT_LIMIT + 1),
     teamNames(ctx),
   ]);
-  const byLead = new Map<number, LeadTag[]>();
-  for (const t of tags) byLead.set(t.lead_id, [...(byLead.get(t.lead_id) ?? []), t.tag]);
-  const order = new Map(unique.map((id, i) => [id, i]));
-  return withNames(rows, team)
-    .map((lead) => ({ ...lead, tags: byLead.get(lead.id) ?? [] }))
-    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  return { leads: shapeExport(rows.slice(0, EXPORT_LIMIT), team), truncated: rows.length > EXPORT_LIMIT };
 }
 
 /**
@@ -807,6 +959,28 @@ export async function addLeadNote(ctx: DataContext, actor: Actor, leadId: number
     .values({ lead_id: leadId, content: text, agent_id: actor.id, agent_name: actor.full_name })
     .returning();
   return note;
+}
+
+/**
+ * Rewrites a note's text. Agents edit only their own notes on leads they can
+ * see; admins edit anyone's. The writer and time stay; edited_at records the
+ * change and the audit log keeps the old text.
+ */
+export async function editLeadNote(ctx: DataContext, actor: Actor, noteId: number, content: string): Promise<LeadNote> {
+  const text = content.trim();
+  if (!text) throw new InvalidInputError("A note can't be empty. Ask an admin to delete it instead.");
+  if (text.length > 5000) throw new InvalidInputError("Keep notes under 5000 characters.");
+  const note = await ctx.db.query.leadNotes.findFirst({ where: eq(leadNotes.id, noteId) });
+  if (!note) throw new InvalidInputError("That note no longer exists.");
+  await findVisible(ctx, actor, note.lead_id);
+  if (!isAdmin(actor) && note.agent_id !== actor.id) throw new AccessDeniedError("You can only edit your own notes.");
+  if (text === note.content) return note;
+  const after = { ...note, content: text, edited_at: now() };
+  const [[updated]] = await ctx.db.batch([
+    ctx.db.update(leadNotes).set({ content: after.content, edited_at: after.edited_at }).where(eq(leadNotes.id, noteId)).returning(),
+    auditInsert(ctx, actor, "lead_notes", noteId, "UPDATE", note, after),
+  ]);
+  return updated;
 }
 
 /** Deletes a note. Admins only. */

@@ -4,7 +4,7 @@ import { and, asc, eq, gte, lte } from "drizzle-orm";
 
 import { businessHhmm } from "@/lib/clock";
 import { addDays, businessDateTimeToIso, todayInBusinessTz } from "@/lib/dates";
-import { calendarCategories, isEventKind, SNOOZE_DAYS, type CalendarCategory, type EventKind } from "@/lib/domain";
+import { calendarCategories, calendarProductLabel, isEventKind, SNOOZE_DAYS, type CalendarCategory, type EventKind } from "@/lib/domain";
 
 import { events, leads, profiles } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
@@ -49,7 +49,12 @@ export async function listEvents(
     .limit(Math.min(range.limit ?? 1000, 2000));
 }
 
-export type CalendarEventWithCategories = CalendarEvent & { lead_name: string | null; categories: CalendarCategory[] };
+export type CalendarEventWithCategories = CalendarEvent & {
+  lead_name: string | null;
+  categories: CalendarCategory[];
+  /** The lead's product as the calendar shows it ("GMC", "Fire", "Motor"...), null without a lead. */
+  product_label: string | null;
+};
 
 /**
  * The same events as listEvents, each with its calendar colours (GMC or
@@ -83,6 +88,7 @@ export async function listCalendarEvents(
   return rows.map(({ event, lead_name, business_type, policy_product, status }) => ({
     ...event,
     lead_name,
+    product_label: policy_product ? calendarProductLabel(policy_product, business_type) : null,
     categories: calendarCategories(
       event.is_system_generated,
       business_type && policy_product && status ? { business_type, policy_product, status } : null,

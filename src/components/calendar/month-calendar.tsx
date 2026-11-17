@@ -35,8 +35,10 @@ export type CalendarEntry = {
   notes: string;
   assigneeId?: string | null;
   isRenewal: boolean;
-  /** Its colours: GMC or retail renewal, active client, task. */
+  /** Its colours: corporate or retail renewal, active client, task. */
   categories: CalendarCategory[];
+  /** The lead's product as the calendar names it ("GMC", "Fire", "Motor"...). */
+  productLabel?: string | null;
   isCompleted: boolean;
   isSystem: boolean;
   agentName?: string | null;
@@ -71,14 +73,16 @@ function gridDays(month: string): string[] {
   });
 }
 
-/** Short label for a day cell, e.g. "2 GMC" or "1 task"; the full name is in its tooltip. */
-function cellLabel(category: CalendarPill, n: number): string {
+const RENEWAL_PILLS: readonly CalendarPill[] = ["gmc_renewal", "retail_renewal", "retail_won"];
+
+/** Short label for a day cell, e.g. "2 Fire" or "1 task"; the full name is in its tooltip. */
+function cellLabel(category: CalendarPill, n: number, product?: string): string {
   switch (category) {
     case "gmc_renewal":
-      return "GMC";
     case "retail_renewal":
     case "retail_won":
-      return "retail";
+      // Renewals are named by the lead's own product, never a default.
+      return product ?? "renewal";
     case "active_client":
       return "active";
     case "meeting":
@@ -201,9 +205,19 @@ export function MonthCalendar({
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border bg-border">
           {days.map((day) => {
             const items = byDay.get(day) ?? [];
-            const counts = CALENDAR_PILLS.map(
-              (c) => [c, items.filter((i) => calendarPills(i.categories).includes(c)).length] as const,
-            ).filter(([c, n]) => n > 0 && pillMatchesFilter(c, filter));
+            // One tile per colour, and per product for renewals ("2 Fire", "1 GMC").
+            const counts = CALENDAR_PILLS.flatMap((c): { key: string; c: CalendarPill; n: number; product?: string }[] => {
+              if (!pillMatchesFilter(c, filter)) return [];
+              const matching = items.filter((i) => calendarPills(i.categories).includes(c));
+              if (matching.length === 0) return [];
+              if (!RENEWAL_PILLS.includes(c)) return [{ key: c, c, n: matching.length }];
+              const byProduct = new Map<string, number>();
+              for (const i of matching) {
+                const product = i.productLabel ?? "Renewal";
+                byProduct.set(product, (byProduct.get(product) ?? 0) + 1);
+              }
+              return [...byProduct].map(([product, n]) => ({ key: `${c}:${product}`, c, n, product }));
+            });
             const inMonth = day.startsWith(month);
             return (
               <button
@@ -226,10 +240,10 @@ export function MonthCalendar({
                   {Number(day.slice(8))}
                 </span>
                 <span className="mt-1 flex flex-col gap-0.5">
-                  {counts.map(([c, n]) => (
+                  {counts.map(({ key, c, n, product }) => (
                     <span
-                      key={c}
-                      title={CALENDAR_PILL_LABELS[c]}
+                      key={key}
+                      title={product ? `${product} · ${CALENDAR_PILL_LABELS[c]}` : CALENDAR_PILL_LABELS[c]}
                       className={cn(
                         "flex items-center gap-1 truncate rounded px-1 text-[11px] font-medium",
                         CALENDAR_PILL_STYLES[c].pill,
@@ -238,7 +252,7 @@ export function MonthCalendar({
                       <span className={cn("size-1.5 shrink-0 rounded-full", CALENDAR_PILL_STYLES[c].dot)} aria-hidden="true" />
                       <span className="truncate tabular-nums">
                         {n}
-                        <span className="hidden sm:inline"> {cellLabel(c, n)}</span>
+                        <span className="hidden sm:inline"> {cellLabel(c, n, product)}</span>
                       </span>
                     </span>
                   ))}
@@ -289,7 +303,10 @@ export function MonthCalendar({
                         <span className="font-medium">{entry.title}</span>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        {calendarPills(entry.categories).map((c) => CALENDAR_PILL_LABELS[c]).join(" · ")} · <ClockTime timestamp={entry.timestamp} />
+                        {[entry.productLabel, ...calendarPills(entry.categories).map((c) => CALENDAR_PILL_LABELS[c])]
+                          .filter(Boolean)
+                          .join(" · ")}{" "}
+                        · <ClockTime timestamp={entry.timestamp} />
                         {showAgent && entry.agentName ? ` · ${entry.agentName}` : ""}
                       </p>
                     </div>

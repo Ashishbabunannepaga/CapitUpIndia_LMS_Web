@@ -108,8 +108,22 @@ describe("parseLeadFilters", () => {
       duplicates: false,
       stale: false,
       tag: null,
+      outcome: null,
+      startFrom: null,
+      startTo: null,
       sort: "updated",
       page: 1,
+    });
+  });
+
+  it("reads the closed and policy start filters, and round-trips them through leadsHref", () => {
+    const filters = parseLeadFilters({ outcome: "won", start_from: "2026-04-01", start_to: "2027-03-31" });
+    expect(filters).toMatchObject({ outcome: "won", startFrom: "2026-04-01", startTo: "2027-03-31" });
+    expect(leadsHref(filters)).toBe("/leads?outcome=won&start_from=2026-04-01&start_to=2027-03-31");
+    expect(parseLeadFilters({ outcome: "constructor", start_from: "2026-02-30", start_to: "31/03/2027" })).toMatchObject({
+      outcome: null,
+      startFrom: null,
+      startTo: null,
     });
   });
 

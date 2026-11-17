@@ -20,7 +20,9 @@ export type AgentPipeline = {
   prospect: number;
   quoted: number;
   follow_up: number;
+  /** Closed Won (new business won). */
   won: number;
+  renewed: number;
   lost: number;
   overdue_renewals: number;
   renewals_30d: number;
@@ -46,6 +48,7 @@ const STATUS_KEYS = {
   Quoted: "quoted",
   "Follow-up": "follow_up",
   "Closed Won": "won",
+  Renewed: "renewed",
   "Closed Lost": "lost",
 } as const;
 
@@ -139,6 +142,7 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
         quoted: 0,
         follow_up: 0,
         won: 0,
+        renewed: 0,
         lost: 0,
         overdue_renewals: 0,
         renewals_30d: 0,
@@ -212,7 +216,7 @@ export async function nextRoundRobinAgents(ctx: DataContext, actor: Actor, n: nu
 export type AgentWorkload = {
   agent_id: string;
   agent_name: string;
-  /** Leads not yet Closed Won or Closed Lost. */
+  /** Leads not yet Closed Won, Renewed or Closed Lost. */
   open_leads: number;
   /** Their tasks, meetings and renewal due dates not ticked off before today. */
   overdue_followups: number;
@@ -231,10 +235,10 @@ export async function agentWorkload(ctx: DataContext, actor: Actor, now: Date = 
   const in7 = addDays(today, 7);
   const rows = await ctx.db.all<AgentWorkload & { role: string }>(sql`
     select p.id as agent_id, p.full_name as agent_name, p.role,
-      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.status not in ('Closed Won', 'Closed Lost')) as open_leads,
+      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.lead_status not in ('Closed Won', 'Renewed', 'Closed Lost')) as open_leads,
       (select count(*) from events e where e.assigned_agent_id = p.id and e.is_completed = 0
         and e.is_background_reminder = 0 and e.event_timestamp < ${todayStart}) as overdue_followups,
-      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.status != 'Closed Lost'
+      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.lead_status != 'Closed Lost'
         and l.renewal_date >= ${today} and l.renewal_date <= ${in7}) as renewals_week
     from ${profiles} p
     where p.is_active = 1

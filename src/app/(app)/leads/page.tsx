@@ -5,13 +5,14 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PageHeader } from "@/components/app-shell/page-header";
 import { LeadFiltersBar } from "@/components/leads/lead-filters-bar";
 import { LeadSelectionProvider } from "@/components/leads/bulk-actions";
+import { RollForwardBanner } from "@/components/leads/lead-closing";
 import { EmptyLeads, LeadCards, LeadsTable } from "@/components/leads/lead-views";
 import { LeadsKanban } from "@/components/leads/leads-kanban";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireProfile } from "@/lib/auth";
 import { formatCount } from "@/lib/analytics";
 import { leadsHref, parseLeadFilters } from "@/lib/lead-filters";
-import { countLeadsByStatus, getTeam, KANBAN_COLUMN_LIMIT, LEAD_PAGE_SIZE, listLeads } from "@/lib/leads";
+import { countClosedLeadsToRoll, countLeadsByStatus, getTeam, KANBAN_COLUMN_LIMIT, LEAD_PAGE_SIZE, listLeads } from "@/lib/leads";
 
 export const metadata: Metadata = { title: "Leads" };
 
@@ -24,10 +25,11 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
 
   // Status counts come from one GROUP BY: the total for the pager, and board
   // column totals when a column holds more cards than it shows.
-  const [{ leads, truncated }, team, statusCounts] = await Promise.all([
+  const [{ leads, truncated }, team, statusCounts, toRoll] = await Promise.all([
     listLeads(effective),
     getTeam(),
     countLeadsByStatus(effective),
+    admin ? countClosedLeadsToRoll() : 0,
   ]);
   const kanban = filters.view === "kanban";
   const columnTotals = kanban && truncated ? statusCounts : null;
@@ -44,7 +46,10 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       effective.renewal ||
       effective.duplicates ||
       effective.stale ||
-      effective.tag,
+      effective.tag ||
+      effective.outcome ||
+      effective.startFrom ||
+      effective.startTo,
   );
 
   return (
@@ -66,7 +71,8 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
           </Button>
         }
       />
-      <LeadFiltersBar filters={filters} agents={agents} showAgentFilter={admin} />
+      {toRoll > 0 ? <RollForwardBanner count={toRoll} /> : null}
+      <LeadFiltersBar filters={filters} agents={agents} showAgentFilter={admin} canExport={admin} />
 
       <p className="mb-3 text-xs text-muted-foreground">
         {matching === 1 ? "1 lead" : `${formatCount(matching)} leads`}

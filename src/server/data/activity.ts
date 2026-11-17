@@ -220,7 +220,7 @@ export async function listLeadTracker(ctx: DataContext, actor: Actor, filter: Tr
   else if (filter.agentId) where.push(sql`l.assigned_agent_id = ${filter.agentId}`);
   if (filter.status) {
     if (!(LEAD_STATUSES as readonly string[]).includes(filter.status)) throw new InvalidInputError("Unknown status.");
-    where.push(sql`l.status = ${filter.status}`);
+    where.push(sql`l.lead_status = ${filter.status}`);
   }
   const q = filter.q?.trim().toLowerCase();
   if (q) where.push(sql`instr(lower(l.client_name), ${q.slice(0, 100)}) > 0`);
@@ -229,7 +229,7 @@ export async function listLeadTracker(ctx: DataContext, actor: Actor, filter: Tr
   return ctx.db.all<TrackedLead>(sql`
     select t.*, max(t.updated_at, coalesce(t.last_note_at, ''), coalesce(t.last_contact_at, '')) as last_activity_at
     from (
-      select l.id, l.client_name, l.lead_type as type, l.product as policy_product, l.status, l.renewal_date, l.assigned_agent_id,
+      select l.id, l.client_name, l.lead_type as type, l.product as policy_product, l.lead_status as status, l.renewal_date, l.assigned_agent_id,
         p.full_name as agent_name, l.updated_at,
         (select max(n.created_at) from lead_notes n where n.lead_id = l.id) as last_note_at,
         (select max(c.created_at) from lead_contact_logs c where c.lead_id = l.id) as last_contact_at,

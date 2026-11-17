@@ -16,6 +16,9 @@ import {
 import { ContactLink } from "@/components/leads/contact-link";
 import { CopySummaryButton, LeadTagsEditor, WhatsAppIconLink } from "@/components/leads/lead-extras";
 import { LeadHistory } from "@/components/leads/lead-history";
+import { RollRenewalButton } from "@/components/leads/lead-closing";
+import { NoteEntry } from "@/components/leads/note-entry";
+import { TransactionPanel } from "@/components/leads/transaction-panel";
 import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
@@ -26,8 +29,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
-import { businessDateOf, formatDate, formatDateTime, formatNoteTimestamp, nowMs, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS, formatNoteLine } from "@/lib/domain";
+import { addYears, businessDateOf, formatDate, formatDateTime, nowMs, todayInBusinessTz } from "@/lib/dates";
+import { CLOSED_STATUSES, CONTACT_CHANNEL_LABELS, formatNoteLine, isActiveClientStatus } from "@/lib/domain";
+import { closesCycle, nextRenewalDate } from "@/lib/renewal-rollover";
 import { findSimilarLeads, getLeadPage } from "@/lib/leads";
 import { cn } from "@/lib/utils";
 import { leadHistory } from "@/server/data/history";
@@ -227,6 +231,11 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
       isSystem: false,
       overdue: !e.is_completed && Date.parse(e.event_timestamp) < now,
     }));
+  // A closed lead whose renewal is near or past can be moved on to next year.
+  const rollTo = closesCycle(lead.status) ? nextRenewalDate(lead.renewal_date, today) : null;
+  const wonOrRenewed = isActiveClientStatus(lead.status);
+  // The policy cycle that just closed started a year before the next renewal date.
+  const cycleStart = lead.renewal_date && lead.renewal_date > today ? addYears(lead.renewal_date, -1) : (lead.renewal_date ?? today);
   const pendingReminders = events.filter(
     (e) => e.is_background_reminder && !e.reminder_sent_at && Date.parse(e.event_timestamp) > now,
   );
@@ -245,7 +254,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
         <div className="space-y-2">
           <h1 className="text-[28px] leading-tight font-medium tracking-tight">{lead.client_name}</h1>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusSelect leadId={lead.id} status={lead.status} />
+            <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} />
             <Badge variant="secondary">{lead.type}</Badge>
             <Badge variant="secondary">{lead.business_type}</Badge>
             <Badge variant="secondary">{lead.policy_product}</Badge>
@@ -381,7 +390,17 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               <Panel title="Policy">
                 <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   <Fact label="Renewal date">
-                    <RenewalDate date={lead.renewal_date} closed={closed} />
+                    <span className="flex flex-col items-start gap-2">
+                      <RenewalDate date={lead.renewal_date} closed={closed} />
+                      {rollTo && lead.renewal_date ? (
+                        <RollRenewalButton
+                          leadId={lead.id}
+                          status={lead.status}
+                          currentDate={lead.renewal_date}
+                          suggestedDate={rollTo}
+                        />
+                      ) : null}
+                    </span>
                   </Fact>
                   <Fact label="Product">
                     {lead.policy_product}
@@ -413,6 +432,25 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                   {lead.assigned_at ? <Fact label="Assigned">{formatDateTime(lead.assigned_at)}</Fact> : null}
                 </dl>
               </Panel>
+
+              {wonOrRenewed ? (
+                <Panel title="Transaction details">
+                  <TransactionPanel
+                    leadId={lead.id}
+                    rows={data.transactions}
+                    defaults={{ transaction_date: today, policy_start_date: cycleStart > today ? today : cycleStart }}
+                    today={today}
+                    isAdmin={admin}
+                  />
+                </Panel>
+              ) : data.transactions.length > 0 ? (
+                <Panel title="Transaction details">
+                  <p className="text-sm text-muted-foreground">
+                    {data.transactions.length} earlier transaction{data.transactions.length === 1 ? "" : "s"} on record. Transaction
+                    details can be changed while the lead is Closed Won or Renewed.
+                  </p>
+                </Panel>
+              ) : null}
 
               <Panel title="Points of contact" actions={null}>
                 <div className="grid gap-4 md:grid-cols-2">
@@ -471,19 +509,12 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             {notes.length > 0 ? (
               <ol className="mt-5 space-y-3">
                 {notes.map((note) => (
-                  <li
+                  <NoteEntry
                     key={note.id}
-                    className={cn("rounded-lg border p-3 text-sm", unreadIds.has(note.id) && "border-primary/40 bg-accent/50")}
-                  >
-                    <p className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>
-                        <span className="font-medium text-foreground">{note.agent_name}</span> -{" "}
-                        {formatNoteTimestamp(note.created_at)}
-                      </span>
-                      {unreadIds.has(note.id) ? <span className="text-xs font-medium text-brand-700">New</span> : null}
-                    </p>
-                    <p className="whitespace-pre-wrap">{note.content}</p>
-                  </li>
+                    note={note}
+                    unread={unreadIds.has(note.id)}
+                    canEdit={admin || note.agent_id === profile.id}
+                  />
                 ))}
               </ol>
             ) : (

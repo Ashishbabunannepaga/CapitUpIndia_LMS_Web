@@ -1,4 +1,5 @@
 import type { LeadStatus, LeadTag, LeadType, PolicyProduct } from "@/lib/database.types";
+import { isIsoDate } from "@/lib/dates";
 import { isLeadStatus, isLeadTag, isPolicyProduct, LEAD_TYPES } from "@/lib/domain";
 
 // Leads screen filters live in the URL so views are shareable and the server
@@ -15,6 +16,14 @@ export const RENEWAL_WINDOWS = {
   none: "No renewal date",
 } as const;
 export type RenewalWindow = keyof typeof RENEWAL_WINDOWS;
+
+/** Closed outcomes, for the "Closed" filter (and the export that follows it). */
+export const OUTCOME_FILTERS = {
+  won: "Closed Won or Renewed",
+  lost: "Closed Lost",
+  closed: "Any closed (won, renewed or lost)",
+} as const;
+export type OutcomeFilter = keyof typeof OUTCOME_FILTERS;
 
 export const LEAD_SORTS = {
   updated: "Recently updated",
@@ -38,6 +47,11 @@ export type LeadFilters = {
   /** Only open leads with no activity for longer than the stale threshold. */
   stale: boolean;
   tag: LeadTag | null;
+  /** Closed Won/Renewed, Closed Lost, or either. */
+  outcome: OutcomeFilter | null;
+  /** Policy start date range (YYYY-MM-DD, inclusive) from the lead's transactions. */
+  startFrom: string | null;
+  startTo: string | null;
   sort: LeadSort;
   /** 1-based page of the table and card views. */
   page: number;
@@ -70,6 +84,9 @@ export function parseLeadFilters(params: RawParams): LeadFilters {
     duplicates: one(params, "duplicates") === "1",
     stale: one(params, "stale") === "1",
     tag: isLeadTag(one(params, "tag")) ? (one(params, "tag") as LeadTag) : null,
+    outcome: Object.hasOwn(OUTCOME_FILTERS, one(params, "outcome")) ? (one(params, "outcome") as OutcomeFilter) : null,
+    startFrom: isIsoDate(one(params, "start_from")) ? one(params, "start_from") : null,
+    startTo: isIsoDate(one(params, "start_to")) ? one(params, "start_to") : null,
     sort: Object.hasOwn(LEAD_SORTS, sort) ? (sort as LeadSort) : "updated",
     page: parsePage(one(params, "page")),
   };
@@ -95,6 +112,9 @@ export function leadsHref(filters: Partial<LeadFilters>): string {
   if (filters.duplicates) params.set("duplicates", "1");
   if (filters.stale) params.set("stale", "1");
   if (filters.tag) params.set("tag", filters.tag);
+  if (filters.outcome) params.set("outcome", filters.outcome);
+  if (filters.startFrom) params.set("start_from", filters.startFrom);
+  if (filters.startTo) params.set("start_to", filters.startTo);
   if (filters.sort && filters.sort !== "updated") params.set("sort", filters.sort);
   if (filters.page && filters.page > 1 && filters.view !== "kanban") params.set("page", String(filters.page));
   const query = params.toString();

@@ -18,15 +18,20 @@ export const BUSINESS_TYPES = ["Corporate", "Retail"] as const;
 export const POLICY_PRODUCTS = ["Not Specified", "Health", "Fire or Property", "Life", "Motor", "Liability", "Travel", "Marine", "Credit"] as const;
 /** What the original `policy_product` column allows (see `leads.policy_product`). */
 const LEGACY_POLICY_PRODUCTS = ["Health", "Fire or Property", "Life", "Motor", "Liability", "Travel", "Marine", "Credit"] as const;
-/** Closed Won is an active client; "Active Client" was folded into it (migration 0009). */
-export const LEAD_STATUSES = ["Prospect", "Quoted", "Follow-up", "Closed Won", "Closed Lost"] as const;
 /**
- * What the status column's CHECK still allows. "Active Client" stays in it
- * only because SQLite changes a CHECK by rebuilding the table, which on D1
- * deletes every event and note. The app never writes it (zod and the data
- * layer accept LEAD_STATUSES only) and migration 0009 moved every such lead.
+ * Closed Won (new business won) and Renewed (an existing client renewed) are
+ * the active clients; "Active Client" was folded into Closed Won (migration
+ * 0009). Renewed came in migration 0011.
  */
-const STORED_LEAD_STATUSES = ["Prospect", "Quoted", "Active Client", "Follow-up", "Closed Won", "Closed Lost"] as const;
+export const LEAD_STATUSES = ["Prospect", "Quoted", "Follow-up", "Closed Won", "Renewed", "Closed Lost"] as const;
+/**
+ * What the original `status` column's CHECK allows (see `leads.status`). It
+ * has no "Renewed", and SQLite changes a CHECK only by rebuilding the table,
+ * which on D1 deletes every event and note.
+ */
+const LEGACY_LEAD_STATUSES = ["Prospect", "Quoted", "Active Client", "Follow-up", "Closed Won", "Closed Lost"] as const;
+/** Whether a won or renewed policy has reached CapitUp yet (lead_transactions). */
+export const POLICY_DOC_STATUSES = ["Policy Received", "Policy Yet to Receive"] as const;
 export const EVENT_KINDS = ["task", "meeting"] as const; // Mirrored in src/lib/domain.ts.
 /** Labels agents put on leads; admins filter by them. Mirrored in src/lib/domain.ts. */
 export const LEAD_TAGS = ["Hot", "VIP", "Price sensitive", "Referral", "Cold"] as const;
@@ -168,7 +173,15 @@ export const leads = sqliteTable(
     poc2_email_id: text("poc2_email_id").notNull().default(""),
     address: text("address").notNull().default(""),
     notes: text("notes").notNull().default(""),
-    status: text("status", { enum: LEAD_STATUSES }).notNull().default("Prospect"),
+    /**
+     * The pipeline status. Stored in `lead_status`: the original `status`
+     * column's CHECK has no "Renewed", and changing a CHECK means a table
+     * rebuild that would delete every event and note (migration 0011, same as
+     * `type` in 0006 and `policy_product` in 0009).
+     */
+    status: text("lead_status", { enum: LEAD_STATUSES }).notNull().default("Prospect"),
+    /** Unused since migration 0011 (see `status`). Kept because dropping it needs a table rebuild. */
+    legacy_status: text("status", { enum: LEGACY_LEAD_STATUSES }).notNull().default("Prospect"),
     assigned_agent_id: text("assigned_agent_id").references(() => profiles.id, { onDelete: "set null" }),
     assigned_at: text("assigned_at"),
     is_duplicate: bool("is_duplicate").notNull().default(false),
@@ -193,8 +206,8 @@ export const leads = sqliteTable(
     uniqueIndex("leads_app_user_id_idx").on(t.app_user_id),
     index("leads_client_name_normalized_idx").on(t.client_name_normalized),
     index("leads_renewal_date_idx").on(t.renewal_date),
-    index("leads_assigned_status_idx").on(t.assigned_agent_id, t.status),
-    index("leads_status_idx").on(t.status),
+    index("leads_assigned_lead_status_idx").on(t.assigned_agent_id, t.status),
+    index("leads_lead_status_idx").on(t.status),
     index("leads_created_at_idx").on(t.created_at),
     index("leads_updated_at_idx").on(t.updated_at),
     index("leads_duplicate_idx").on(t.is_duplicate),
@@ -204,7 +217,8 @@ export const leads = sqliteTable(
     check("leads_business_type", sql`${t.business_type} in (${inList(BUSINESS_TYPES)})`),
     check("leads_policy_product", sql`${t.legacy_policy_product} in (${inList(LEGACY_POLICY_PRODUCTS)})`),
     check("leads_product", sql`${t.policy_product} in (${inList(POLICY_PRODUCTS)})`),
-    check("leads_status", sql`${t.status} in (${inList(STORED_LEAD_STATUSES)})`),
+    check("leads_status", sql`${t.legacy_status} in (${inList(LEGACY_LEAD_STATUSES)})`),
+    check("leads_lead_status", sql`${t.status} in (${inList(LEAD_STATUSES)})`),
     check("leads_renewal_date", sql`${t.renewal_date} is null or coalesce(${t.renewal_date} = date(${t.renewal_date}), 0)`),
     check("leads_sub_product_len", sql`length(${t.sub_product_name}) <= 200`),
     check("leads_poc_name_len", sql`length(${t.poc_name}) <= 120 and length(${t.poc2_name}) <= 120`),
@@ -292,6 +306,8 @@ export const leadNotes = sqliteTable(
     agent_name: text("agent_name").notNull(),
     content: text("content").notNull(),
     created_at: createdAt(),
+    /** When the note was last edited (null: never). The writer's name and time stay as written. */
+    edited_at: text("edited_at"),
   },
   (t) => [
     index("lead_notes_lead_idx").on(t.lead_id, t.created_at),
@@ -319,6 +335,40 @@ export const leadTags = sqliteTable(
     primaryKey({ columns: [t.lead_id, t.tag] }),
     index("lead_tags_tag_idx").on(t.tag, t.lead_id),
     check("lead_tags_tag", sql`${t.tag} in (${inList(LEAD_TAGS)})`),
+  ],
+);
+
+/**
+ * What happened when a lead was won or renewed: one row per policy cycle, so
+ * every year's renewal keeps its own dates and policy copy. The policy file
+ * sits in the private R2 bucket under `policy_doc_path`; it is read only
+ * through src/server/data/transactions.ts, for someone who can see the lead.
+ */
+export const leadTransactions = sqliteTable(
+  "lead_transactions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    lead_id: integer("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    transaction_date: text("transaction_date").notNull(),
+    policy_start_date: text("policy_start_date"),
+    policy_status: text("policy_status", { enum: POLICY_DOC_STATUSES }).notNull().default("Policy Yet to Receive"),
+    policy_doc_path: text("policy_doc_path"),
+    policy_doc_name: text("policy_doc_name").notNull().default(""),
+    policy_doc_mime: text("policy_doc_mime"),
+    created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    updated_by: text("updated_by").references(() => profiles.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (t) => [
+    index("lead_transactions_lead_idx").on(t.lead_id, t.transaction_date),
+    index("lead_transactions_start_idx").on(t.policy_start_date),
+    check("lead_transactions_dates", sql`${t.transaction_date} = date(${t.transaction_date}) and (${t.policy_start_date} is null or ${t.policy_start_date} = date(${t.policy_start_date}))`),
+    check("lead_transactions_policy_status", sql`${t.policy_status} in (${inList(POLICY_DOC_STATUSES)})`),
+    check("lead_transactions_doc_name_len", sql`length(${t.policy_doc_name}) <= 200`),
+    check("lead_transactions_doc_mime", sql`${t.policy_doc_mime} is null or ${t.policy_doc_mime} in ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')`),
   ],
 );
 

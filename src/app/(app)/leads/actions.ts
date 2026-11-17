@@ -7,7 +7,7 @@ import { friendlyError } from "@/lib/action-errors";
 import { getSession, isAdmin } from "@/lib/auth";
 import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
 import { isLeadStatus } from "@/lib/domain";
-import { businessDateTimeToIso } from "@/lib/dates";
+import { businessDateTimeToIso, isIsoDate } from "@/lib/dates";
 import { contactSchema, formDataToObject, leadFormSchema, meetingSchema, type LeadFormValues } from "@/lib/lead-schema";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { attachCardToLead } from "@/server/data/cards";
@@ -16,6 +16,7 @@ import { findSimilarLeads, type SimilarLead } from "@/server/data/duplicates";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 import { isAiConfigured } from "@/lib/ai/client";
 import * as leadData from "@/server/data/leads";
+import * as transactionData from "@/server/data/transactions";
 import { listTeam } from "@/server/data/users";
 
 export type { SimilarLead };
@@ -220,9 +221,58 @@ async function run(fn: (session: NonNullable<Awaited<ReturnType<typeof getSessio
   return { ok: true };
 }
 
-export async function setLeadStatus(leadId: number, status: string): Promise<ActionResult> {
+/**
+ * Changes a lead's status. `renewalDate` is the next renewal date the person
+ * confirmed when closing the lead (Closed Won, Renewed or Closed Lost); left
+ * out, the server rolls the date to next year itself.
+ */
+export async function setLeadStatus(leadId: number, status: string, renewalDate?: string | null): Promise<ActionResult> {
   if (!isLeadStatus(status)) return { ok: false, error: "Unknown status." };
-  return run(({ ctx, actor }) => leadData.setLeadStatus(ctx, actor, leadId, status));
+  return run(({ ctx, actor }) =>
+    leadData.setLeadStatus(ctx, actor, leadId, status, renewalDate === undefined ? {} : { renewalDate: renewalDate || null }),
+  );
+}
+
+/** Sets only the renewal date (the "Move to next year" button on a closed lead). */
+export async function setRenewalDate(leadId: number, renewalDate: string): Promise<ActionResult> {
+  if (!isIsoDate(renewalDate)) return { ok: false, error: "Pick a valid renewal date." };
+  return run(({ ctx, actor }) => leadData.updateLead(ctx, actor, leadId, { renewal_date: renewalDate }));
+}
+
+/** Moves closed leads with a past renewal date on to next year (admins, up to 100 per press). */
+export async function rollForwardClosedLeads(): Promise<ActionResult> {
+  let outcome = { rolled: 0, remaining: 0 };
+  const result = await run(async ({ ctx, actor }) => {
+    outcome = await leadData.rollForwardClosedLeads(ctx, actor);
+  });
+  if (!result.ok) return result;
+  const moved = `Moved ${outcome.rolled} lead${outcome.rolled === 1 ? "" : "s"} to next year's renewal date.`;
+  return { ok: true, message: outcome.remaining > 0 ? `${moved} ${outcome.remaining} left: press again.` : moved };
+}
+
+/** Rewrites a note (agents: their own; admins: any). */
+export async function editLeadNote(noteId: number, content: string): Promise<ActionResult> {
+  return run(({ ctx, actor }) => leadData.editLeadNote(ctx, actor, noteId, content));
+}
+
+/** Adds or changes the transaction details of a won or renewed lead, with an optional policy file. */
+export async function saveLeadTransaction(leadId: number, formData: FormData): Promise<ActionResult> {
+  const file = formData.get("policy_doc");
+  if (file instanceof File && file.size > MAX_UPLOAD_BYTES) return { ok: false, error: `The policy file is larger than ${MAX_UPLOAD_LABEL}.` };
+  const id = Number(formData.get("id") || 0);
+  const input = {
+    id: Number.isInteger(id) && id > 0 ? id : null,
+    transaction_date: String(formData.get("transaction_date") ?? ""),
+    policy_start_date: String(formData.get("policy_start_date") ?? "") || null,
+    policy_status: String(formData.get("policy_status") ?? ""),
+  };
+  const policyFile = file instanceof File && file.size > 0 ? { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name } : null;
+  const result = await run(({ ctx, actor }) => transactionData.saveLeadTransaction(ctx, actor, leadId, input, policyFile));
+  return result.ok ? { ok: true, message: input.id ? "Transaction updated." : "Transaction saved." } : result;
+}
+
+export async function deleteLeadTransaction(id: number): Promise<ActionResult> {
+  return run(({ ctx, actor }) => transactionData.deleteLeadTransaction(ctx, actor, id));
 }
 
 export async function assignLead(leadId: number, agentId: string | null): Promise<ActionResult> {

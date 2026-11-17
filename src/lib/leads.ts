@@ -32,6 +32,12 @@ export async function listLeads(filters: LeadFilters): Promise<{ leads: ListedLe
   return leadData.listLeads(ctx, actor, filters);
 }
 
+/** Closed leads still carrying a passed renewal date (the admins' roll-forward banner). */
+export async function countClosedLeadsToRoll(): Promise<number> {
+  const { ctx, actor } = await requireSession();
+  return leadData.countClosedLeadsToRoll(ctx, actor);
+}
+
 /** How many leads match the filters in each status, for board columns beyond the list limit. */
 export async function countLeadsByStatus(filters: LeadFilters): Promise<Record<LeadStatus, number>> {
   const { ctx, actor } = await requireSession();
