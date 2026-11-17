@@ -3,7 +3,7 @@ import { AlertTriangle, CalendarClock, Snowflake } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { LeadStatus, LeadTag } from "@/lib/database.types";
 import { formatDate, relativeDays, renewalUrgency, todayInBusinessTz, type Urgency } from "@/lib/dates";
-import { STATUS_STYLES, TAG_STYLES } from "@/lib/domain";
+import { CLOSED_STATUSES, STATUS_STYLES, TAG_STYLES, canBeOverdue } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
 export function StatusBadge({ status, className }: { status: LeadStatus; className?: string }) {
@@ -36,19 +36,28 @@ const URGENCY_STYLES: Record<Urgency, string> = {
   later: "text-muted-foreground",
 };
 
-/** Renewal date with a colour-coded "in N days" hint. */
+/**
+ * Renewal date with a colour-coded "in N days" hint. With the lead's status,
+ * a Closed Lost lead shows a plain date, and a won, renewed or lost lead never
+ * shows as overdue (its past date is last cycle's).
+ */
 export function RenewalDate({
   date,
-  closed = false,
+  status,
+  closed: closedProp = false,
   compact = false,
 }: {
   date: string | null;
+  status?: LeadStatus;
   closed?: boolean;
   compact?: boolean;
 }) {
   if (!date) return <span className="text-muted-foreground">—</span>;
   const today = todayInBusinessTz();
   const urgency = renewalUrgency(date, today);
+  const closed =
+    closedProp ||
+    (status !== undefined && (CLOSED_STATUSES.includes(status) || (urgency === "overdue" && !canBeOverdue(status))));
   return (
     <span className={cn("inline-flex flex-wrap items-center gap-x-1.5", !closed && URGENCY_STYLES[urgency])}>
       {!compact && urgency !== "later" && !closed ? <CalendarClock className="size-3.5" /> : null}

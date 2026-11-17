@@ -3,10 +3,11 @@
 import { useState, useTransition } from "react";
 import { Loader2, Pencil } from "lucide-react";
 
-import { editLeadNote } from "@/app/(app)/leads/actions";
+import { editLeadNote, setLeadNotes } from "@/app/(app)/leads/actions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { formatNoteTimestamp } from "@/lib/dates";
+import { tidyLeadNotes } from "@/lib/lead-notes";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
@@ -101,5 +102,81 @@ export function NoteEntry({
         <p className="whitespace-pre-wrap">{note.content}</p>
       )}
     </li>
+  );
+}
+
+/**
+ * The lead's background notes field, editable in place by anyone who can edit
+ * the lead. Repeated "[AI Import Update: ...]" lines from the old app's
+ * imports show once, and saving removes the repeats for good.
+ */
+export function LeadNotesField({ leadId, notes }: { leadId: number; notes: string }) {
+  const shown = tidyLeadNotes(notes);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(shown);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (editing) {
+    return (
+      <form
+        className="space-y-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setError(null);
+          startTransition(async () => {
+            const result = await safeAction(() => setLeadNotes(leadId, draft));
+            if (result.ok) setEditing(false);
+            else setError(result.error);
+          });
+        }}
+      >
+        <Textarea
+          aria-label="Lead notes"
+          value={draft}
+          maxLength={20000}
+          rows={5}
+          autoFocus
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setEditing(false);
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) event.currentTarget.form?.requestSubmit();
+          }}
+        />
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" disabled={pending}>
+            {pending ? <Loader2 className="animate-spin" /> : null}
+            Save notes
+          </Button>
+        </div>
+      </form>
+    );
+  }
+  return (
+    <div className="flex items-start justify-between gap-2">
+      {shown ? (
+        <p className="text-sm whitespace-pre-wrap">{shown}</p>
+      ) : (
+        <p className="text-sm text-muted-foreground">No background notes yet.</p>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="shrink-0"
+        onClick={() => {
+          setDraft(shown);
+          setError(null);
+          setEditing(true);
+        }}
+      >
+        <Pencil />
+        {shown ? "Edit" : "Add"}
+      </Button>
+    </div>
   );
 }

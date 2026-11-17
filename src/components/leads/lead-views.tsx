@@ -4,7 +4,6 @@ import { Building2, Mail, Phone, User, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { LeadTag } from "@/lib/database.types";
 import type { LeadWithAgent } from "@/lib/leads";
-import { CLOSED_STATUSES } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { RowCheckbox, SelectAllCheckbox } from "./bulk-actions";
 import { WhatsAppIconLink } from "./lead-extras";
@@ -136,7 +135,7 @@ export function LeadsTable({
                   <PocSummary lead={lead} />
                 </td>
                 <td className="px-4 py-3">
-                  <RenewalDate date={lead.renewal_date} closed={CLOSED_STATUSES.includes(lead.status)} compact />
+                  <RenewalDate date={lead.renewal_date} status={lead.status} compact />
                 </td>
                 <td className="px-4 py-3">
                   <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} />
@@ -191,7 +190,7 @@ export function LeadCards({ leads, showAgent }: { leads: ListLead[]; showAgent: 
             <div className="flex items-center gap-2">
               <dt className="sr-only">Renewal</dt>
               <dd>
-                <RenewalDate date={lead.renewal_date} closed={CLOSED_STATUSES.includes(lead.status)} />
+                <RenewalDate date={lead.renewal_date} status={lead.status} />
               </dd>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">

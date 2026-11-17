@@ -6,7 +6,7 @@ import { GripVertical, User } from "lucide-react";
 
 import { setLeadStatus } from "@/app/(app)/leads/actions";
 import type { LeadStatus } from "@/lib/database.types";
-import { CLOSED_STATUSES, LEAD_STATUSES, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
+import { LEAD_STATUSES, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
 import type { LeadTag } from "@/lib/database.types";
 import type { LeadWithAgent } from "@/lib/leads";
 import { safeAction } from "@/lib/safe-action";
@@ -124,7 +124,7 @@ export function LeadsKanban({
                             <div className="text-xs">
                               <RenewalDate
                                 date={lead.renewal_date}
-                                closed={CLOSED_STATUSES.includes(lead.status)}
+                                status={lead.status}
                                 compact
                               />
                             </div>

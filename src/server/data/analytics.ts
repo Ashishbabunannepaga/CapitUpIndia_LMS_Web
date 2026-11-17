@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, eq, gte, isNotNull, lt, ne, sql } from "drizzle-orm";
 
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
-import { CLOSED_STATUSES } from "@/lib/domain";
+import { CLOSED_STATUSES, NO_OVERDUE_STATUSES } from "@/lib/domain";
 
 import { appSettings, leads, profiles } from "../db/schema";
 import { assertAdmin, isAdmin, type Actor } from "./actor";
@@ -69,6 +69,11 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
     CLOSED_STATUSES.map((s) => sql`${s}`),
     sql`, `,
   )})`;
+  // Past renewal dates on won, renewed or lost leads are last cycle's, not overdue.
+  const overdueable = sql`${leads.status} not in (${sql.join(
+    NO_OVERDUE_STATUSES.map((s) => sql`${s}`),
+    sql`, `,
+  )})`;
   const in7 = addDays(today, 7);
   const in30 = addDays(today, 30);
   const in90 = addDays(today, 90);
@@ -87,7 +92,7 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
         status: leads.status,
         n: count(),
         duplicates: flag(sql`${leads.is_duplicate} = 1`).as("duplicates"),
-        overdue: flag(sql`${open} and ${leads.renewal_date} < ${today}`).as("overdue"),
+        overdue: flag(sql`${overdueable} and ${leads.renewal_date} < ${today}`).as("overdue"),
         due30: flag(sql`${open} and ${leads.renewal_date} >= ${today} and ${leads.renewal_date} <= ${in30}`).as("due30"),
       })
       .from(leads)
@@ -98,7 +103,7 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
     ctx.db.select({ key: leads.business_type, n: count() }).from(leads).where(scope).groupBy(leads.business_type),
     ctx.db
       .select({
-        overdue: flag(sql`${leads.renewal_date} < ${today}`).as("overdue"),
+        overdue: flag(sql`${overdueable} and ${leads.renewal_date} < ${today}`).as("overdue"),
         today: flag(sql`${leads.renewal_date} = ${today}`).as("due_today"),
         week: flag(sql`${leads.renewal_date} >= ${today} and ${leads.renewal_date} <= ${in7}`).as("due_week"),
         month: flag(sql`${leads.renewal_date} >= ${today} and ${leads.renewal_date} <= ${in30}`).as("due_month"),
