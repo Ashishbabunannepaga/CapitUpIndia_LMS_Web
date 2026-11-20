@@ -43,6 +43,10 @@ export type AppLead = {
   next_renewal_date?: string | null;
   policies?: AppLeadPolicy[];
   withdrawn_at?: string | null;
+  /** The client tapped "Talk to an expert" in the app and has an open request: they want a call. */
+  expert_review_requested_at?: string | null;
+  /** What they wrote with the request, if anything (client's own words). */
+  expert_review_note?: string | null;
 };
 
 type Page = { items: AppLead[]; next_cursor: string | null; has_more: boolean };

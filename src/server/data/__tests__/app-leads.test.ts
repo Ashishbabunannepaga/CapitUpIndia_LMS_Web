@@ -70,6 +70,12 @@ describe("leadFromApp", () => {
     expect(lead.notes).toContain("(not yet checked by the client)");
   });
 
+  it("notes a call request with the client's own words", () => {
+    const lead = leadFromApp({ ...ravi, expert_review_requested_at: "2026-11-19T08:30:00Z", expert_review_note: "Is my mother covered?" });
+    expect(lead.notes).toContain('Asked for a call in the app ("Talk to an expert") on 2026-11-19: "Is my mother covered?"');
+    expect(leadFromApp(ravi).notes).not.toContain("Asked for a call");
+  });
+
   it("is a New lead when the app user has no policies yet", () => {
     expect(leadFromApp(sita)).toMatchObject({ type: "New", renewal_date: null, policy_product: "Not Specified" });
   });
@@ -101,6 +107,20 @@ describe("app leads", () => {
       [SITA, null],
       [RAVI, leadId],
     ]);
+  });
+
+  it("list people who asked for a call first, longest waiting first, before handed-over leads", async () => {
+    const asha = { ...sita, app_user_id: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff", full_name: "Asha", next_renewal_date: "2026-11-25" };
+    const feed = source([
+      asha,
+      { ...sita, expert_review_requested_at: "2026-11-19T10:00:00Z", expert_review_note: "Call after 6 pm" },
+      { ...ravi, expert_review_requested_at: "2026-11-18T10:00:00Z" },
+    ]);
+    const view = await listAppLeads(feed, world.ctx, world.admin);
+    if (view.state !== "ok") throw new Error(view.state);
+    // Ravi was handed over in the test above, so he stays last even though he asked first.
+    expect(view.items.map((i) => i.full_name)).toEqual(["Sita", "Asha", "Ravi Kumar"]);
+    expect(view.items[0].expert_review_note).toBe("Call after 6 pm");
   });
 
   it("refuses bad ids, inactive people and people no longer opted in", async () => {
