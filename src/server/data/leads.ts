@@ -825,6 +825,83 @@ export async function reassignLeads(ctx: DataContext, actor: Actor, ids: number[
   return moved;
 }
 
+/** What someone leaving the team still holds: their leads and their open tasks and meetings. */
+export async function countBook(ctx: DataContext, actor: Actor, userId: string): Promise<{ leads: number; tasks: number }> {
+  assertAdmin(actor);
+  const [[leadCount], [taskCount]] = await ctx.db.batch([
+    ctx.db.select({ n: count() }).from(leads).where(eq(leads.assigned_agent_id, userId)),
+    ctx.db
+      .select({ n: count() })
+      .from(events)
+      .where(and(eq(events.assigned_agent_id, userId), eq(events.is_system_generated, false), eq(events.is_completed, false))),
+  ]);
+  return { leads: leadCount?.n ?? 0, tasks: taskCount?.n ?? 0 };
+}
+
+/** Leads moved per D1 batch when handing over a whole book. */
+const HANDOVER_BATCH = 100;
+
+/**
+ * Moves everything a person holds to someone else (or leaves the leads
+ * unassigned): every lead assigned to them, with its renewal reminders and
+ * an audit row each, and their open tasks and meetings. Used when an agent
+ * leaves (users.deactivateUser). Admins only. The receiver gets one bell
+ * message. Returns what moved.
+ */
+export async function handOverBook(
+  ctx: DataContext,
+  actor: Actor,
+  fromId: string,
+  toId: string | null,
+): Promise<{ leads: number; tasks: number }> {
+  assertAdmin(actor);
+  if (toId === fromId) throw new InvalidInputError("Pick someone else to take over.");
+  await assertAssignable(ctx, toId);
+  const renewal = await renewalSettings(ctx);
+  let moved = 0;
+  // Each round takes the next batch still assigned to them, so a retry after
+  // a failure carries on where it stopped.
+  for (;;) {
+    const befores = await ctx.db
+      .select()
+      .from(leads)
+      .where(eq(leads.assigned_agent_id, fromId))
+      .orderBy(asc(leads.id))
+      .limit(HANDOVER_BATCH);
+    if (befores.length === 0) break;
+    const statements: BatchItem<"sqlite">[] = [];
+    for (const before of befores) {
+      statements.push(...(await leadChangeStatements(ctx, actor, before, { assigned_agent_id: toId }, { notifyOwner: false, renewal })));
+    }
+    await runLeadBatch(ctx, statements);
+    moved += befores.length;
+  }
+
+  const open = and(eq(events.assigned_agent_id, fromId), eq(events.is_system_generated, false), eq(events.is_completed, false));
+  const openTasks = await ctx.db.select({ id: events.id, title: events.title }).from(events).where(open);
+  // Unassigned tasks would vanish from every My Day, so with no new owner
+  // they go to the admin doing the handover.
+  const taskOwner = toId ?? actor.id;
+  if (openTasks.length > 0) {
+    await ctx.db.batch([
+      ctx.db.update(events).set({ assigned_agent_id: taskOwner, reminder_sent_at: null }).where(open),
+      auditInsert(ctx, actor, "events", `handover:${fromId}`, "UPDATE", { assigned_agent_id: fromId, tasks: openTasks.length }, { assigned_agent_id: taskOwner, tasks: openTasks.length }),
+    ]);
+  }
+
+  const receiver = toId ?? (openTasks.length > 0 ? actor.id : null);
+  if (receiver && receiver !== actor.id && (moved > 0 || openTasks.length > 0)) {
+    const parts = [moved ? `${moved} lead${moved === 1 ? "" : "s"}` : "", openTasks.length ? `${openTasks.length} open task${openTasks.length === 1 ? "" : "s"}` : ""].filter(Boolean);
+    await ctx.db.insert(notifications).values({
+      user_id: receiver,
+      kind: "other",
+      title: `${parts.join(" and ")} handed over to you`.slice(0, 300),
+      body: `${actor.full_name} moved them to you from a team member who left. Open Leads and My Day to see them.`.slice(0, 2000),
+    });
+  }
+  return { leads: moved, tasks: openTasks.length };
+}
+
 /** A lead as exports write it: owner name, tags and its newest transaction (won or renewed cycle). */
 export type ExportedLead = LeadWithAgent & {
   tags: LeadTag[];

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { authAccount, profiles } from "../db/schema";
 import { assertAdmin, type Actor } from "./actor";
 import type { DataContext } from "./context";
+import { countBook, handOverBook } from "./leads";
 import { AccessDeniedError, InvalidInputError, isTriggerError } from "./errors";
 
 // Team accounts. Ported from the profiles rules in the Supabase migrations:
@@ -158,10 +159,70 @@ export async function changeOwnPassword(
   }
 }
 
-/** Activates or deactivates an account. Deactivating signs them out. Admins only. */
+/**
+ * What happens to a leaver's leads and open tasks: given to another active
+ * team member (`to`, an id), put in the Unassigned pool (`to: null`, open
+ * tasks then go to the admin), or left where they are (`skip`, the admin's
+ * override: the leads keep the inactive owner and their reminders go to the
+ * admins).
+ */
+export type Handover = { to: string | null } | "skip";
+
+/** Leads and open tasks someone holds, for the Team page's "disable" prompt. Admins only. */
+export async function offboardingSummary(ctx: DataContext, actor: Actor, userId: string) {
+  assertAdmin(actor);
+  await findMember(ctx, userId);
+  return countBook(ctx, actor, userId);
+}
+
+/**
+ * Disables an account after handing over what they hold (see Handover), so
+ * nothing is stranded with someone who can no longer sign in. Admins only.
+ * Returns what moved.
+ */
+export async function deactivateUser(
+  ctx: DataContext,
+  actor: Actor,
+  userId: string,
+  handover: Handover,
+): Promise<{ leads: number; tasks: number }> {
+  assertAdmin(actor);
+  const member = await findMember(ctx, userId);
+  if (userId === actor.id) throw new AccessDeniedError("You can't disable your own account.");
+  if (!member.is_active) return { leads: 0, tasks: 0 };
+  // Refuse before moving anything if this would remove the last admin.
+  if (member.role === "ADMIN") {
+    const [{ admins }] = await ctx.db
+      .select({ admins: count() })
+      .from(profiles)
+      .where(and(eq(profiles.role, "ADMIN"), eq(profiles.is_active, true)));
+    if (admins <= 1) throw new AccessDeniedError("Keep at least one active admin.");
+  }
+  const moved = handover === "skip" ? { leads: 0, tasks: 0 } : await handOverBook(ctx, actor, userId, handover.to);
+  await applyActive(ctx, userId, false);
+  return moved;
+}
+
+/**
+ * Activates or deactivates an account. Deactivating signs them out, and is
+ * refused while they still hold leads or open tasks: use deactivateUser to
+ * hand those over (or skip on purpose). Admins only.
+ */
 export async function setActive(ctx: DataContext, actor: Actor, userId: string, active: boolean): Promise<void> {
   assertAdmin(actor);
   await findMember(ctx, userId);
+  if (!active) {
+    const book = await countBook(ctx, actor, userId);
+    if (book.leads > 0 || book.tasks > 0) {
+      throw new InvalidInputError(
+        `Reassign their ${book.leads} lead${book.leads === 1 ? "" : "s"} and ${book.tasks} open task${book.tasks === 1 ? "" : "s"} first, or skip on purpose.`,
+      );
+    }
+  }
+  await applyActive(ctx, userId, active);
+}
+
+async function applyActive(ctx: DataContext, userId: string, active: boolean): Promise<void> {
   try {
     await ctx.db.update(profiles).set({ is_active: active }).where(eq(profiles.id, userId));
   } catch (error) {

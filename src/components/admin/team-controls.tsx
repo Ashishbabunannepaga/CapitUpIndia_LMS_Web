@@ -8,6 +8,8 @@ import {
   changeMemberActive,
   changeMemberRole,
   changeStaleDays,
+  disableMember,
+  memberBook,
   resetMemberPassword,
   type TeamResult,
 } from "@/app/(app)/admin/team/actions";
@@ -77,18 +79,40 @@ export function AddMemberForm() {
 export function MemberControls({
   member,
   isSelf,
+  takers = [],
 }: {
   member: { id: string; full_name: string; role: "ADMIN" | "AGENT"; is_active: boolean };
   isSelf: boolean;
+  /** Active people who can take over this person's leads and tasks. */
+  takers?: { id: string; full_name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<TeamResult | null>(null);
   const [resetting, setResetting] = useState(false);
+  // Disabling asks where their leads and open tasks go first.
+  const [handover, setHandover] = useState<{ leads: number; tasks: number } | null>(null);
+  const [taker, setTaker] = useState("");
   const act = (fn: () => Promise<TeamResult>) =>
     startTransition(async () => {
       const outcome = await safeAction(fn);
       setResult(outcome);
-      if (outcome.ok) setResetting(false);
+      if (outcome.ok) {
+        setResetting(false);
+        setHandover(null);
+      }
+    });
+  const startDisable = () =>
+    startTransition(async () => {
+      setResult(null);
+      const book = await safeAction(() => memberBook(member.id));
+      if (!book.ok) return setResult(book);
+      if (book.leads === 0 && book.tasks === 0) {
+        const outcome = await safeAction(() => disableMember(member.id, "skip"));
+        setResult(outcome);
+        return;
+      }
+      setTaker("");
+      setHandover({ leads: book.leads, tasks: book.tasks });
     });
 
   return (
@@ -109,7 +133,7 @@ export function MemberControls({
             size="sm"
             variant="outline"
             disabled={pending}
-            onClick={() => act(() => changeMemberActive(member.id, !member.is_active))}
+            onClick={() => (member.is_active ? startDisable() : act(() => changeMemberActive(member.id, true)))}
           >
             {member.is_active ? "Disable" : "Enable"}
           </Button>
@@ -120,6 +144,58 @@ export function MemberControls({
         </Button>
         {pending ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
       </div>
+      {handover ? (
+        <form
+          className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (taker) act(() => disableMember(member.id, taker));
+          }}
+        >
+          <p className="font-medium text-amber-900">
+            {member.full_name} still has {handover.leads} lead{handover.leads === 1 ? "" : "s"} and {handover.tasks} open task
+            {handover.tasks === 1 ? "" : "s"}.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor={`handover-${member.id}`} className="text-amber-900">
+              Reassign all open leads and tasks to:
+            </label>
+            <NativeSelect
+              id={`handover-${member.id}`}
+              size="sm"
+              required
+              value={taker}
+              onChange={(event) => setTaker(event.target.value)}
+            >
+              <option value="" disabled>
+                Choose…
+              </option>
+              {takers.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.full_name}
+                </option>
+              ))}
+              <option value="unassigned">Unassigned pool (open tasks come to you)</option>
+              <option value="skip">Skip: keep them with {member.full_name} (admin override)</option>
+            </NativeSelect>
+          </div>
+          {taker === "skip" ? (
+            <p className="text-xs text-amber-900">
+              Their leads stay assigned to someone who can&apos;t sign in. Renewal reminders go to admins, but the leads won&apos;t
+              show under Unassigned.
+            </p>
+          ) : null}
+          <div className="flex gap-2">
+            <Button size="sm" type="submit" variant="destructive" disabled={pending || !taker}>
+              {pending ? <Loader2 className="animate-spin" /> : null}
+              {taker === "skip" ? "Disable without moving" : "Move and disable"}
+            </Button>
+            <Button size="sm" type="button" variant="ghost" disabled={pending} onClick={() => setHandover(null)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : null}
       {resetting ? (
         <form
           className="flex flex-wrap items-center gap-2"

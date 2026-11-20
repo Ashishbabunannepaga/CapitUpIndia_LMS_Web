@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-// @ts-expect-error -- a plain .mjs script with no type declarations
 import { migrationProblems } from "../../../scripts/check-migrations.mjs";
 
 // The CI guard that stops a migration from rebuilding `leads` (and so

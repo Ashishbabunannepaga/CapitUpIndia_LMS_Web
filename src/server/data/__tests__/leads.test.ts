@@ -31,7 +31,7 @@ import {
 import { findSimilarLeads, nameScore, similarity, trigrams } from "../duplicates";
 import { createTask, deleteTask, listEvents, setEventDone, updateTask } from "../events";
 import { deliverDueReminders, markNotificationsRead, recentNotifications } from "../notifications";
-import { setActive } from "../users";
+import { deactivateUser, setActive } from "../users";
 import { testWorld } from "./helpers";
 
 // Leads, notes, contacts, duplicates, renewal reminders and tasks on D1:
@@ -648,7 +648,7 @@ describe("renewal reminders", () => {
   it("a deactivated agent's reminders go to the admins", async () => {
     const date = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
     const id = await createLead(w.ctx, w.admin, { client_name: "Away Co", renewal_date: date, assigned_agent_id: w.neha.id });
-    await setActive(w.ctx, w.admin, w.neha.id, false);
+    await deactivateUser(w.ctx, w.admin, w.neha.id, "skip");
     try {
       await deliverDueReminders(w.ctx, new Date(Date.parse(`${date}T05:00:00Z`)));
       expect((await recentNotifications(w.ctx, w.admin)).items.some((n) => n.lead_id === id)).toBe(true);

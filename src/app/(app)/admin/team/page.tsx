@@ -164,7 +164,12 @@ export default async function TeamPage() {
                     <td className="px-4 py-3 tabular-nums">{joinedFormat.format(new Date(member.created_at))}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <MemberControls key={`${member.role}-${member.is_active}`} member={member} isSelf={member.id === actor.id} />
+                        <MemberControls
+                          key={`${member.role}-${member.is_active}`}
+                          member={member}
+                          isSelf={member.id === actor.id}
+                          takers={team.filter((m) => m.is_active && m.id !== member.id).map((m) => ({ id: m.id, full_name: m.full_name }))}
+                        />
                         {member.role === "AGENT" ? (
                           <Button asChild size="sm" variant="outline" title={`See ${member.full_name}'s My Day, read-only`}>
                             <Link href={`/admin/team/${member.id}/view`}>
