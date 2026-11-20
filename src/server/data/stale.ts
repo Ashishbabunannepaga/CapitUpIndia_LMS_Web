@@ -26,12 +26,20 @@ const staleDays = sql`coalesce((select cast(${appSettings.value} as integer) fro
 /** ISO timestamp: activity before this is stale. */
 const staleCutoff = sql`strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-' || ${staleDays} || ' days')`;
 
+/**
+ * The outer lead's id, always table-qualified. Drizzle renders `${leads.id}`
+ * as a bare "id" in a single-table select, and inside these subqueries a bare
+ * "id" means the note's, contact log's or event's own id, so activity was
+ * matched to the wrong lead.
+ */
+const outerLeadId = sql.raw(`"leads"."id"`);
+
 /** The lead's latest activity, as an ISO timestamp, for a query over `leads`. */
-export const lastActivityAt: SQL<string> = sql<string>`max(${leads.updated_at},
-  coalesce((select max(n.created_at) from lead_notes n where n.lead_id = ${leads.id}), ''),
-  coalesce((select max(c.created_at) from lead_contact_logs c where c.lead_id = ${leads.id}), ''),
+export const lastActivityAt: SQL<string> = sql<string>`max("leads"."updated_at",
+  coalesce((select max(n.created_at) from lead_notes n where n.lead_id = ${outerLeadId}), ''),
+  coalesce((select max(c.created_at) from lead_contact_logs c where c.lead_id = ${outerLeadId}), ''),
   coalesce((select max(max(e.created_at, coalesce(e.completed_at, ''))) from events e
-    where e.lead_id = ${leads.id} and e.is_system_generated = 0), ''))`;
+    where e.lead_id = ${outerLeadId} and e.is_system_generated = 0), ''))`;
 
 const openLead = sql`${leads.status} not in (${sql.join(
   DONE_STATUSES.map((s) => sql`${s}`),

@@ -9,7 +9,7 @@ import {
   type AlertSender,
   type SiteProbe,
 } from "@/server/data/monitoring";
-import { deliverDueReminders } from "@/server/data/notifications";
+import { deliverDueReminders, deliverTaskReminders } from "@/server/data/notifications";
 import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
 import { sendWebPush } from "@/server/push/web-push";
@@ -27,7 +27,9 @@ export type ScheduledDeps = {
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * The per-minute Cron Trigger: send renewal reminders that are due; every 15
+ * The per-minute Cron Trigger: send renewal reminders that are due (and
+ * escalate ignored T-10 / T-3 ones to admins), remind people of tasks and
+ * meetings, push all of it to browsers; every 15
  * minutes stop LMS leads whose CapitUp app user withdrew consent; every 5
  * minutes run the health check (src/server/data/monitoring.ts); and at 09:00
  * IST send the daily monitoring report.
@@ -42,6 +44,14 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
   } catch (error) {
     console.error("Renewal reminder delivery failed", { message: message(error) });
     await recordAppError(ctx, { source: "job", path: "Renewal reminders", message: message(error) }, at);
+  }
+
+  try {
+    const reminded = await deliverTaskReminders(ctx, at);
+    if (reminded > 0) console.log(`Delivered ${reminded} task and meeting reminder(s).`);
+  } catch (error) {
+    console.error("Task reminder delivery failed", { message: message(error) });
+    await recordAppError(ctx, { source: "job", path: "Task reminders", message: message(error) }, at);
   }
 
   // Whatever landed in a bell this minute (reminders, assignments) also goes
