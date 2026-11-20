@@ -14,7 +14,8 @@ import { getSession, isAdmin, type Session } from "@/lib/auth";
 import { normalizeCompanyName } from "@/lib/company-name";
 import type { LeadStatus, PolicyProduct } from "@/lib/database.types";
 import { todayInBusinessTz } from "@/lib/dates";
-import { isLeadStatus } from "@/lib/domain";
+import { isLeadStatus, isPolicyProduct } from "@/lib/domain";
+import { importGroupKey, pickMergeTarget } from "@/lib/import/merge";
 import { fromCellMatrix, parsePastedSheet, rowsAsText, heuristicMapRow, type ParsedSheet } from "@/lib/import/sheet";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { nextRoundRobinAgents } from "@/server/data/analytics";
@@ -39,11 +40,17 @@ export type PreviewRow = {
   errors: string[];
   /** Things worth knowing: dropped values, a company already in the CRM. */
   warnings: string[];
-  /** The existing lead this row will be merged into (same company name). */
-  existing?: { id: number; client_name: string; agent_name: string };
+  /**
+   * Leads already in the CRM for this exact company name, one per product.
+   * The row merges into the one with its product (pickMergeTarget); a new
+   * product becomes its own lead, so no product is ever dropped.
+   */
+  companyLeads: CompanyLead[];
   /** The row as it was in the sheet, so the user can see what was mapped. */
   source: string;
 };
+
+export type CompanyLead = { id: number; client_name: string; agent_name: string; agent_id: string | null; policy_product: string };
 
 export type PreviewResult =
   | {
@@ -57,7 +64,15 @@ export type PreviewResult =
   | { ok: false; error: string };
 
 export type CommitResult =
-  | { ok: true; created: number; merged: number; failed: number; errors: string[] }
+  | {
+      ok: true;
+      created: number;
+      merged: number;
+      /** New leads for a company already in the CRM with other products (never merged away). */
+      newProducts: number;
+      failed: number;
+      errors: string[];
+    }
   | { ok: false; error: string };
 
 function toSheet(text: string): ParsedSheet {
@@ -160,14 +175,15 @@ async function buildPreview(session: Session, sheet: ParsedSheet, useAi: boolean
       warnings.push("no contact details in this row");
     }
 
-    const key = normalizeCompanyName(lead.client_name);
-    if (key && seen.has(key)) {
-      warnings.push(`same company as row ${seen.get(key)} in this sheet; contacts will be merged into one lead`);
-    } else if (key) {
+    const company = normalizeCompanyName(lead.client_name);
+    const key = importGroupKey(company, lead.policy_product);
+    if (company && seen.has(key)) {
+      warnings.push(`same company and product as row ${seen.get(key)} in this sheet; contacts will be merged into one lead`);
+    } else if (company) {
       seen.set(key, row.row);
     }
 
-    preview.push({ row: row.row, lead, errors, warnings, source: row.cells.join(" | ") });
+    preview.push({ row: row.row, lead, errors, warnings, companyLeads: [], source: row.cells.join(" | ") });
   }
 
   // One lookup per distinct company, so the preview says what already exists.
@@ -176,7 +192,7 @@ async function buildPreview(session: Session, sheet: ParsedSheet, useAi: boolean
   const names = [...new Set(preview.filter((p) => p.lead.client_name).map((p) => p.lead.client_name))];
   const matches = await Promise.all(
     names.map(async (name) => {
-      const found = await findSimilarLeads(session.ctx, session.actor, name, { limit: 3 });
+      const found = await findSimilarLeads(session.ctx, session.actor, name, { limit: 50 });
       return [normalizeCompanyName(name), found] as const;
     }),
   );
@@ -184,10 +200,12 @@ async function buildPreview(session: Session, sheet: ParsedSheet, useAi: boolean
 
   for (const item of preview) {
     const found = matchesByKey.get(normalizeCompanyName(item.lead.client_name)) ?? [];
-    const exact = found.find((m) => m.is_exact);
-    if (exact) {
-      item.existing = { id: exact.lead_id, client_name: exact.client_name, agent_name: exact.assigned_agent_name };
-      item.warnings.push(`already in the CRM as "${exact.client_name}" (${exact.assigned_agent_name})`);
+    item.companyLeads = found
+      .filter((m) => m.is_exact)
+      .map((m) => ({ id: m.lead_id, client_name: m.client_name, agent_name: m.assigned_agent_name, agent_id: m.assigned_agent_id, policy_product: m.policy_product }));
+    if (item.companyLeads.length > 0) {
+      const owners = [...new Set(item.companyLeads.map((m) => m.agent_name))].join(", ");
+      item.warnings.push(`company already in the CRM as "${item.companyLeads[0].client_name}" (${owners})`);
     }
     for (const similar of found.filter((m) => !m.is_exact).slice(0, 2)) {
       item.warnings.push(
@@ -245,7 +263,7 @@ const commitSchema = z.object({
         client_name: z.string().trim().min(1).max(300),
         type: z.enum(["New", "Renewal", "Rollover"]),
         business_type: z.enum(["Corporate", "Retail"]),
-        policy_product: z.string(),
+        policy_product: z.string().refine(isPolicyProduct, "Pick a valid product."),
         sub_product_name: z.string().max(200),
         renewal_date: z.string(),
         address: z.string().max(1000),
@@ -289,24 +307,44 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
     if (!agents.some((a) => a.id === agentId)) return { ok: false, error: "Pick an active agent to assign these leads to." };
   }
 
-  // Merge rows for the same company so one company becomes one lead.
+  // One lead per company AND product: rows for the same company and product
+  // merge into one; a different product is a different lead.
   const groups = new Map<string, typeof rows>();
   for (const row of rows) {
-    const key = normalizeCompanyName(row.client_name);
+    const key = importGroupKey(normalizeCompanyName(row.client_name), row.policy_product);
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
 
-  // Which companies already exist (checked again here, not trusted from the preview).
-  const existing = new Map<string, number>();
+  // The company's existing leads, one lookup per company (checked again
+  // here, not trusted from the preview).
+  const byCompany = new Map<string, { id: number; policy_product: string; agent_id: string | null }[]>();
   await Promise.all(
-    [...groups.values()].map(async ([first]) => {
-      const found = await findSimilarLeads(ctx, profile, first.client_name, { limit: 1 });
-      const exact = found.find((m) => m.is_exact);
-      if (exact) existing.set(normalizeCompanyName(first.client_name), exact.lead_id);
+    [...new Set(rows.map((r) => normalizeCompanyName(r.client_name)))].map(async (company) => {
+      const first = rows.find((r) => normalizeCompanyName(r.client_name) === company)!;
+      const found = await findSimilarLeads(ctx, profile, first.client_name, { limit: 50 });
+      byCompany.set(
+        company,
+        found.filter((m) => m.is_exact).map((m) => ({ id: m.lead_id, policy_product: m.policy_product, agent_id: m.assigned_agent_id })),
+      );
     }),
   );
 
-  const newGroups = [...groups.entries()].filter(([key]) => !existing.has(key));
+  const decisions = new Map<string, ReturnType<typeof pickMergeTarget>>();
+  for (const [key, [first]] of groups) {
+    decisions.set(key, pickMergeTarget(byCompany.get(normalizeCompanyName(first.client_name)) ?? [], first.policy_product));
+  }
+  const activeIds = new Set((await listActiveAgents(ctx, profile)).map((a) => a.id));
+  /**
+   * A new product for a company someone already works stays with that
+   * person, so two agents never chase the same company unknowingly.
+   */
+  const companyOwner = (company: string) =>
+    (byCompany.get(company) ?? []).map((m) => m.agent_id).find((id): id is string => !!id && activeIds.has(id)) ?? null;
+
+  const newGroups = [...groups.entries()].filter(([key, [first]]) => {
+    const decision = decisions.get(key)!;
+    return decision.action === "create" || (decision.action === "new_product" && !companyOwner(normalizeCompanyName(first.client_name)));
+  });
   let owners: (string | null)[] = newGroups.map(() => (allocation === "agent" ? agentId : null));
   if (allocation === "round_robin" && newGroups.length > 0) {
     try {
@@ -316,9 +354,11 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
       return { ok: false, error: "Could not work out the round-robin order. Try again." };
     }
   }
+  const allocatedOwner = new Map(newGroups.map(([key], i) => [key, owners[i] ?? null]));
 
   let created = 0;
   let merged = 0;
+  let newProducts = 0;
   let failed = 0;
   const errors: string[] = [];
   const fail = (company: string, message: string) => {
@@ -326,14 +366,13 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
     if (errors.length < 5) errors.push(`${company}: ${message}`);
   };
 
-  let ownerIndex = 0;
   const assignedCounts = new Map<string, number>();
   for (const [key, groupRows] of groups) {
     const [first] = groupRows;
-    const leadId = existing.get(key);
+    const decision = decisions.get(key)!;
 
-    if (leadId === undefined) {
-      const owner = owners[ownerIndex++] ?? null;
+    if (decision.action !== "merge") {
+      const owner = allocatedOwner.has(key) ? allocatedOwner.get(key)! : companyOwner(normalizeCompanyName(first.client_name));
       let id: number;
       try {
         id = await createLead(ctx, profile, {
@@ -361,19 +400,22 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
         fail(first.client_name, friendlyError(error));
         continue;
       }
-      created++;
+      if (decision.action === "new_product") newProducts++;
+      else created++;
       if (owner) assignedCounts.set(owner, (assignedCounts.get(owner) ?? 0) + 1);
       await addExtraContacts(session, id, groupRows.slice(1), first);
       continue;
     }
 
-    // Existing company: fill the gaps, never overwrite.
+    // Existing lead for this company and product: fill the gaps, never overwrite.
+    const leadId = decision.leadId;
     const current = await getLead(ctx, profile, leadId);
     if (!current) {
       fail(first.client_name, "the existing lead belongs to an agent and is not visible");
       continue;
     }
-    const patch: { renewal_date?: string; sub_product_name?: string; address?: string } = {};
+    const patch: { renewal_date?: string; sub_product_name?: string; address?: string; policy_product?: PolicyProduct } = {};
+    if (decision.setProduct) patch.policy_product = first.policy_product as PolicyProduct;
     if (!current.renewal_date && first.renewal_date) patch.renewal_date = first.renewal_date;
     if (!current.sub_product_name && first.sub_product_name) patch.sub_product_name = first.sub_product_name;
     if (!current.address && first.address) patch.address = first.address;
@@ -414,7 +456,7 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
   }
 
   revalidatePath("/", "layout");
-  return { ok: true, created, merged, failed, errors };
+  return { ok: true, created, merged, newProducts, failed, errors };
 }
 
 const CONTACT_WORDS: Record<string, string> = {
