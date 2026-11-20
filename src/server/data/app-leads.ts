@@ -64,6 +64,10 @@ export function leadFromApp(item: AppLead, today = new Date().toISOString().slic
       (item.contact_consent_version ? ` (consent text ${item.contact_consent_version})` : "") +
       ". Contact only about their insurance; stop if they ask.",
     [item.city, item.state].filter(Boolean).length ? `Location: ${[item.city, item.state].filter(Boolean).join(", ")}` : null,
+    item.expert_review_requested_at
+      ? `Asked for a call in the app ("Talk to an expert") on ${String(item.expert_review_requested_at).slice(0, 10)}` +
+        (item.expert_review_note?.trim() ? `: "${item.expert_review_note.trim().slice(0, 500)}"` : ".")
+      : null,
     policies.length ? `Policies in the app (${policies.length}):\n${policyLines.join("\n")}` : "No policies added in the app yet.",
   ]
     .filter(Boolean)
@@ -127,6 +131,11 @@ export async function applyAppWithdrawals(ctx: DataContext, feed: AppFeedResult,
   return changed;
 }
 
+/** The client has an open "Talk to an expert" request in the app. */
+export function wantsCall(item: AppLead): boolean {
+  return Boolean(item.expert_review_requested_at);
+}
+
 /** Admins: the app's opted-in users, with whether each is already an LMS lead. */
 export async function listAppLeads(source: AppLeadsSource, ctx: DataContext, actor: Actor, force = false): Promise<AppLeadsView> {
   assertAdmin(actor);
@@ -137,10 +146,13 @@ export async function listAppLeads(source: AppLeadsSource, ctx: DataContext, act
   const linked = await handoffs(ctx, active.map((i) => i.app_user_id.toLowerCase()));
   const items = active
     .map((i) => ({ ...i, handoff: linked.get(i.app_user_id.toLowerCase()) ?? null }))
-    // Not yet handed over first, then the soonest renewal.
+    // Not yet handed over first; among those, people who asked for a call (longest waiting first);
+    // then the soonest renewal.
     .sort(
       (a, b) =>
         Number(Boolean(a.handoff)) - Number(Boolean(b.handoff)) ||
+        Number(!wantsCall(a)) - Number(!wantsCall(b)) ||
+        String(a.expert_review_requested_at ?? "").localeCompare(String(b.expert_review_requested_at ?? "")) ||
         String(a.next_renewal_date ?? "9999").localeCompare(String(b.next_renewal_date ?? "9999")),
     );
   return { state: "ok", fetchedAt: feed.fetchedAt, items, withdrawn: feed.items.length - active.length };

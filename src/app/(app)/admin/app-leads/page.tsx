@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Mail, Phone, PlugZap, RefreshCw, Smartphone } from "lucide-react";
+import { Mail, MessageSquareText, Phone, PlugZap, RefreshCw, Smartphone } from "lucide-react";
 
 import { Panel } from "@/components/analytics/charts";
 import { PageHeader } from "@/components/app-shell/page-header";
@@ -10,7 +10,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { requireSession } from "@/lib/auth";
 import { getTeam } from "@/lib/leads";
 import { appLeadsFeed } from "@/server/appfeed/feed";
-import { listAppLeads, type AppLeadRow } from "@/server/data/app-leads";
+import { listAppLeads, wantsCall, type AppLeadRow } from "@/server/data/app-leads";
 
 import { handOffAppLeadAction, refreshAppLeadsAction } from "./actions";
 
@@ -73,7 +73,8 @@ export default async function AppLeadsPage({ searchParams }: PageProps<"/admin/a
       ) : (
         <>
           <p className="mb-4 text-xs text-muted-foreground">
-            {view.items.length} opted in, {view.items.filter((i) => !i.handoff).length} not yet handed over
+            {view.items.length} opted in, {view.items.filter((i) => !i.handoff).length} not yet handed over,{" "}
+            {view.items.filter((i) => !i.handoff && wantsCall(i)).length} asked for a call
             {view.withdrawn ? `, ${view.withdrawn} withdrew` : ""}. Read {fetchedFormat.format(new Date(view.fetchedAt))}.
           </p>
           {view.items.length ? (
@@ -100,13 +101,20 @@ function AppLeadCard({ item, agents }: { item: AppLeadRow; agents: { id: string;
         title={item.full_name || item.phone || "App user"}
         icon={Smartphone}
         actions={
-          days === null ? (
-            <Tag tone="muted">No renewal date yet</Tag>
-          ) : (
-            <Tag tone={days <= 15 ? "risk" : days <= 45 ? "warn" : "info"}>
-              Renews {item.next_renewal_date} ({days < 0 ? `${-days} days ago` : `in ${days} days`})
-            </Tag>
-          )
+          <span className="flex flex-wrap justify-end gap-1.5">
+            {wantsCall(item) ? (
+              <Tag tone="risk">
+                <Phone className="mr-1 size-3" /> Wants a call
+              </Tag>
+            ) : null}
+            {days === null ? (
+              <Tag tone="muted">No renewal date yet</Tag>
+            ) : (
+              <Tag tone={days <= 15 ? "risk" : days <= 45 ? "warn" : "info"}>
+                Renews {item.next_renewal_date} ({days < 0 ? `${-days} days ago` : `in ${days} days`})
+              </Tag>
+            )}
+          </span>
         }
       >
         <div className="flex flex-wrap items-start gap-4">
@@ -126,6 +134,19 @@ function AppLeadCard({ item, agents }: { item: AppLeadRow; agents: { id: string;
               {item.city || item.state ? <span className="text-muted-foreground">{[item.city, item.state].filter(Boolean).join(", ")}</span> : null}
             </p>
             <p className="text-xs text-muted-foreground">Opted in {String(item.contact_consent_at ?? "").slice(0, 10)}</p>
+            {wantsCall(item) ? (
+              <div className="mt-2 rounded-md border border-dashed px-3 py-2 text-sm">
+                <p className="flex items-center gap-1.5 text-xs font-medium">
+                  <MessageSquareText className="size-3.5" /> Tapped “Talk to an expert” on{" "}
+                  {String(item.expert_review_requested_at).slice(0, 10)}
+                </p>
+                {item.expert_review_note?.trim() ? (
+                  <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">“{item.expert_review_note.trim()}”</p>
+                ) : (
+                  <p className="mt-1 text-muted-foreground">No message. Call to ask what they need.</p>
+                )}
+              </div>
+            ) : null}
             {policies.length ? (
               <ul className="mt-2 flex flex-wrap gap-1.5">
                 {policies.map((p, index) => (
