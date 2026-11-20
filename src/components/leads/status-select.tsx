@@ -7,29 +7,42 @@ import { Select } from "radix-ui";
 import { setLeadStatus } from "@/app/(app)/leads/actions";
 import type { LeadStatus } from "@/lib/database.types";
 import { todayInBusinessTz } from "@/lib/dates";
-import { LEAD_STATUSES, STATUS_STYLES } from "@/lib/domain";
+import { LEAD_STATUSES, POLICY_GATED_STATUS, STATUS_STYLES, statusesFor } from "@/lib/domain";
 import { rolloverForStatusChange } from "@/lib/renewal-rollover";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
 import { VerifyRenewalDialog } from "./lead-closing";
+import { PolicyCloseDialog } from "./policy-close";
 
 /**
- * Inline status changer used in the table, cards and lead header. Closing a
- * lead whose renewal is near or past first asks for next year's renewal date.
+ * Inline status changer used in the table, cards and lead header. Picking
+ * Closed Won opens the policy upload (only a checked policy makes a lead
+ * Closed Won); Closed Lost or Auto Renewed on a lead whose renewal is near or
+ * past first asks for next year's renewal date. Auto Renewed is offered only
+ * for retail term life.
  */
 export function StatusSelect({
   leadId,
   status,
   renewalDate = null,
+  lead,
+  clientName = "this lead",
+  isAdmin = false,
   className,
 }: {
   leadId: number;
   status: LeadStatus;
   /** The lead's renewal date, to suggest next year's when it is closed. */
   renewalDate?: string | null;
+  /** Business type and product, to offer Auto Renewed only for retail term life. */
+  lead?: { business_type: string; policy_product: string };
+  clientName?: string;
+  isAdmin?: boolean;
   className?: string;
 }) {
+  const options = lead ? statusesFor(lead, status) : LEAD_STATUSES.filter((s) => s !== "Auto Renewed" || s === status);
+  const [closing, setClosing] = useState(false);
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(status);
   const [verify, setVerify] = useState<{ status: LeadStatus; suggested: string } | null>(null);
@@ -45,6 +58,10 @@ export function StatusSelect({
   function changeStatus(value: string) {
     if (!LEAD_STATUSES.includes(value as LeadStatus) || value === optimistic) return;
     const next = value as LeadStatus;
+    if (next === POLICY_GATED_STATUS) {
+      setClosing(true);
+      return;
+    }
     const suggested = rolloverForStatusChange({ status, renewal_date: renewalDate }, next, todayInBusinessTz());
     if (suggested) setVerify({ status: next, suggested });
     else save(next);
@@ -52,6 +69,9 @@ export function StatusSelect({
 
   return (
     <>
+    {closing ? (
+      <PolicyCloseDialog open leadId={leadId} clientName={clientName} isAdmin={isAdmin} onClose={() => setClosing(false)} />
+    ) : null}
     {verify ? (
       <VerifyRenewalDialog
         open
@@ -70,7 +90,7 @@ export function StatusSelect({
         aria-label="Lead status"
         disabled={pending}
         className={cn(
-          "group inline-flex h-7 w-[7.5rem] items-center justify-between gap-2 rounded-md border px-2 text-xs font-semibold shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70",
+          "group inline-flex h-7 w-[9.5rem] items-center justify-between gap-2 rounded-md border px-2 text-xs font-semibold shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70",
           STATUS_STYLES[optimistic].badge,
           className,
         )}
@@ -97,7 +117,7 @@ export function StatusSelect({
           className="z-50 min-w-40 overflow-hidden rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg shadow-slate-900/10 ring-1 ring-black/5 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >
           <Select.Viewport className="max-h-[var(--radix-select-content-available-height)]">
-            {LEAD_STATUSES.map((value) => (
+            {options.map((value) => (
               <Select.Item
                 key={value}
                 value={value}
@@ -105,6 +125,9 @@ export function StatusSelect({
               >
                 <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", STATUS_STYLES[value].dot)} />
                 <Select.ItemText>{value}</Select.ItemText>
+                {value === POLICY_GATED_STATUS && value !== optimistic ? (
+                  <span className="text-xs text-muted-foreground">upload policy</span>
+                ) : null}
                 <Select.ItemIndicator className="absolute right-2.5 inline-flex items-center text-primary">
                   <Check aria-hidden="true" className="size-4" />
                 </Select.ItemIndicator>

@@ -594,7 +594,9 @@ describe("policy product", () => {
   it("Active Client is no longer a status", async () => {
     const id = await createLead(w.ctx, w.amit, { client_name: "Status Check Co" });
     await expect(setLeadStatus(w.ctx, w.amit, id, "Active Client")).rejects.toThrow("Unknown status.");
-    await setLeadStatus(w.ctx, w.amit, id, "Closed Won");
+    // Agents reach Closed Won only through the policy check; admins may set it directly.
+    await expect(setLeadStatus(w.ctx, w.amit, id, "Closed Won")).rejects.toThrow(/Upload the policy/);
+    await setLeadStatus(w.ctx, w.admin, id, "Closed Won");
   });
 });
 

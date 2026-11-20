@@ -19,9 +19,9 @@ export type RenewalWindow = keyof typeof RENEWAL_WINDOWS;
 
 /** Closed outcomes, for the "Closed" filter (and the export that follows it). */
 export const OUTCOME_FILTERS = {
-  won: "Closed Won or Renewed",
+  won: "Clients (Closed Won or Auto Renewed)",
   lost: "Closed Lost",
-  closed: "Any closed (won, renewed or lost)",
+  closed: "Any closed (awaiting policy, won, auto renewed or lost)",
 } as const;
 export type OutcomeFilter = keyof typeof OUTCOME_FILTERS;
 
@@ -47,7 +47,7 @@ export type LeadFilters = {
   /** Only open leads with no activity for longer than the stale threshold. */
   stale: boolean;
   tag: LeadTag | null;
-  /** Closed Won/Renewed, Closed Lost, or either. */
+  /** Clients (Closed Won/Auto Renewed), Closed Lost, or any closed. */
   outcome: OutcomeFilter | null;
   /** Policy start date range (YYYY-MM-DD, inclusive) from the lead's transactions. */
   startFrom: string | null;

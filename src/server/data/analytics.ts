@@ -20,9 +20,12 @@ export type AgentPipeline = {
   prospect: number;
   quoted: number;
   follow_up: number;
-  /** Closed Won (new business won). */
+  /** Closed Awaiting Policy: closed deals whose policy is not uploaded yet. */
+  awaiting_policy: number;
+  /** Closed Won (clients with us, new or renewed). */
   won: number;
-  renewed: number;
+  /** Auto Renewed (retail term life renewing itself). */
+  auto_renewed: number;
   lost: number;
   overdue_renewals: number;
   renewals_30d: number;
@@ -47,8 +50,9 @@ const STATUS_KEYS = {
   Prospect: "prospect",
   Quoted: "quoted",
   "Follow-up": "follow_up",
+  "Closed Awaiting Policy": "awaiting_policy",
   "Closed Won": "won",
-  Renewed: "renewed",
+  "Auto Renewed": "auto_renewed",
   "Closed Lost": "lost",
 } as const;
 
@@ -69,7 +73,7 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
     CLOSED_STATUSES.map((s) => sql`${s}`),
     sql`, `,
   )})`;
-  // Past renewal dates on won, renewed or lost leads are last cycle's, not overdue.
+  // Past renewal dates on leads awaiting their policy, auto-renewing or lost are not overdue.
   const overdueable = sql`${leads.status} not in (${sql.join(
     NO_OVERDUE_STATUSES.map((s) => sql`${s}`),
     sql`, `,
@@ -146,8 +150,9 @@ export async function pipelineAnalytics(ctx: DataContext, actor: Actor, now: Dat
         prospect: 0,
         quoted: 0,
         follow_up: 0,
+        awaiting_policy: 0,
         won: 0,
-        renewed: 0,
+        auto_renewed: 0,
         lost: 0,
         overdue_renewals: 0,
         renewals_30d: 0,
@@ -221,7 +226,7 @@ export async function nextRoundRobinAgents(ctx: DataContext, actor: Actor, n: nu
 export type AgentWorkload = {
   agent_id: string;
   agent_name: string;
-  /** Leads not yet Closed Won, Renewed or Closed Lost. */
+  /** Leads still being worked (not closed in any way). */
   open_leads: number;
   /** Their tasks, meetings and renewal due dates not ticked off before today. */
   overdue_followups: number;
@@ -240,10 +245,10 @@ export async function agentWorkload(ctx: DataContext, actor: Actor, now: Date = 
   const in7 = addDays(today, 7);
   const rows = await ctx.db.all<AgentWorkload & { role: string }>(sql`
     select p.id as agent_id, p.full_name as agent_name, p.role,
-      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.lead_status not in ('Closed Won', 'Renewed', 'Closed Lost')) as open_leads,
+      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.pipeline_status not in ('Closed Awaiting Policy', 'Closed Won', 'Auto Renewed', 'Closed Lost')) as open_leads,
       (select count(*) from events e where e.assigned_agent_id = p.id and e.is_completed = 0
         and e.is_background_reminder = 0 and e.event_timestamp < ${todayStart}) as overdue_followups,
-      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.lead_status != 'Closed Lost'
+      (select count(*) from ${leads} l where l.assigned_agent_id = p.id and l.pipeline_status != 'Closed Lost'
         and l.renewal_date >= ${today} and l.renewal_date <= ${in7}) as renewals_week
     from ${profiles} p
     where p.is_active = 1

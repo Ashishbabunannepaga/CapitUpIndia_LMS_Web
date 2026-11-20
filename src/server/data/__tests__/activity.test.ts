@@ -27,7 +27,7 @@ beforeAll(async () => {
   acme = await createLead(w.ctx, w.amit, { client_name: "Acme Activity Pvt Ltd", poc_name: "Ravi", poc_designation: "Director" });
   beta = await createLead(w.ctx, w.neha, { client_name: "Beta Activity" });
   await setLeadStatus(w.ctx, w.amit, acme, "Quoted");
-  await setLeadStatus(w.ctx, w.amit, acme, "Closed Won");
+  await setLeadStatus(w.ctx, w.amit, acme, "Closed Awaiting Policy");
   await addLeadNote(w.ctx, w.amit, acme, "Called Ravi, quote accepted");
   await logLeadContact(w.ctx, w.amit, acme, "whatsapp", true);
   await updateLead(w.ctx, w.amit, acme, { sub_product_name: "GMC" });
@@ -60,8 +60,8 @@ describe("activity log", () => {
         "Asha Admin:lead_assigned",
       ]),
     );
-    const won = items.find((i) => i.kind === "status_changed" && i.detail.endsWith("Closed Won"));
-    expect(won).toMatchObject({ lead_id: acme, lead_name: "Acme Activity Pvt Ltd", detail: "Quoted → Closed Won", lead_exists: true });
+    const won = items.find((i) => i.kind === "status_changed" && i.detail.endsWith("Closed Awaiting Policy"));
+    expect(won).toMatchObject({ lead_id: acme, lead_name: "Acme Activity Pvt Ltd", detail: "Quoted → Closed Awaiting Policy", lead_exists: true });
     expect(items.find((i) => i.kind === "lead_assigned")?.detail).toBe("Neha Agent → Amit Agent");
     expect(items.find((i) => i.kind === "contact")?.detail).toBe("WhatsApp with AI follow-up draft");
     expect(items.find((i) => i.kind === "task_completed")).toMatchObject({ lead_id: acme, detail: "Send policy copy" });
@@ -115,7 +115,7 @@ describe("live leads tracker", () => {
     const row = rows.find((r) => r.id === acme);
     expect(row).toMatchObject({
       client_name: "Acme Activity Pvt Ltd",
-      status: "Closed Won",
+      status: "Closed Awaiting Policy",
       agent_name: "Amit Agent",
       last_changed_by: "Amit Agent",
       notes: 1,
@@ -127,7 +127,7 @@ describe("live leads tracker", () => {
   });
 
   it("filters by owner, status and name", async () => {
-    expect((await listLeadTracker(w.ctx, w.admin, { status: "Closed Won" })).map((r) => r.id)).toEqual([acme]);
+    expect((await listLeadTracker(w.ctx, w.admin, { status: "Closed Awaiting Policy" })).map((r) => r.id)).toEqual([acme]);
     expect((await listLeadTracker(w.ctx, w.admin, { q: "beta act" })).map((r) => r.id)).toEqual([beta]);
     expect((await listLeadTracker(w.ctx, w.admin, { agentId: w.neha.id })).map((r) => r.id)).toEqual([]);
     await expect(listLeadTracker(w.ctx, w.admin, { status: "Bogus" })).rejects.toBeInstanceOf(InvalidInputError);
@@ -154,9 +154,8 @@ describe("monthly report", () => {
     const amit = summary.rows.find((r) => r[0] === "Amit Agent")!;
     const col = (name: string) => header.indexOf(name);
     expect(amit[col("Leads owned (now)")]).toBe(2);
-    expect(amit[col("Closed Won (active clients)")]).toBe(1);
-    expect(amit[col("Win rate % (won ÷ closed)")]).toBe(100);
-    expect(amit[col("Conversion rate % (won ÷ owned)")]).toBe(50);
+    // Acme waits for its policy: closed, but not yet a client.
+    expect(amit[col("Closed Won (active clients)")]).toBe(0);
     expect(amit[col("Status updates (month)")]).toBe(2);
     expect(amit[col("WhatsApp (month)")]).toBe(1);
 
@@ -170,7 +169,7 @@ describe("monthly report", () => {
     expect(cell("Tasks linked")).toBe(2);
     expect(cell("Tasks done")).toBe(1);
     expect(String(cell("Notes (all, timestamped)"))).toMatch(/^\[Amit Agent - \d{4}-\d\d-\d\d \d\d:\d\d\]: Called Ravi, quote accepted$/);
-    expect(String(cell("Activity this month (timestamped)"))).toContain("Amit Agent - Changed status: Quoted → Closed Won");
+    expect(String(cell("Activity this month (timestamped)"))).toContain("Amit Agent - Changed status: Quoted → Closed Awaiting Policy");
     expect(activity.rows.length).toBe(report.activity.length + 1);
 
     // A real .xlsx that spreadsheet apps can open.

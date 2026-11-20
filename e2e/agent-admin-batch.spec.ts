@@ -67,7 +67,7 @@ test("a lead page shows tags, WhatsApp, copy summary and its history", async ({ 
   await page.getByRole("button", { name: "+ Hot" }).click();
   await expect(page.getByRole("button", { name: "Hot", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(async () => (await queryFirst(db, "select count(*) as n from lead_tags where lead_id = ?", first))?.n).toBe(1);
-  await page.getByRole("link", { name: "History" }).click();
+  await page.getByRole("link", { name: "History", exact: true }).click();
   await expect(page).toHaveURL(/tab=history/);
   await expect(page.getByText("Tags: Hot")).toBeVisible();
   await expect(page.getByText("Created the lead for Amit")).toBeVisible();

@@ -57,3 +57,34 @@ export const bulkLeadsSchema = {
     additionalProperties: false,
   },
 };
+
+/** What is read from an uploaded policy document (src/lib/policy-check.ts checks it). */
+export const policySchema = {
+  name: "policy",
+  schema: {
+    type: "object",
+    properties: {
+      insured_name: text("The insured / policyholder: the company, or the person for a retail policy"),
+      insurer: text("The insurance company that issued the policy"),
+      policy_number: text("The policy number exactly as printed, or empty"),
+      policy_product: { type: "string", enum: [...POLICY_PRODUCTS] },
+      plan_name: text("The plan or product name as printed, or empty"),
+      policy_start_date: text("Period of insurance from, YYYY-MM-DD, or empty"),
+      policy_end_date: text("Period of insurance to (expiry), YYYY-MM-DD, or empty"),
+      premium: text("Total premium payable including taxes, digits only (no commas or currency), or empty"),
+      sum_insured: text("Sum insured / cover amount, digits only, or empty"),
+    },
+    required: [
+      "insured_name",
+      "insurer",
+      "policy_number",
+      "policy_product",
+      "plan_name",
+      "policy_start_date",
+      "policy_end_date",
+      "premium",
+      "sum_insured",
+    ],
+    additionalProperties: false,
+  },
+};

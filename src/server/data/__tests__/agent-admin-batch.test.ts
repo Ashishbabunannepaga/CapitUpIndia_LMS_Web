@@ -118,7 +118,7 @@ describe("stale leads", () => {
   it("flags open leads with no activity past the threshold, and any activity clears it", async () => {
     const quiet = await createLead(w.ctx, w.amit, { client_name: "Stale Quiet Co" });
     const noted = await createLead(w.ctx, w.amit, { client_name: "Stale Noted Co" });
-    const won = await createLead(w.ctx, w.amit, { client_name: "Stale Won Co", status: "Closed Won" });
+    const won = await createLead(w.ctx, w.amit, { client_name: "Stale Won Co", status: "Closed Awaiting Policy" });
     const fresh = await createLead(w.ctx, w.amit, { client_name: "Stale Fresh Co" });
     for (const id of [quiet, noted, won]) await backdate(id, 10);
     await addLeadNote(w.ctx, w.amit, noted, "Still talking to them");

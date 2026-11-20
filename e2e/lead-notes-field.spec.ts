@@ -38,7 +38,7 @@ test.beforeAll(async () => {
   );
   wonId = await retrying(() => createLead(db.ctx, amit, { client_name: "NotesField Won Pvt Ltd", status: "Quoted" }));
   const past = addDays(todayInBusinessTz(), -20);
-  await execute(db, `update leads set lead_status = 'Closed Won', renewal_date = '${past}' where id = ${wonId}`);
+  await execute(db, `update leads set pipeline_status = 'Closed Won', renewal_date = '${past}' where id = ${wonId}`);
 });
 
 test.afterAll(async () => {
@@ -58,8 +58,8 @@ test("an agent edits the lead notes in place and the import repeats are gone", a
   expect(row?.notes).toBe("Vehicle Type: WC\nOwner wants a quote by Friday");
 });
 
-test("a won lead with last year's renewal date is not in the overdue list", async ({ page }) => {
+test("a won client whose renewal date passed without a new policy is overdue again", async ({ page }) => {
   await signIn(page, "amit");
   await page.goto("/leads?renewal=overdue");
-  await expect(page.getByText("NotesField Won Pvt Ltd")).toHaveCount(0);
+  await expect(page.getByText("NotesField Won Pvt Ltd").first()).toBeVisible();
 });
