@@ -1,0 +1,82 @@
+name: Nightly D1 backup
+
+# Copies the live D1 database to AWS S3 every night, outside Cloudflare.
+# D1 Time Travel only reaches back 30 days; S3 keeps each dump for 90 days
+# (lifecycle rule in infra/aws/d1-backup.yaml). Each run also restores the
+# dump into a scratch SQLite file and counts the leads, so a broken backup
+# fails the run (and GitHub emails the repository owner).
+#
+# Needs (Settings > Secrets and variables > Actions), see docs/backups.md:
+#   secrets  CLOUDFLARE_API_TOKEN (with D1: Read), CLOUDFLARE_ACCOUNT_ID
+#   vars     AWS_BACKUP_ROLE_ARN, BACKUP_BUCKET, AWS_REGION (default ap-south-1)
+
+on:
+  schedule:
+    # 21:00 UTC = 02:30 IST. An export briefly pauses other queries, so it
+    # runs when nobody works.
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # to assume the AWS role without stored keys
+
+concurrency:
+  group: d1-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Export D1, check it restores, upload to S3
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AWS_BACKUP_ROLE_ARN: ${{ vars.AWS_BACKUP_ROLE_ARN }}
+      BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+    steps:
+      - name: Check the settings are in place
+        run: |
+          missing=""
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID AWS_BACKUP_ROLE_ARN BACKUP_BUCKET; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Backup not configured, missing:$missing. See docs/backups.md."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Export the live database
+        run: |
+          stamp=$(date -u +%Y-%m-%dT%H%M%SZ)
+          echo "STAMP=$stamp" >> "$GITHUB_ENV"
+          node scripts/d1-backup.mjs "capitup-lms-prod-$stamp.sql"
+      - name: Check the dump restores and holds the data
+        run: |
+          file="capitup-lms-prod-$STAMP.sql"
+          sqlite3 restore-check.db < "$file"
+          leads=$(sqlite3 restore-check.db "select count(*) from leads")
+          events=$(sqlite3 restore-check.db "select count(*) from events")
+          notes=$(sqlite3 restore-check.db "select count(*) from lead_notes")
+          echo "Restored: $leads leads, $events events, $notes notes."
+          echo "### D1 backup $STAMP" >> "$GITHUB_STEP_SUMMARY"
+          echo "Restored into SQLite: $leads leads, $events events, $notes notes." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$leads" -lt 1 ]; then echo "::error::The dump has no leads"; exit 1; fi
+          gzip -9 "$file"
+          sha256sum "$file.gz" | tee "$file.gz.sha256"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+          role-session-name: capitup-lms-d1-backup
+      - name: Upload to S3
+        run: |
+          file="capitup-lms-prod-$STAMP.sql.gz"
+          prefix="s3://$BACKUP_BUCKET/d1/$(date -u +%Y/%m)"
+          aws s3 cp "$file" "$prefix/$file" --only-show-errors
+          aws s3 cp "$file.sha256" "$prefix/$file.sha256" --only-show-errors
+          echo "Uploaded to $prefix/$file" | tee -a "$GITHUB_STEP_SUMMARY"

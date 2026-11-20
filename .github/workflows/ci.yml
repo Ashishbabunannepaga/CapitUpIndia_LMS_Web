@@ -1,9 +1,10 @@
 name: CI
 
+# Pull requests run it directly. main runs it through deploy.yml, which
+# only deploys to production when every job here has passed.
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
 
 jobs:
   web:
@@ -35,6 +36,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: No migration rebuilds or drops leads, events, notes...
+        run: node scripts/check-migrations.mjs
       - name: Migrations match src/server/db/schema.ts
         run: |
           npx drizzle-kit generate --name ci-drift-check
