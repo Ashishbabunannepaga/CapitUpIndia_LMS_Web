@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 import { friendlyError } from "@/lib/action-errors";
 import { getSession, isAdmin } from "@/lib/auth";
-import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
+import type { BusinessType, LeadSource, LeadStatus, LeadType, LostReason, PolicyProduct } from "@/lib/database.types";
 import { isLeadStatus } from "@/lib/domain";
 import { tidyLeadNotes } from "@/lib/lead-notes";
 import { businessDateTimeToIso, isIsoDate } from "@/lib/dates";
@@ -61,6 +61,12 @@ function toRow(v: LeadFormValues) {
     notes: v.notes,
     relationship_manager: v.relationship_manager,
     status: v.status as LeadStatus,
+    lead_source: v.lead_source as LeadSource | "",
+    lost_reason: v.lost_reason as LostReason | "",
+    lost_reason_detail: v.lost_reason_detail,
+    premium_inr: v.premium_inr,
+    insurer_name: v.insurer_name,
+    policy_number: v.policy_number,
   };
 }
 
@@ -100,6 +106,9 @@ export async function createLead(_prev: LeadFormState, formData: FormData): Prom
   const parsed = parseLeadForm(formData);
   if (!parsed.ok) return parsed.state;
   const { values, raw } = parsed;
+  if (!values.lead_source) {
+    return { error: "Check the highlighted fields.", fieldErrors: { lead_source: "Pick where the lead came from." }, values: raw };
+  }
   // Checked before the lead is saved, so a bad meeting date never leaves a lead without its meeting.
   const meeting = meetingSchema.safeParse(raw);
   if (!meeting.success) {
@@ -242,10 +251,18 @@ async function run(fn: (session: NonNullable<Awaited<ReturnType<typeof getSessio
  * confirmed when closing the lead (Closed Won, Renewed or Closed Lost); left
  * out, the server rolls the date to next year itself.
  */
-export async function setLeadStatus(leadId: number, status: string, renewalDate?: string | null): Promise<ActionResult> {
+export async function setLeadStatus(
+  leadId: number,
+  status: string,
+  renewalDate?: string | null,
+  lost?: { reason: string; detail: string },
+): Promise<ActionResult> {
   if (!isLeadStatus(status)) return { ok: false, error: "Unknown status." };
   return run(({ ctx, actor }) =>
-    leadData.setLeadStatus(ctx, actor, leadId, status, renewalDate === undefined ? {} : { renewalDate: renewalDate || null }),
+    leadData.setLeadStatus(ctx, actor, leadId, status, {
+      ...(renewalDate === undefined ? {} : { renewalDate: renewalDate || null }),
+      ...(lost ? { lostReason: String(lost.reason ?? ""), lostReasonDetail: String(lost.detail ?? "").slice(0, 500) } : {}),
+    }),
   );
 }
 

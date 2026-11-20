@@ -122,7 +122,10 @@ export async function applyAppWithdrawals(ctx: DataContext, feed: AppFeedResult,
       const notes = `${line}\n${lead.notes}`.slice(0, 20000);
       const stamp = new Date().toISOString();
       await ctx.db.batch([
-        ctx.db.update(leads).set({ notes, status: "Closed Lost", updated_at: stamp }).where(eq(leads.id, lead.id)),
+        ctx.db
+          .update(leads)
+          .set({ notes, status: "Closed Lost", lost_reason: "Other", lost_reason_detail: "Withdrew consent in the CapitUp app", updated_at: stamp })
+          .where(eq(leads.id, lead.id)),
         auditInsert(ctx, actor, "leads", lead.id, "UPDATE", { status: lead.status }, { status: "Closed Lost", reason: "app_consent_withdrawn" }),
       ]);
       changed++;
@@ -183,7 +186,7 @@ export async function handOffAppLead(
 
   let leadId: number;
   try {
-    leadId = await createLead(ctx, actor, { ...leadFromApp(item), assigned_agent_id: agentId, app_user_id: id });
+    leadId = await createLead(ctx, actor, { ...leadFromApp(item), lead_source: "Other", assigned_agent_id: agentId, app_user_id: id });
   } catch (error) {
     const text = String(error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : error);
     if (text.includes("leads_app_user_id_idx") || text.includes("UNIQUE")) {

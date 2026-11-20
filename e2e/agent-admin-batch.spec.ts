@@ -54,6 +54,7 @@ test("the floating + captures a lead from any page", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Add a lead" });
   await dialog.getByRole("tab", { name: "Add manually" }).click();
   await dialog.getByLabel("Client or company name").fill("Batch Floating Co");
+  await dialog.locator("#lead_source").selectOption("WhatsApp");
   await dialog.getByRole("button", { name: "Save lead" }).click();
   await expect(page.getByRole("heading", { name: "Batch Floating Co" })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);

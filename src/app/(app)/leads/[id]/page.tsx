@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
 import { addYears, businessDateOf, formatDate, formatDateTime, nowMs, todayInBusinessTz } from "@/lib/dates";
-import { CONTACT_CHANNEL_LABELS, formatNoteLine, isActiveClientStatus } from "@/lib/domain";
+import { CONTACT_CHANNEL_LABELS, formatInr, formatNoteLine, isActiveClientStatus, LOST_STATUS } from "@/lib/domain";
 import { closesCycle, nextRenewalDate } from "@/lib/renewal-rollover";
 import { findSimilarLeads, getLeadPage } from "@/lib/leads";
 import { cn } from "@/lib/utils";
@@ -405,6 +405,18 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                     {lead.policy_product}
                     {lead.sub_product_name ? <span className="text-muted-foreground"> · {lead.sub_product_name}</span> : null}
                   </Fact>
+                  {lead.insurer_name ? <Fact label="Insurer">{lead.insurer_name}</Fact> : null}
+                  {lead.policy_number ? <Fact label="Policy number">{lead.policy_number}</Fact> : null}
+                  {lead.premium_inr != null ? <Fact label="Premium">{formatInr(lead.premium_inr)}</Fact> : null}
+                  {lead.lead_source ? <Fact label="Lead source">{lead.lead_source}</Fact> : null}
+                  {lead.status === LOST_STATUS && lead.lost_reason ? (
+                    <Fact label="Lost reason">
+                      {lead.lost_reason}
+                      {lead.lost_reason_detail ? (
+                        <span className="text-muted-foreground"> · {lead.lost_reason_detail}</span>
+                      ) : null}
+                    </Fact>
+                  ) : null}
                   <Fact label="Assigned agent">
                     {admin ? (
                       <AssignAgentSelect

@@ -69,13 +69,13 @@ describe("closing a lead rolls the renewal to next year", () => {
     expect((await lead(id)).renewal_date).toBe(chosen);
     await setLeadStatus(w.ctx, w.amit, id, "Closed Won");
     expect((await lead(id)).renewal_date).toBe(chosen);
-    await expect(setLeadStatus(w.ctx, w.amit, id, "Closed Lost", { renewalDate: "2027-02-30" })).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(setLeadStatus(w.ctx, w.amit, id, "Closed Lost", { renewalDate: "2027-02-30", lostReason: "Price" })).rejects.toBeInstanceOf(InvalidInputError);
   });
 
   it("rolls a lost overdue lead so the team sees it next year, and leaves open statuses alone", async () => {
     const overdue = addDays(today, -40);
     const lost = await createLead(w.ctx, w.neha, { client_name: "Lost This Year Ltd", renewal_date: overdue });
-    await setLeadStatus(w.ctx, w.neha, lost, "Closed Lost");
+    await setLeadStatus(w.ctx, w.neha, lost, "Closed Lost", { lostReason: "Competitor" });
     expect((await lead(lost)).renewal_date).toBe(addYears(overdue, 1));
 
     const open = await createLead(w.ctx, w.neha, { client_name: "Still Chasing Ltd", renewal_date: overdue });

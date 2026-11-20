@@ -11,6 +11,9 @@ import {
   CLOSED_STATUSES,
   NO_OVERDUE_STATUSES,
   DEFAULT_POC_DESIGNATION,
+  LOST_STATUS,
+  isLeadSource,
+  isLostReason,
   LEAD_STATUSES,
   isContactChannel,
   isLeadStatus,
@@ -91,6 +94,12 @@ export type LeadFields = {
   notes: string;
   relationship_manager: string;
   status: Lead["status"];
+  lead_source: Lead["lead_source"];
+  lost_reason: Lead["lost_reason"];
+  lost_reason_detail: string;
+  premium_inr: number | null;
+  insurer_name: string;
+  policy_number: string;
 };
 
 export type NewLead = Partial<LeadFields> & {
@@ -127,6 +136,12 @@ const FIELD_NAMES: (keyof LeadFields)[] = [
   "notes",
   "relationship_manager",
   "status",
+  "lead_source",
+  "lost_reason",
+  "lost_reason_detail",
+  "premium_inr",
+  "insurer_name",
+  "policy_number",
 ];
 
 function now(): string {
@@ -154,7 +169,53 @@ function tidy<T extends Partial<LeadFields>>(fields: T): T {
   if (out.poc2_email_id !== undefined) out.poc2_email_id = out.poc2_email_id.trim().toLowerCase();
   if (out.poc_designation !== undefined) out.poc_designation = out.poc_designation.trim() || DEFAULT_POC_DESIGNATION;
   if (out.relationship_manager !== undefined) out.relationship_manager = out.relationship_manager.trim();
+  if (out.lead_source !== undefined && out.lead_source !== "" && !isLeadSource(out.lead_source)) {
+    throw new InvalidInputError("Pick where the lead came from.");
+  }
+  if (out.lost_reason !== undefined && out.lost_reason !== "" && !isLostReason(out.lost_reason)) {
+    throw new InvalidInputError("Pick why the lead was lost.");
+  }
+  if (out.lost_reason_detail !== undefined) {
+    out.lost_reason_detail = out.lost_reason_detail.trim();
+    if (out.lost_reason_detail.length > 500) throw new InvalidInputError("Keep the lost reason under 500 characters.");
+  }
+  if (out.premium_inr !== undefined && out.premium_inr !== null) {
+    if (!Number.isFinite(out.premium_inr) || out.premium_inr < 0 || out.premium_inr > 1e11) {
+      throw new InvalidInputError("Enter the premium in rupees, for example 125000.");
+    }
+    out.premium_inr = Math.round(out.premium_inr * 100) / 100;
+  }
+  if (out.insurer_name !== undefined) {
+    out.insurer_name = out.insurer_name.trim();
+    if (out.insurer_name.length > 200) throw new InvalidInputError("Keep the insurer name under 200 characters.");
+  }
+  if (out.policy_number !== undefined) {
+    out.policy_number = out.policy_number.trim();
+    if (out.policy_number.length > 100) throw new InvalidInputError("Keep the policy number under 100 characters.");
+  }
   return out;
+}
+
+/**
+ * The lost-reason rule: moving a lead to Closed Lost needs a reason ("Other"
+ * also needs a few words); leaving Closed Lost clears it (the audit log
+ * keeps the old one). Changes `patch` in place.
+ */
+function applyLostReason(before: Pick<Lead, "status" | "lost_reason" | "lost_reason_detail">, patch: Partial<Lead>): void {
+  const status = patch.status ?? before.status;
+  if (status !== LOST_STATUS) {
+    patch.lost_reason = "";
+    patch.lost_reason_detail = "";
+    return;
+  }
+  // Leads lost before reasons existed keep working: the rule bites when a lead
+  // moves into Closed Lost, or when someone changes the reason itself.
+  const entering = before.status !== LOST_STATUS;
+  if (!entering && patch.lost_reason === undefined && patch.lost_reason_detail === undefined) return;
+  const reason = patch.lost_reason ?? before.lost_reason;
+  const detail = patch.lost_reason_detail ?? before.lost_reason_detail;
+  if (!isLostReason(reason)) throw new InvalidInputError("Pick why the lead was lost.");
+  if (reason === "Other" && !detail) throw new InvalidInputError("Say in a few words why the lead was lost.");
 }
 
 type RenewalSettings = Awaited<ReturnType<typeof renewalSettings>>;
@@ -499,6 +560,15 @@ export async function listDuplicateGroups(ctx: DataContext, actor: Actor): Promi
 export async function createLead(ctx: DataContext, actor: Actor, input: NewLead): Promise<number> {
   const fields = tidy(pickFields(input));
   if (!fields.client_name) throw new InvalidInputError("Enter the client or company name.");
+  // Created straight into Closed Lost (an import, say) without a reason.
+  if (fields.status === LOST_STATUS && !fields.lost_reason) {
+    fields.lost_reason = "Other";
+    fields.lost_reason_detail ||= "Created as Closed Lost";
+  }
+  if (fields.status !== LOST_STATUS) {
+    delete fields.lost_reason;
+    delete fields.lost_reason_detail;
+  }
   const owner = isAdmin(actor) ? (input.assigned_agent_id ?? null) : actor.id;
   if (!isAdmin(actor) && input.assigned_agent_id && input.assigned_agent_id !== actor.id) {
     throw new AccessDeniedError("Agents can only create leads for themselves.");
@@ -703,6 +773,7 @@ export async function updateLead(
   // (a reassignment, a status change, another edit) must not be overwritten.
   if (opts.expectedUpdatedAt && opts.expectedUpdatedAt !== before.updated_at) throw new ConflictError();
   const patch: Partial<Lead> = tidy(pickFields(input));
+  applyLostReason(before, patch);
   if (patch.client_name === "") throw new InvalidInputError("Enter the client or company name.");
   if (input.assigned_agent_id !== undefined && input.assigned_agent_id !== before.assigned_agent_id) {
     assertAdmin(actor);
@@ -730,11 +801,13 @@ export async function setLeadStatus(
   actor: Actor,
   id: number,
   status: unknown,
-  opts: { renewalDate?: string | null } = {},
+  opts: { renewalDate?: string | null; lostReason?: string; lostReasonDetail?: string } = {},
 ): Promise<void> {
   if (!isLeadStatus(status)) throw new InvalidInputError("Unknown status.");
   const before = await findVisible(ctx, actor, id);
-  const patch: Partial<Lead> = { status };
+  const patch: Partial<Lead> = tidy({ status, lost_reason: (opts.lostReason ?? undefined) as Lead["lost_reason"] | undefined, lost_reason_detail: opts.lostReasonDetail });
+  for (const key of ["lost_reason", "lost_reason_detail"] as const) if (patch[key] === undefined) delete patch[key];
+  applyLostReason(before, patch);
   if (opts.renewalDate !== undefined && closesCycle(status)) {
     if (opts.renewalDate !== null && !isIsoDate(opts.renewalDate)) throw new InvalidInputError("Pick a valid renewal date.");
     patch.renewal_date = opts.renewalDate;

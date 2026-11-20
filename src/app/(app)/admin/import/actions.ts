@@ -393,6 +393,7 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
           poc2_email_id: first.poc2_email_id,
           notes: first.notes,
           status: status as LeadStatus,
+          lead_source: "Excel Import",
           assigned_agent_id: owner,
           notifyOwner: false,
         });

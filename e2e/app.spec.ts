@@ -67,6 +67,7 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
 
   await page.goto("/leads/new?mode=manual");
   await page.getByLabel("Client or company name").fill("UI Kaveri Textiles");
+  await page.locator("#lead_source").selectOption("Referral");
   await page.locator("#poc_name").fill("Priya");
   await page.locator("#poc_contact_number").fill("98450 12345");
   await page.locator("#poc_email_id").fill("Priya@Kaveri.IN");
@@ -132,6 +133,7 @@ test("the form explains invalid input instead of saving it", async ({ page }) =>
   await signIn(page, "amit");
   await page.goto("/leads/new?mode=manual");
   await page.getByLabel("Client or company name").fill("UI Bad Input Co");
+  await page.locator("#lead_source").selectOption("Referral");
   await page.locator("#poc_contact_number").fill("call me maybe");
   await page.getByRole("button", { name: "Save lead" }).click();
   await expect(page.getByText("Use digits, spaces, + or - only.")).toBeVisible();
@@ -142,6 +144,7 @@ test("creating a company another agent owns shows who has it", async ({ page }) 
   await signIn(page, "amit");
   await page.goto("/leads/new?mode=manual");
   await page.getByLabel("Client or company name").fill("UI Renee Systems Pvt Ltd");
+  await page.locator("#lead_source").selectOption("Referral");
   await expect(page.getByText("Handled by Neha E2E")).toBeVisible();
   await expect(page.getByText("Ask your admin before contacting them")).toBeVisible();
 

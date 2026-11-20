@@ -244,7 +244,11 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured, 
   }
 
   const prefill = result
-    ? Object.fromEntries(Object.entries(result.lead).map(([k, v]) => [k, String(v)]))
+    ? {
+        ...Object.fromEntries(Object.entries(result.lead).map(([k, v]) => [k, String(v)])),
+        // A scanned card is the lead's source; notes could be anything, so the agent picks.
+        ...(result.from === "card" ? { lead_source: "OCR/Card" } : {}),
+      }
     : undefined;
 
   if (mode === "manual") {

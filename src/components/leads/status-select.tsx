@@ -5,14 +5,14 @@ import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { Select } from "radix-ui";
 
 import { setLeadStatus } from "@/app/(app)/leads/actions";
-import type { LeadStatus } from "@/lib/database.types";
+import type { LeadStatus, LostReason } from "@/lib/database.types";
 import { todayInBusinessTz } from "@/lib/dates";
-import { LEAD_STATUSES, STATUS_STYLES } from "@/lib/domain";
+import { LEAD_STATUSES, LOST_STATUS, STATUS_STYLES } from "@/lib/domain";
 import { rolloverForStatusChange } from "@/lib/renewal-rollover";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
-import { VerifyRenewalDialog } from "./lead-closing";
+import { LostReasonDialog, VerifyRenewalDialog } from "./lead-closing";
 
 /**
  * Inline status changer used in the table, cards and lead header. Closing a
@@ -32,26 +32,43 @@ export function StatusSelect({
 }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(status);
-  const [verify, setVerify] = useState<{ status: LeadStatus; suggested: string } | null>(null);
+  type Lost = { reason: LostReason; detail: string };
+  const [verify, setVerify] = useState<{ status: LeadStatus; suggested: string; lost?: Lost } | null>(null);
+  const [askLost, setAskLost] = useState(false);
 
-  function save(next: LeadStatus, nextRenewalDate?: string) {
+  function save(next: LeadStatus, nextRenewalDate?: string, lost?: Lost) {
     startTransition(async () => {
       setOptimistic(next);
-      const result = await safeAction(() => setLeadStatus(leadId, next, nextRenewalDate));
+      const result = await safeAction(() => setLeadStatus(leadId, next, nextRenewalDate, lost));
       if (!result.ok) window.alert(result.error);
     });
+  }
+
+  function proceed(next: LeadStatus, lost?: Lost) {
+    const suggested = rolloverForStatusChange({ status, renewal_date: renewalDate }, next, todayInBusinessTz());
+    if (suggested) setVerify({ status: next, suggested, lost });
+    else save(next, undefined, lost);
   }
 
   function changeStatus(value: string) {
     if (!LEAD_STATUSES.includes(value as LeadStatus) || value === optimistic) return;
     const next = value as LeadStatus;
-    const suggested = rolloverForStatusChange({ status, renewal_date: renewalDate }, next, todayInBusinessTz());
-    if (suggested) setVerify({ status: next, suggested });
-    else save(next);
+    if (next === LOST_STATUS) setAskLost(true);
+    else proceed(next);
   }
 
   return (
     <>
+    {askLost ? (
+      <LostReasonDialog
+        open
+        onCancel={() => setAskLost(false)}
+        onConfirm={(lost) => {
+          setAskLost(false);
+          proceed(LOST_STATUS, lost);
+        }}
+      />
+    ) : null}
     {verify ? (
       <VerifyRenewalDialog
         open
@@ -61,7 +78,7 @@ export function StatusSelect({
         onCancel={() => setVerify(null)}
         onConfirm={(date) => {
           setVerify(null);
-          save(verify.status, date);
+          save(verify.status, date, verify.lost);
         }}
       />
     ) : null}

@@ -8,8 +8,9 @@ import { rollForwardClosedLeads, setRenewalDate } from "@/app/(app)/leads/action
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { LeadStatus } from "@/lib/database.types";
+import type { LeadStatus, LostReason } from "@/lib/database.types";
 import { formatDate } from "@/lib/dates";
+import { LOST_REASONS } from "@/lib/domain";
 import { safeAction } from "@/lib/safe-action";
 
 const WHY: Record<string, string> = {
@@ -191,5 +192,90 @@ export function RollForwardBanner({ count }: { count: number }) {
         Move them to next year
       </Button>
     </div>
+  );
+}
+
+/**
+ * Asks why a lead is lost before it moves to Closed Lost. A reason is
+ * required; "Other" also needs a short note.
+ */
+export function LostReasonDialog({
+  open,
+  clientName,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  clientName?: string;
+  onConfirm: (lost: { reason: LostReason; detail: string }) => void;
+  onCancel: () => void;
+}) {
+  const [reason, setReason] = useState<LostReason | "">("");
+  const [detail, setDetail] = useState("");
+  const valid = reason !== "" && (reason !== "Other" || detail.trim().length > 0);
+  return (
+    <Dialog.Root open={open} onOpenChange={(next) => (next ? null : onCancel())}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 animate-in bg-black/40 fade-in" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-card p-5 shadow-lift">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <Dialog.Title className="font-semibold">Why was {clientName ? clientName : "this lead"} lost?</Dialog.Title>
+              <Dialog.Description className="text-sm text-muted-foreground">
+                The reason is saved on the lead and used in the loss reports.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close asChild>
+              <Button type="button" variant="ghost" size="icon" aria-label="Cancel">
+                <X />
+              </Button>
+            </Dialog.Close>
+          </div>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (valid && reason) onConfirm({ reason, detail: detail.trim() });
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="lost-reason-select">Lost reason</Label>
+              <select
+                id="lost-reason-select"
+                required
+                value={reason}
+                onChange={(event) => setReason(event.target.value as LostReason)}
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="" disabled>
+                  Pick a reason
+                </option>
+                {LOST_REASONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="lost-reason-detail">Details{reason === "Other" ? "" : " (optional)"}</Label>
+              <Input
+                id="lost-reason-detail"
+                value={detail}
+                maxLength={500}
+                required={reason === "Other"}
+                onChange={(event) => setDetail(event.target.value)}
+                placeholder={reason === "Competitor" ? "Which insurer or broker?" : "Anything the team should know"}
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" size="sm" disabled={!valid}>
+                Mark Closed Lost
+              </Button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

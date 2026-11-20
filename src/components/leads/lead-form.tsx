@@ -20,7 +20,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { ClockToggle, TimeField } from "@/components/ui/clock";
 import { DictateButton } from "@/components/ui/dictate";
 import type { Lead } from "@/lib/database.types";
-import { BUSINESS_TYPES, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS, needsRenewalDate } from "@/lib/domain";
+import {
+  BUSINESS_TYPES,
+  LEAD_SOURCES,
+  LEAD_STATUSES,
+  LEAD_TYPES,
+  LOST_REASONS,
+  LOST_STATUS,
+  POLICY_PRODUCTS,
+  UNSPECIFIED_PRODUCT,
+  needsRenewalDate,
+} from "@/lib/domain";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +70,12 @@ const EMPTY: Record<string, string> = {
   notes: "",
   relationship_manager: "",
   status: "Prospect",
+  lead_source: "",
+  lost_reason: "",
+  lost_reason_detail: "",
+  premium_inr: "",
+  insurer_name: "",
+  policy_number: "",
   assigned_agent_id: "",
   visiting_card_path: "",
 };
@@ -260,6 +276,15 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
   const [typeChoice, setTypeChoice] = useState({ key: formKey, type: values.type });
   const leadType = typeChoice.key === formKey ? typeChoice.type : values.type;
   const dateRequired = needsRenewalDate(leadType);
+  // Lost reason shows for Closed Lost; premium, insurer and policy number once a product is picked.
+  const [statusChoice, setStatusChoice] = useState({ key: formKey, status: values.status });
+  const status = statusChoice.key === formKey ? statusChoice.status : values.status;
+  const [productChoice, setProductChoice] = useState({ key: formKey, product: values.policy_product });
+  const product = productChoice.key === formKey ? productChoice.product : values.policy_product;
+  const [reasonChoice, setReasonChoice] = useState({ key: formKey, reason: values.lost_reason });
+  const lostReason = reasonChoice.key === formKey ? reasonChoice.reason : values.lost_reason;
+  const isLost = status === LOST_STATUS;
+  const hasProduct = product !== UNSPECIFIED_PRODUCT;
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
   return (
@@ -349,19 +374,104 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
             </NativeSelect>
           </Field>
           <Field label="Status" name="status">
-            <NativeSelect id="status" name="status" defaultValue={values.status}>
+            <NativeSelect
+              id="status"
+              name="status"
+              defaultValue={values.status}
+              onChange={(event) => setStatusChoice({ key: formKey, status: event.target.value })}
+            >
               {LEAD_STATUSES.map((s) => (
                 <option key={s}>{s}</option>
               ))}
             </NativeSelect>
           </Field>
+          <Field
+            label={mode === "create" ? "Lead source" : "Lead source (optional)"}
+            name="lead_source"
+            error={errors.lead_source}
+            hint={mode === "create" ? "Where this lead came from. Feeds conversion-by-source reports." : undefined}
+          >
+            <NativeSelect
+              id="lead_source"
+              name="lead_source"
+              required={mode === "create"}
+              defaultValue={values.lead_source}
+              aria-invalid={Boolean(errors.lead_source)}
+            >
+              <option value="" disabled={mode === "create"}>
+                {mode === "create" ? "Choose…" : "Not recorded"}
+              </option>
+              {LEAD_SOURCES.map((source) => (
+                <option key={source}>{source}</option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <div className={cn("grid gap-4 md:col-span-2 md:grid-cols-2 xl:col-span-3 xl:grid-cols-3", !isLost && "hidden")}>
+            <Field label="Why was it lost?" name="lost_reason" error={errors.lost_reason}>
+              <NativeSelect
+                id="lost_reason"
+                name="lost_reason"
+                required={isLost}
+                defaultValue={values.lost_reason}
+                onChange={(event) => setReasonChoice({ key: formKey, reason: event.target.value })}
+                aria-invalid={Boolean(errors.lost_reason)}
+              >
+                <option value="" disabled>
+                  Choose…
+                </option>
+                {LOST_REASONS.map((reason) => (
+                  <option key={reason}>{reason}</option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field
+              label={lostReason === "Other" ? "Details" : "Details (optional)"}
+              name="lost_reason_detail"
+              error={errors.lost_reason_detail}
+              className="xl:col-span-2"
+            >
+              <Input
+                id="lost_reason_detail"
+                name="lost_reason_detail"
+                maxLength={500}
+                required={isLost && lostReason === "Other"}
+                defaultValue={values.lost_reason_detail}
+                placeholder="e.g. Went with ICICI Lombard at 8% less"
+              />
+            </Field>
+          </div>
           <Field label="Policy product" name="policy_product">
-            <NativeSelect id="policy_product" name="policy_product" defaultValue={values.policy_product}>
+            <NativeSelect
+              id="policy_product"
+              name="policy_product"
+              defaultValue={values.policy_product}
+              onChange={(event) => setProductChoice({ key: formKey, product: event.target.value })}
+            >
               {POLICY_PRODUCTS.map((p) => (
                 <option key={p}>{p}</option>
               ))}
             </NativeSelect>
           </Field>
+          {/* Hidden (not removed) without a product, so an edit never clears saved values. */}
+          <div className={cn("grid gap-4 md:col-span-2 md:grid-cols-2 xl:col-span-3 xl:grid-cols-3", !hasProduct && "hidden")}>
+            <Field label="Premium (₹, optional)" name="premium_inr" error={errors.premium_inr}>
+              <Input
+                id="premium_inr"
+                name="premium_inr"
+                inputMode="decimal"
+                maxLength={20}
+                defaultValue={values.premium_inr}
+                placeholder="e.g. 125000"
+                aria-invalid={Boolean(errors.premium_inr)}
+              />
+            </Field>
+            <Field label="Insurer (optional)" name="insurer_name" error={errors.insurer_name}>
+              <Input id="insurer_name" name="insurer_name" maxLength={200} defaultValue={values.insurer_name} placeholder="e.g. HDFC Ergo" />
+            </Field>
+            <Field label="Policy number (optional)" name="policy_number" error={errors.policy_number}>
+              <Input id="policy_number" name="policy_number" maxLength={100} defaultValue={values.policy_number} />
+            </Field>
+          </div>
           <Field label="Sub-product" name="sub_product_name" error={errors.sub_product_name}>
             <Input
               id="sub_product_name"

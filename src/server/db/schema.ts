@@ -35,6 +35,10 @@ export const POLICY_DOC_STATUSES = ["Policy Received", "Policy Yet to Receive"] 
 export const EVENT_KINDS = ["task", "meeting"] as const; // Mirrored in src/lib/domain.ts.
 /** Labels agents put on leads; admins filter by them. Mirrored in src/lib/domain.ts. */
 export const LEAD_TAGS = ["Hot", "VIP", "Price sensitive", "Referral", "Cold"] as const;
+/** Where a lead came from (chosen on create; import and card scans set it). Mirrored in src/lib/domain.ts. */
+export const LEAD_SOURCES = ["WhatsApp", "Referral", "Cold Call", "Walk-in", "Website", "LinkedIn", "Excel Import", "OCR/Card", "Other"] as const;
+/** Why a lead was lost (required when it moves to Closed Lost). Mirrored in src/lib/domain.ts. */
+export const LOST_REASONS = ["Price", "Competitor", "No Response", "Client Deceased", "Not Interested", "Other"] as const;
 export const AI_FEATURES = ["lead_intake", "card_ocr", "follow_up", "follow_up_rephrase", "bulk_mapping", "other"] as const;
 
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
@@ -195,6 +199,19 @@ export const leads = sqliteTable(
     office_lead_id: text("office_lead_id"),
     /** The CapitUp app user this lead was handed over from (they opted in to be contacted), if any. */
     app_user_id: text("app_user_id"),
+    // Added in migration 0012 with ADD COLUMN only (a CHECK on `leads` would
+    // need a table rebuild, which on D1 deletes every event and note), so the
+    // allowed values are enforced in src/server/data/leads.ts.
+    /** Where the lead came from (LEAD_SOURCES); "" for leads made before it existed. */
+    lead_source: text("lead_source", { enum: ["", ...LEAD_SOURCES] }).notNull().default(""),
+    /** Why it was lost (LOST_REASONS); set only while the status is Closed Lost. */
+    lost_reason: text("lost_reason", { enum: ["", ...LOST_REASONS] }).notNull().default(""),
+    /** Free text with the lost reason (required for "Other"). */
+    lost_reason_detail: text("lost_reason_detail").notNull().default(""),
+    /** Premium in rupees (quoted or written), when known. */
+    premium_inr: real("premium_inr"),
+    insurer_name: text("insurer_name").notNull().default(""),
+    policy_number: text("policy_number").notNull().default(""),
     created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
     created_at: createdAt(),
     updated_at: updatedAt(),
@@ -285,6 +302,10 @@ export const events = sqliteTable(
     index("events_pending_reminders_idx")
       .on(t.event_timestamp)
       .where(sql`${t.is_background_reminder} = 1 and ${t.reminder_sent_at} is null`),
+    // Tasks and meetings still to remind (deliverTaskReminders, every minute).
+    index("events_pending_task_reminders_idx")
+      .on(t.event_timestamp)
+      .where(sql`${t.is_system_generated} = 0 and ${t.is_completed} = 0 and ${t.reminder_sent_at} is null`),
     check("events_title_len", sql`length(trim(${t.title})) between 1 and 300`),
     check("events_notes_len", sql`length(${t.notes}) <= 5000`),
     check("events_kind", sql`${t.kind} in (${inList(EVENT_KINDS)})`),
