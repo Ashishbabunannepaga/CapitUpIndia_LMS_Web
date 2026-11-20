@@ -269,10 +269,17 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
       className="space-y-5"
     >
       {error ? (
-        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <span className="min-w-0 flex-1">{error}</span>
+          {state.conflict && lead ? (
+            // A full load, so the form starts again from the saved lead.
+            <a href={`/leads/${lead.id}/edit`} className="font-medium underline underline-offset-2">
+              Reload and try again
+            </a>
+          ) : null}
+        </div>
       ) : null}
+      {mode === "edit" && lead ? <input type="hidden" name="expected_updated_at" value={lead.updated_at} /> : null}
 
       <Section title="Company and policy">
         {values.visiting_card_path ? (

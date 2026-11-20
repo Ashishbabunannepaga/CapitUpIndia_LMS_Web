@@ -16,6 +16,7 @@ import { createTask } from "@/server/data/events";
 import { findSimilarLeads, type SimilarLead } from "@/server/data/duplicates";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 import { isAiConfigured } from "@/lib/ai/client";
+import { ConflictError } from "@/server/data/errors";
 import * as leadData from "@/server/data/leads";
 import * as transactionData from "@/server/data/transactions";
 import { listTeam } from "@/server/data/users";
@@ -28,6 +29,8 @@ export type LeadFormState = {
   /** Similar companies found on save; the user must confirm to continue. */
   duplicates?: SimilarLead[];
   values?: Record<string, string>;
+  /** Someone else saved the lead after this form was opened; the user must reload. */
+  conflict?: boolean;
 };
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
@@ -59,6 +62,12 @@ function toRow(v: LeadFormValues) {
     relationship_manager: v.relationship_manager,
     status: v.status as LeadStatus,
   };
+}
+
+/** The lead's updated_at when the form was opened (edit form only). */
+function expectedVersion(formData: FormData): string | null {
+  const value = formData.get("expected_updated_at");
+  return typeof value === "string" && value ? value.slice(0, 40) : null;
 }
 
 function parseLeadForm(formData: FormData) {
@@ -164,12 +173,18 @@ export async function updateLead(leadId: number, _prev: LeadFormState, formData:
       }
     }
 
-    await leadData.updateLead(ctx, actor, leadId, {
-      ...toRow(values),
-      ...(isAdmin(actor) ? { assigned_agent_id: values.assigned_agent_id } : {}),
-    });
+    await leadData.updateLead(
+      ctx,
+      actor,
+      leadId,
+      {
+        ...toRow(values),
+        ...(isAdmin(actor) ? { assigned_agent_id: values.assigned_agent_id } : {}),
+      },
+      { expectedUpdatedAt: expectedVersion(formData) },
+    );
   } catch (error) {
-    return { error: friendlyError(error), values: raw };
+    return { error: friendlyError(error), values: raw, conflict: error instanceof ConflictError };
   }
 
   refreshWorkspace();
@@ -252,9 +267,11 @@ export async function rollForwardClosedLeads(): Promise<ActionResult> {
 }
 
 /** Rewrites the lead's background notes field (anyone who can edit the lead). */
-export async function setLeadNotes(leadId: number, notes: string): Promise<ActionResult> {
+export async function setLeadNotes(leadId: number, notes: string, expectedUpdatedAt?: string): Promise<ActionResult> {
   if (notes.length > 20000) return { ok: false, error: "Keep the notes under 20,000 characters." };
-  return run(({ ctx, actor }) => leadData.updateLead(ctx, actor, leadId, { notes: tidyLeadNotes(notes) }));
+  return run(({ ctx, actor }) =>
+    leadData.updateLead(ctx, actor, leadId, { notes: tidyLeadNotes(notes) }, { expectedUpdatedAt: expectedUpdatedAt ?? null }),
+  );
 }
 
 /** Rewrites a note (agents: their own; admins: any). */

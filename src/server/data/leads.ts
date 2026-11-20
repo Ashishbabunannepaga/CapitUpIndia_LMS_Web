@@ -22,6 +22,7 @@ import { isOwnCardPath } from "@/lib/visiting-cards";
 
 import {
   appSettings,
+  changeVersion,
   events,
   leadContactLogs,
   leadNoteReads,
@@ -38,7 +39,7 @@ import { isAdmin, assertAdmin, type Actor } from "./actor";
 import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
 import { duplicateState } from "./duplicates";
-import { AccessDeniedError, InvalidInputError } from "./errors";
+import { AccessDeniedError, ConflictError, InvalidInputError, isTriggerError } from "./errors";
 import { clientWithProduct, milestoneEvents } from "./milestones";
 import { isStale, lastActivityAt } from "./stale";
 
@@ -548,8 +549,42 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
 
 /** Applies a change to a lead with everything that follows from it, in one batch. */
 async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Partial<Lead>): Promise<void> {
-  const statements = await leadChangeStatements(ctx, actor, before, patch);
-  if (statements.length > 0) await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, await leadChangeStatements(ctx, actor, before, patch));
+}
+
+/**
+ * The marker the version guard's deliberate error carries. SQLite has no
+ * RAISE outside triggers, so the guard calls json() on text that is not
+ * JSON, which aborts the whole batch (a D1 batch is one transaction).
+ */
+const LEAD_CHANGED = "malformed JSON";
+
+/**
+ * A statement that aborts its batch unless the lead still has the
+ * updated_at it had when it was read: someone saved it in between, and
+ * writing now would silently undo their change (lost update). Every lead
+ * write puts this first, so nothing in the batch applies on a conflict.
+ */
+function leadVersionGuard(ctx: DataContext, id: number, expectedUpdatedAt: string): BatchItem<"sqlite"> {
+  // change_version always holds exactly one row, so this select runs once.
+  return ctx.db
+    .select({
+      ok: sql<number>`case when (select ${leads.updated_at} from ${leads} where ${leads.id} = ${id}) is ${expectedUpdatedAt}
+        then 1 else json('lead changed since it was read') end`,
+    })
+    .from(changeVersion)
+    .limit(1);
+}
+
+/** Runs lead write statements as one batch, turning a failed version guard into a ConflictError. */
+async function runLeadBatch(ctx: DataContext, statements: BatchItem<"sqlite">[]): Promise<void> {
+  if (statements.length === 0) return;
+  try {
+    await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  } catch (error) {
+    if (isTriggerError(error, LEAD_CHANGED)) throw new ConflictError();
+    throw error;
+  }
 }
 
 /**
@@ -564,6 +599,8 @@ async function leadChangeStatements(
   patch: Partial<Lead>,
   { notifyOwner = true, renewal: preloaded }: { notifyOwner?: boolean; renewal?: RenewalSettings } = {},
 ): Promise<BatchItem<"sqlite">[]> {
+  // `before` is the row as the caller read it; the guard makes sure it is
+  // still the row in D1 when the batch runs.
   const stamp = now();
   const after: Lead = { ...before, ...patch };
   if (after.assigned_agent_id !== before.assigned_agent_id) after.assigned_at = after.assigned_agent_id ? stamp : null;
@@ -577,8 +614,17 @@ async function leadChangeStatements(
   if (!changed(before, after)) return [];
   after.updated_at = stamp;
 
-  const { id, ...values } = after;
-  const statements: BatchItem<"sqlite">[] = [ctx.db.update(leads).set(values).where(eq(leads.id, id))];
+  // Only the columns that change are written, so a field nobody touched can
+  // never be put back to an older value.
+  const { id } = after;
+  const values: Partial<Lead> = {};
+  for (const key of Object.keys(after) as (keyof Lead)[]) {
+    if (key !== "id" && after[key] !== before[key]) (values as Record<string, unknown>)[key] = after[key];
+  }
+  const statements: BatchItem<"sqlite">[] = [
+    leadVersionGuard(ctx, id, before.updated_at),
+    ctx.db.update(leads).set(values).where(eq(leads.id, id)),
+  ];
   const system = and(eq(events.lead_id, id), eq(events.is_system_generated, true));
 
   if (after.renewal_date !== before.renewal_date) {
@@ -650,8 +696,12 @@ export async function updateLead(
   actor: Actor,
   id: number,
   input: Partial<LeadFields> & { assigned_agent_id?: string | null },
+  opts: { expectedUpdatedAt?: string | null } = {},
 ): Promise<void> {
   const before = await findVisible(ctx, actor, id);
+  // A form sends the version it was opened with; anything saved since then
+  // (a reassignment, a status change, another edit) must not be overwritten.
+  if (opts.expectedUpdatedAt && opts.expectedUpdatedAt !== before.updated_at) throw new ConflictError();
   const patch: Partial<Lead> = tidy(pickFields(input));
   if (patch.client_name === "") throw new InvalidInputError("Enter the client or company name.");
   if (input.assigned_agent_id !== undefined && input.assigned_agent_id !== before.assigned_agent_id) {
@@ -730,7 +780,7 @@ export async function rollForwardClosedLeads(
     if (!next) continue;
     statements.push(...(await leadChangeStatements(ctx, actor, before, { renewal_date: next }, { renewal })));
   }
-  if (statements.length > 0) await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, statements);
   return { rolled: rows.length, remaining: await countClosedLeadsToRoll(ctx, actor, today) };
 }
 
@@ -771,7 +821,7 @@ export async function reassignLeads(ctx: DataContext, actor: Actor, ids: number[
       }),
     );
   }
-  await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, statements);
   return moved;
 }
 

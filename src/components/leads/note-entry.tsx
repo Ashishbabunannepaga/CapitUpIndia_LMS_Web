@@ -110,9 +110,12 @@ export function NoteEntry({
  * the lead. Repeated "[AI Import Update: ...]" lines from the old app's
  * imports show once, and saving removes the repeats for good.
  */
-export function LeadNotesField({ leadId, notes }: { leadId: number; notes: string }) {
+export function LeadNotesField({ leadId, notes, updatedAt }: { leadId: number; notes: string; updatedAt?: string }) {
   const shown = tidyLeadNotes(notes);
   const [editing, setEditing] = useState(false);
+  // The lead's version when editing began: saving fails (instead of undoing
+  // someone else's change) if the lead was saved in the meantime.
+  const [version, setVersion] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState(shown);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -125,7 +128,7 @@ export function LeadNotesField({ leadId, notes }: { leadId: number; notes: strin
           event.preventDefault();
           setError(null);
           startTransition(async () => {
-            const result = await safeAction(() => setLeadNotes(leadId, draft));
+            const result = await safeAction(() => setLeadNotes(leadId, draft, version));
             if (result.ok) setEditing(false);
             else setError(result.error);
           });
@@ -171,6 +174,7 @@ export function LeadNotesField({ leadId, notes }: { leadId: number; notes: strin
         onClick={() => {
           setDraft(shown);
           setError(null);
+          setVersion(updatedAt);
           setEditing(true);
         }}
       >

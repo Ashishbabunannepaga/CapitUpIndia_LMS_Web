@@ -486,7 +486,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               </Panel>
 
               <Panel title="Lead notes">
-                <LeadNotesField leadId={lead.id} notes={lead.notes} />
+                <LeadNotesField leadId={lead.id} notes={lead.notes} updatedAt={lead.updated_at} />
               </Panel>
             </>
           )}
