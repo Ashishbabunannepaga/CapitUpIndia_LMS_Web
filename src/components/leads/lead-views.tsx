@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { RowCheckbox, SelectAllCheckbox } from "./bulk-actions";
 import { WhatsAppIconLink } from "./lead-extras";
 import { DuplicateBadge, RenewalDate, StaleBadge, TagBadge } from "./lead-badges";
+import { leadCode } from "@/lib/codes";
 import { StatusSelect } from "./status-select";
 
 /** A lead as the list screens get it; tags and staleness come from listLeads. */
@@ -118,6 +119,14 @@ export function LeadsTable({
                     {lead.client_name}
                   </LeadLink>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="font-mono">{leadCode(lead.id)}</span>
+                    {lead.client_code ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span className="font-mono text-success">{lead.client_code}</span>
+                      </>
+                    ) : null}
+                    <span aria-hidden>·</span>
                     <span>{lead.type}</span>
                     <span aria-hidden>·</span>
                     <span>{lead.business_type}</span>
@@ -138,7 +147,7 @@ export function LeadsTable({
                   <RenewalDate date={lead.renewal_date} status={lead.status} compact />
                 </td>
                 <td className="px-4 py-3">
-                  <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} />
+                  <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} lead={lead} clientName={lead.client_name} isAdmin={showAgent} />
                 </td>
                 {showAgent ? (
                   <td className="px-4 py-3">
@@ -174,11 +183,11 @@ export function LeadCards({ leads, showAgent }: { leads: ListLead[]; showAgent: 
                 {lead.client_name}
               </LeadLink>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {lead.policy_product}
+                <span className="font-mono">{lead.client_code ?? leadCode(lead.id)}</span> · {lead.policy_product}
                 {lead.sub_product_name ? ` · ${lead.sub_product_name}` : ""}
               </p>
             </div>
-            <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} />
+            <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} lead={lead} clientName={lead.client_name} isAdmin={showAgent} />
           </div>
           <div className="flex flex-wrap gap-1.5">
             <Badge variant="secondary">{lead.type}</Badge>

@@ -29,7 +29,8 @@ const STATUS_BAR: Record<LeadStatus, string> = {
   Quoted: "bg-sky-500",
   "Follow-up": "bg-amber-500",
   "Closed Won": "bg-green-600",
-  Renewed: "bg-emerald-500",
+  "Closed Awaiting Policy": "bg-violet-500",
+  "Auto Renewed": "bg-teal-500",
   "Closed Lost": "bg-rose-500",
 };
 
@@ -43,7 +44,7 @@ export default async function AnalyticsPage() {
 
   const status = (s: LeadStatus) => data.by_status[s] ?? 0;
   // Renewals count as wins: the client stayed with CapitUp.
-  const won = status("Closed Won") + status("Renewed");
+  const won = status("Closed Won") + status("Auto Renewed");
   const lost = status("Closed Lost");
   const closed = won + lost;
   const quotedEver = won + lost + status("Quoted");
@@ -185,8 +186,8 @@ export default async function AnalyticsPage() {
                   <th className="px-3 py-2 text-right">Leads</th>
                   <th className="px-3 py-2 text-right">Follow-ups</th>
                   <th className="px-3 py-2 text-right">Quoted</th>
-                  <th className="px-3 py-2 text-right" title="Closed Won and Renewed leads are the agent's active clients">
-                    Won + renewed (active clients)
+                  <th className="px-3 py-2 text-right" title="Closed Won and Auto Renewed leads are the agent's active clients">
+                    Won + auto renewed (active clients)
                   </th>
                   <th className="px-3 py-2 text-right">Win rate</th>
                   <th className="px-3 py-2 text-right">Renewals 30d</th>
@@ -210,9 +211,9 @@ export default async function AnalyticsPage() {
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.total)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.follow_up)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.quoted)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.won + agent.renewed)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.won + agent.auto_renewed)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {percent(agent.won + agent.renewed, agent.won + agent.renewed + agent.lost)}
+                      {percent(agent.won + agent.auto_renewed, agent.won + agent.auto_renewed + agent.lost)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCount(agent.renewals_30d)}</td>
                     <td

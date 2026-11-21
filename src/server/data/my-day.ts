@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql, type SQL } from "drizzle-orm";
 
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
-import { ACTIVE_CLIENT_STATUSES, CLOSED_STATUSES, NO_OVERDUE_STATUSES } from "@/lib/domain";
+import { ACTIVE_CLIENT_STATUSES, AWAITING_POLICY_STATUS, CLOSED_STATUSES, NO_OVERDUE_STATUSES } from "@/lib/domain";
 
 import { events, leads, profiles } from "../db/schema";
 import { assertAdmin, isAdmin, type Actor } from "./actor";
@@ -23,6 +23,8 @@ export type MyDay = {
   renewals: Lead[];
   /** Open leads whose renewal passed in the last 30 days, latest first. */
   overdueRenewals: Lead[];
+  /** Closed deals whose policy is not uploaded yet, longest waiting first. */
+  awaitingPolicy: Lead[];
   /** The caller's open tasks up to a week ahead (overdue ones included), with the linked lead's name. */
   openTasks: TaskWithLead[];
   doneToday: TaskWithLead[];
@@ -38,7 +40,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
   const admin = isAdmin(actor);
   const scope = admin ? undefined : eq(leads.assigned_agent_id, actor.id);
   const open = notInArray(leads.status, [...CLOSED_STATUSES]);
-  // Past renewal dates on won, renewed or lost leads are last cycle's, not overdue.
+  // Leads awaiting their policy, auto-renewing or lost are never overdue.
   const canBeOverdue = notInArray(leads.status, [...NO_OVERDUE_STATUSES]);
   const today = todayInBusinessTz(now);
   const todayStart = startOfBusinessDay(today);
@@ -61,6 +63,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     staleCount,
     renewals,
     overdueRenewals,
+    awaitingPolicy,
     openTasks,
     doneToday,
     recentlyAssigned,
@@ -69,7 +72,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     unreadNotes,
     unreadNoteCount,
   ] = await ctx.db.batch([
-    // Closed Won and Renewed leads are the active clients.
+    // Closed Won and Auto Renewed leads are the active clients.
     countLeads(inArray(leads.status, [...ACTIVE_CLIENT_STATUSES])),
     countLeads(eq(leads.status, "Quoted")),
     countLeads(eq(leads.status, "Follow-up")),
@@ -88,6 +91,12 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
       .from(leads)
       .where(and(scope, lt(leads.renewal_date, today), gte(leads.renewal_date, addDays(today, -30)), canBeOverdue))
       .orderBy(desc(leads.renewal_date), asc(leads.id))
+      .limit(10),
+    ctx.db
+      .select()
+      .from(leads)
+      .where(and(scope, eq(leads.status, AWAITING_POLICY_STATUS)))
+      .orderBy(asc(leads.status_changed_at), asc(leads.id))
       .limit(10),
     ctx.db
       .select(withLeadName)
@@ -125,6 +134,7 @@ export async function myDay(ctx: DataContext, actor: Actor, now: Date = new Date
     },
     renewals,
     overdueRenewals,
+    awaitingPolicy,
     openTasks,
     doneToday,
     recentlyAssigned,

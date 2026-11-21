@@ -22,7 +22,7 @@ beforeAll(async () => {
   // Bulk rows straight into D1: enough for two pages and a full board column.
   const rows = LEAD_PAGE_SIZE + 30;
   const insert = w.d1.prepare(
-    "insert into leads (client_name, client_name_normalized, assigned_agent_id, created_by, lead_status, renewal_date) values (?, ?, ?, ?, ?, ?)",
+    "insert into leads (client_name, client_name_normalized, assigned_agent_id, created_by, pipeline_status, renewal_date) values (?, ?, ?, ?, ?, ?)",
   );
   const statements = [];
   for (let i = 0; i < rows; i++) {

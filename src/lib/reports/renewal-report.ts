@@ -1,3 +1,4 @@
+import { leadCode } from "@/lib/codes";
 import { buildXlsx, type Cell, type Sheet } from "@/lib/xlsx";
 import type { RenewalReportRow, RenewalWindow } from "@/server/data/analytics";
 import type { ExportedLead } from "@/server/data/leads";
@@ -78,20 +79,31 @@ export function renewalReportXlsx(today: string, rows: RenewalReportRow[]): Uint
   return buildXlsx(renewalReportSheets(today, rows));
 }
 
+const VERIFICATION_LABELS: Record<string, string> = {
+  pending: "Waiting to be confirmed",
+  verified: "Checked",
+  differences: "Confirmed with differences",
+  manual: "Checked by hand",
+  not_checked: "Not checked",
+};
+
 /** Leads an admin exported from the leads table (selected or every match of the filters), one row each. */
 export function selectedLeadsXlsx(leads: ExportedLead[]): Uint8Array {
   const rows: Cell[][] = [
     [
-      "Lead #", "Company", "Status", "Type", "Corporate / retail", "Product", "Sub-product", "Renewal date", "Agent", "Tags",
+      "Lead code", "Client code", "Company", "Status", "Type", "Corporate / retail", "Product", "Sub-product", "Renewal date", "Agent", "Tags",
       "POC", "POC designation", "POC phone", "POC email", "POC 2", "POC 2 phone", "POC 2 email", "RM", "Address", "Notes",
-      "Duplicate", "Transaction date", "Policy start date", "Policy status", "Created (IST)", "Updated (IST)",
+      "Duplicate", "Transaction date", "Policy start date", "Policy end date", "Premium", "Insurer", "Policy number",
+      "Policy status", "Policy check", "Created (IST)", "Updated (IST)",
     ],
     ...leads.map((l) => [
-      l.id, l.client_name, l.status, l.type, l.business_type, l.policy_product, l.sub_product_name, l.renewal_date ?? "",
+      leadCode(l.id), l.client_code ?? "", l.client_name, l.status, l.type, l.business_type, l.policy_product, l.sub_product_name, l.renewal_date ?? "",
       l.agent_name ?? "Unassigned", l.tags.join(", "), l.poc_name, l.poc_designation, l.poc_contact_number, l.poc_email_id,
       l.poc2_name, l.poc2_contact_number, l.poc2_email_id, l.relationship_manager, l.address, l.notes,
       l.is_duplicate ? "Yes" : "", l.transaction?.transaction_date ?? "", l.transaction?.policy_start_date ?? "",
-      l.transaction?.policy_status ?? "", istStamp(l.created_at), istStamp(l.updated_at),
+      l.transaction?.policy_end_date ?? "", l.transaction?.premium ?? "", l.transaction?.insurer ?? "", l.transaction?.policy_number ?? "",
+      l.transaction?.policy_status ?? "", l.transaction ? VERIFICATION_LABELS[l.transaction.verification] : "",
+      istStamp(l.created_at), istStamp(l.updated_at),
     ]),
   ];
   return buildXlsx([{ name: "Leads", rows }]);

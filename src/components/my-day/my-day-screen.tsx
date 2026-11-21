@@ -12,6 +12,7 @@ import {
   Plus,
   Radar,
   RefreshCw,
+  FileUp,
   UserCheck,
   Users,
   UserX,
@@ -302,7 +303,8 @@ const STATUS_FIELDS: Record<LeadStatus, keyof AgentPipeline> = {
   Quoted: "quoted",
   "Follow-up": "follow_up",
   "Closed Won": "won",
-  Renewed: "renewed",
+  "Closed Awaiting Policy": "awaiting_policy",
+  "Auto Renewed": "auto_renewed",
   "Closed Lost": "lost",
 };
 
@@ -318,7 +320,7 @@ function TeamBreakdown({ agents }: { agents: AgentPipeline[] }) {
           .join("")
           .slice(0, 2)
           .toUpperCase();
-        const wins = agent.won + agent.renewed;
+        const wins = agent.won + agent.auto_renewed;
         const winRate = wins + agent.lost > 0 ? Math.round((wins / (wins + agent.lost)) * 100) : null;
         return (
           <li key={agent.agent_id ?? "unassigned"}>
@@ -384,6 +386,7 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
   const [day, team, pipeline] = await Promise.all([myDay(ctx, profile), getTeam(), pipelineAnalytics(ctx, profile)]);
   const renewals = await withAgentNames(day.renewals);
   const overdueRenewals = await withAgentNames(day.overdueRenewals);
+  const awaitingPolicy = await withAgentNames(day.awaitingPolicy);
   const recent = await withAgentNames(day.recentlyAssigned);
   const unassigned = day.unassigned?.leads ?? [];
   const unread = day.unreadNotes;
@@ -414,7 +417,7 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const todaysWork = renewalsToday.length + overdueTasks.length + todayTasks.length;
   const checklistTotal = overdueTasks.length + todayTasks.length + doneToday.length;
-  const wins = (pipeline.by_status["Closed Won"] ?? 0) + (pipeline.by_status["Renewed"] ?? 0);
+  const wins = (pipeline.by_status["Closed Won"] ?? 0) + (pipeline.by_status["Auto Renewed"] ?? 0);
   const losses = pipeline.by_status["Closed Lost"] ?? 0;
   const openLeads = pipeline.total - wins - losses;
 
@@ -594,6 +597,46 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
               </div>
             )}
           </Panel>
+
+          {awaitingPolicy.length > 0 ? (
+            <Panel
+              title="Policies to upload"
+              icon={FileUp}
+              tone="urgent"
+              count={awaitingPolicy.length}
+              actions={<PanelLink href={leadsHref({ status: "Closed Awaiting Policy" })}>View all</PanelLink>}
+            >
+              <p className="pb-2 text-xs text-muted-foreground">
+                Closed deals waiting for their policy. Upload it on the lead to make it Closed Won and give it a client code.
+              </p>
+              <ul className="divide-y">
+                {awaitingPolicy.map((lead) => {
+                  const waited = lead.status_changed_at ? daysBetween(lead.status_changed_at.slice(0, 10), today) : null;
+                  return (
+                    <li key={lead.id} className="flex items-center gap-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <LeadLink
+                          href={`/leads/${lead.id}?close=policy`}
+                          className="block truncate text-sm font-medium hover:text-primary hover:underline"
+                        >
+                          {lead.client_name}
+                        </LeadLink>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {lead.policy_product}
+                          {admin ? ` · ${lead.agent_name ?? "Unassigned"}` : ""}
+                        </p>
+                      </div>
+                      {waited !== null ? (
+                        <span className={cn("shrink-0 text-xs tabular-nums", waited >= 7 ? "text-urgent" : "text-muted-foreground")}>
+                          {waited === 0 ? "today" : `${waited}d waiting`}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </Panel>
+          ) : null}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel

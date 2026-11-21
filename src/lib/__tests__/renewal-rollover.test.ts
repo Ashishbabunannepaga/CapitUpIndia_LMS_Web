@@ -38,24 +38,26 @@ describe("next renewal date when a cycle closes", () => {
     expect(nextRenewalDate(null, today)).toBeNull();
   });
 
-  it("rolls only when a lead moves into Closed Won, Renewed or Closed Lost", () => {
+  it("rolls on Closed Lost and Auto Renewed; Closed Won waits for the confirmed policy", () => {
     const lead = { status: "Quoted", renewal_date: "2026-12-07" };
-    expect(rolloverForStatusChange(lead, "Closed Won", today)).toBe("2027-12-07");
-    expect(rolloverForStatusChange(lead, "Renewed", today)).toBe("2027-12-07");
+    // Closed Won takes its next date from the policy end date (confirmPolicy), not from a status change.
+    expect(rolloverForStatusChange(lead, "Closed Won", today)).toBeNull();
+    expect(rolloverForStatusChange(lead, "Closed Awaiting Policy", today)).toBeNull();
+    expect(rolloverForStatusChange(lead, "Auto Renewed", today)).toBe("2027-12-07");
     expect(rolloverForStatusChange(lead, "Closed Lost", today)).toBe("2027-12-07");
     expect(rolloverForStatusChange(lead, "Follow-up", today)).toBeNull();
-    expect(rolloverForStatusChange({ status: "Renewed", renewal_date: "2026-12-07" }, "Renewed", today)).toBeNull();
-    // Already rolled: fixing Closed Won to Renewed does not add a second year.
-    expect(rolloverForStatusChange({ status: "Closed Won", renewal_date: "2027-12-07" }, "Renewed", today)).toBeNull();
+    expect(rolloverForStatusChange({ status: "Auto Renewed", renewal_date: "2026-12-07" }, "Auto Renewed", today)).toBeNull();
     expect(closesCycle("Prospect")).toBe(false);
   });
 });
 
-describe("Renewed is an active client", () => {
-  it("counts Closed Won and Renewed as active clients, coloured as such on the calendar", () => {
-    expect(isActiveClientStatus("Renewed")).toBe(true);
+describe("active clients", () => {
+  it("counts Closed Won and Auto Renewed as active clients, coloured as such on the calendar", () => {
+    expect(isActiveClientStatus("Closed Won")).toBe(true);
+    expect(isActiveClientStatus("Auto Renewed")).toBe(true);
+    expect(isActiveClientStatus("Closed Awaiting Policy")).toBe(false);
     expect(isActiveClientStatus("Closed Lost")).toBe(false);
-    expect(calendarCategories(true, { business_type: "Corporate", policy_product: "Fire or Property", status: "Renewed" })).toEqual([
+    expect(calendarCategories(true, { business_type: "Corporate", policy_product: "Fire or Property", status: "Closed Won" })).toEqual([
       "gmc_renewal",
       "active_client",
     ]);

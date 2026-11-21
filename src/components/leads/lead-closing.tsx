@@ -13,8 +13,7 @@ import { formatDate } from "@/lib/dates";
 import { safeAction } from "@/lib/safe-action";
 
 const WHY: Record<string, string> = {
-  "Closed Won": "The policy is won, so this year's renewal is done. Next year's renewal moves to the date below.",
-  Renewed: "The policy is renewed, so this year's renewal is done. Next year's renewal moves to the date below.",
+  "Auto Renewed": "The policy renews itself, so this year's renewal is done. Next year's renewal moves to the date below.",
   "Closed Lost": "This year's renewal is lost. The date moves on a year so the team sees the client again next year and can re-approach.",
 };
 
@@ -103,8 +102,8 @@ export function VerifyRenewalDialog({
 
 /**
  * On a closed lead whose renewal is near or past: move it on to next year
- * (after confirming the date) without changing the status. This is how a
- * Renewed client is renewed again the following year.
+ * (after confirming the date) without changing the status (Closed Lost and
+ * Auto Renewed; a Closed Won client moves on by uploading next year's policy).
  */
 export function RollRenewalButton({
   leadId,
@@ -163,8 +162,9 @@ export function RollForwardBanner({ count }: { count: number }) {
             {count} closed lead{count === 1 ? " still has" : "s still have"} last cycle&apos;s renewal date
           </p>
           <p className="text-amber-800/80 dark:text-amber-100/80">
-            Closed Won, Renewed and Closed Lost leads move to next year&apos;s renewal date so they stop showing as overdue and
-            reappear on next year&apos;s calendar. Each lead keeps its day and month; the countdown is rebuilt.
+            Closed Lost and Auto Renewed leads move to next year&apos;s renewal date so they reappear on next year&apos;s
+            calendar. Each lead keeps its day and month, and the passed date stays on the calendar as done. Closed Won clients
+            move on when next year&apos;s policy is uploaded.
           </p>
           {message ? (
             <p role="status" className={message.ok ? "mt-1 font-medium" : "mt-1 font-medium text-destructive"}>

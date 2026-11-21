@@ -91,7 +91,7 @@ test("an agent creates a lead, writes a note and moves its status", async ({ pag
       return page.getByLabel("Lead status").first().textContent();
     })
     .toContain("Quoted");
-  expect((await leadRow("UI Kaveri Textiles"))?.lead_status).toBe("Quoted");
+  expect((await leadRow("UI Kaveri Textiles"))?.pipeline_status).toBe("Quoted");
 
   const lead = await leadRow("UI Kaveri Textiles");
   const milestones = await queryFirst<{ n: number }>(

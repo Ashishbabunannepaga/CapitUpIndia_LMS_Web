@@ -13,8 +13,10 @@ import { createLead, listLeads } from "../leads";
 import { myDay } from "../my-day";
 import { testWorld } from "./helpers";
 
-// Ash (2026-11-17): Closed Won leads still showed as overdue. A won, renewed or
-// lost lead has finished this cycle, so its past renewal date is never overdue.
+// 2026-11-20: Closed Won is a client whose policy year runs to its renewal
+// date. Once that date passes without a new policy it is overdue again (the
+// renewal is due). Leads waiting for their policy, auto-renewing and lost
+// leads are never overdue.
 
 let w: Awaited<ReturnType<typeof testWorld>>;
 const today = todayInBusinessTz();
@@ -29,40 +31,42 @@ afterAll(async () => {
 });
 
 /** A lead already in `status` with last cycle's date (as live leads closed before the rollover are). */
-async function closedWithPastDate(name: string, status: "Closed Won" | "Renewed" | "Closed Lost") {
+async function closedWithPastDate(name: string, status: "Closed Won" | "Closed Awaiting Policy" | "Auto Renewed" | "Closed Lost") {
   const id = await createLead(w.ctx, w.amit, { client_name: name, status: "Quoted" });
   await w.ctx.db.update(leads).set({ status, renewal_date: past }).where(eq(leads.id, id));
   return id;
 }
 
-describe("closed leads are never overdue", () => {
+describe("which closed leads are overdue", () => {
   it("counts only open leads as overdue in the list filter, My Day and analytics", async () => {
     const [dayBefore, statsBefore] = await Promise.all([myDay(w.ctx, w.amit), pipelineAnalytics(w.ctx, w.admin)]);
 
     const won = await closedWithPastDate("Won Last Year Pvt Ltd", "Closed Won");
-    const renewed = await closedWithPastDate("Renewed Last Year Pvt Ltd", "Renewed");
+    const awaiting = await closedWithPastDate("Awaiting Policy Pvt Ltd", "Closed Awaiting Policy");
+    const auto = await closedWithPastDate("Auto Renews Pvt Ltd", "Auto Renewed");
     const lost = await closedWithPastDate("Lost Last Year Pvt Ltd", "Closed Lost");
     const open = await createLead(w.ctx, w.amit, { client_name: "Still Open Pvt Ltd", status: "Quoted", renewal_date: past });
 
     const overdue = (await listLeads(w.ctx, w.amit, parseLeadFilters({ renewal: "overdue" }))).leads.map((l) => l.id);
     expect(overdue).toContain(open);
-    expect(overdue).not.toContain(won);
-    expect(overdue).not.toContain(renewed);
+    expect(overdue).toContain(won);
+    expect(overdue).not.toContain(awaiting);
+    expect(overdue).not.toContain(auto);
     expect(overdue).not.toContain(lost);
 
     const day = await myDay(w.ctx, w.amit);
-    expect(day.counts.overdueRenewals).toBe(dayBefore.counts.overdueRenewals + 1);
-    expect(day.overdueRenewals.map((l) => l.id)).toEqual(expect.arrayContaining([open]));
-    expect(day.overdueRenewals.map((l) => l.id)).not.toEqual(expect.arrayContaining([won]));
-    expect(day.overdueRenewals.map((l) => l.id)).not.toEqual(expect.arrayContaining([renewed]));
+    expect(day.counts.overdueRenewals).toBe(dayBefore.counts.overdueRenewals + 2);
+    expect(day.overdueRenewals.map((l) => l.id)).toEqual(expect.arrayContaining([open, won]));
+    expect(day.overdueRenewals.map((l) => l.id)).not.toEqual(expect.arrayContaining([awaiting]));
+    expect(day.overdueRenewals.map((l) => l.id)).not.toEqual(expect.arrayContaining([auto]));
 
     const stats = await pipelineAnalytics(w.ctx, w.admin);
-    expect(stats.renewals.overdue).toBe(statsBefore.renewals.overdue + 1);
+    expect(stats.renewals.overdue).toBe(statsBefore.renewals.overdue + 2);
     const agentOverdue = (s: typeof stats) => s.agents.reduce((n, a) => n + a.overdue_renewals, 0);
-    expect(agentOverdue(stats)).toBe(agentOverdue(statsBefore) + 1);
+    expect(agentOverdue(stats)).toBe(agentOverdue(statsBefore) + 2);
   });
 
-  it("still lists upcoming renewals of won and renewed clients", async () => {
+  it("still lists upcoming renewals of won clients", async () => {
     const soon = addDays(today, 5);
     const id = await createLead(w.ctx, w.amit, { client_name: "Upcoming Won Pvt Ltd", status: "Quoted" });
     await w.ctx.db.update(leads).set({ status: "Closed Won", renewal_date: soon }).where(eq(leads.id, id));
@@ -71,7 +75,7 @@ describe("closed leads are never overdue", () => {
   });
 
   it("knows which statuses can be overdue", () => {
-    expect(["Closed Won", "Renewed", "Closed Lost"].map(canBeOverdue)).toEqual([false, false, false]);
-    expect(["Prospect", "Quoted", "Follow-up"].map(canBeOverdue)).toEqual([true, true, true]);
+    expect(["Closed Awaiting Policy", "Auto Renewed", "Closed Lost"].map(canBeOverdue)).toEqual([false, false, false]);
+    expect(["Prospect", "Quoted", "Follow-up", "Closed Won"].map(canBeOverdue)).toEqual([true, true, true, true]);
   });
 });

@@ -25,9 +25,10 @@ import {
 import { deleteLeadTransaction, policyDocument, saveLeadTransaction } from "../transactions";
 import { testWorld } from "./helpers";
 
-// Ash's corrections (2026-11-17): Renewed status, the annual renewal rollover
-// when a lead is closed, editable notes, transaction details with the policy
-// copy on won/renewed leads, export filters, and product names on the calendar.
+// Ash's corrections (2026-11-17, updated 2026-11-20 for the policy-gated
+// close): the annual renewal rollover when a lead is closed, editable notes,
+// policy details with the policy copy on client leads, export filters, and
+// product names on the calendar.
 
 let w: Awaited<ReturnType<typeof testWorld>>;
 const today = todayInBusinessTz();
@@ -46,12 +47,12 @@ const systemEvents = (id: number) =>
   w.ctx.db.select().from(events).where(and(eq(events.lead_id, id), eq(events.is_system_generated, true)));
 
 describe("closing a lead rolls the renewal to next year", () => {
-  it("moves a soon-due renewal a year on and rebuilds the countdown for the new date", async () => {
+  it("moves a lost lead's renewal a year on, rebuilds the countdown and keeps last year's due date", async () => {
     const due = addDays(today, 20);
-    const id = await createLead(w.ctx, w.amit, { client_name: "Rollover Won Pvt Ltd", renewal_date: due, status: "Quoted" });
-    await setLeadStatus(w.ctx, w.amit, id, "Closed Won");
+    const id = await createLead(w.ctx, w.amit, { client_name: "Rollover Lost Pvt Ltd", renewal_date: due, status: "Quoted" });
+    await setLeadStatus(w.ctx, w.amit, id, "Closed Lost");
     const after = await lead(id);
-    expect(after.status).toBe("Closed Won");
+    expect(after.status).toBe("Closed Lost");
     expect(after.renewal_date).toBe(addYears(due, 1));
     const rows = await systemEvents(id);
     const dueEvent = rows.find((e) => e.milestone === "DUE")!;
@@ -60,16 +61,26 @@ describe("closing a lead rolls the renewal to next year", () => {
     expect(rows.filter((e) => e.is_background_reminder).map((e) => e.milestone)).toEqual(
       expect.arrayContaining(["T-30 Days", "T-10 Days", "T-24 Hours", "T-5 Minutes"]),
     );
+    // Last year's due date stays on the calendar as a completed entry.
+    const kept = rows.find((e) => e.milestone === `DONE ${due}`)!;
+    expect(kept).toMatchObject({ is_completed: true, is_background_reminder: false });
+    expect(kept.title).toMatch(/^Closed Lost: Rollover Lost Pvt Ltd/);
   });
 
-  it("uses the date the person confirmed, and does not roll twice when Closed Won is corrected to Renewed", async () => {
+  it("Closed Won set by an admin keeps the date (the policy end date sets the next one)", async () => {
+    const due = addDays(today, 20);
+    const id = await createLead(w.ctx, w.admin, { client_name: "Admin Won Pvt Ltd", renewal_date: due, assigned_agent_id: w.amit.id });
+    await setLeadStatus(w.ctx, w.admin, id, "Closed Won");
+    expect((await lead(id)).renewal_date).toBe(due);
+  });
+
+  it("uses the date the person confirmed, and rejects an invalid one", async () => {
     const id = await createLead(w.ctx, w.amit, { client_name: "Confirmed Date Pvt Ltd", renewal_date: addDays(today, -10) });
     const chosen = addDays(today, 300);
-    await setLeadStatus(w.ctx, w.amit, id, "Renewed", { renewalDate: chosen });
+    await setLeadStatus(w.ctx, w.amit, id, "Closed Lost", { renewalDate: chosen });
     expect((await lead(id)).renewal_date).toBe(chosen);
-    await setLeadStatus(w.ctx, w.amit, id, "Closed Won");
-    expect((await lead(id)).renewal_date).toBe(chosen);
-    await expect(setLeadStatus(w.ctx, w.amit, id, "Closed Lost", { renewalDate: "2027-02-30" })).rejects.toBeInstanceOf(InvalidInputError);
+    const other = await createLead(w.ctx, w.amit, { client_name: "Bad Date Pvt Ltd", renewal_date: addDays(today, -10) });
+    await expect(setLeadStatus(w.ctx, w.amit, other, "Closed Lost", { renewalDate: "2027-02-30" })).rejects.toBeInstanceOf(InvalidInputError);
   });
 
   it("rolls a lost overdue lead so the team sees it next year, and leaves open statuses alone", async () => {
@@ -86,15 +97,15 @@ describe("closing a lead rolls the renewal to next year", () => {
   it("rolls when the lead is closed on the edit form without touching the date", async () => {
     const due = addDays(today, 5);
     const id = await createLead(w.ctx, w.amit, { client_name: "Edit Form Close Ltd", renewal_date: due });
-    await updateLead(w.ctx, w.amit, id, { status: "Renewed", renewal_date: due });
+    await updateLead(w.ctx, w.amit, id, { status: "Closed Lost", renewal_date: due });
     expect((await lead(id)).renewal_date).toBe(addYears(due, 1));
   });
 
-  it("lets admins catch up closed leads with past dates, 100 at a time; agents cannot", async () => {
+  it("lets admins catch up lost leads with past dates, 100 at a time; agents cannot", async () => {
     const old = addDays(today, -400);
-    const id = await createLead(w.ctx, w.admin, { client_name: "Old Closed Won Ltd", renewal_date: old, assigned_agent_id: w.amit.id });
+    const id = await createLead(w.ctx, w.admin, { client_name: "Old Closed Lost Ltd", renewal_date: old, assigned_agent_id: w.amit.id });
     // Closed before the rollover existed: written straight to the row.
-    await w.ctx.db.update(leads).set({ status: "Closed Won" }).where(eq(leads.id, id));
+    await w.ctx.db.update(leads).set({ status: "Closed Lost" }).where(eq(leads.id, id));
     expect(await countClosedLeadsToRoll(w.ctx, w.admin)).toBeGreaterThanOrEqual(1);
     await expect(rollForwardClosedLeads(w.ctx, w.amit)).rejects.toBeInstanceOf(AccessDeniedError);
     const result = await rollForwardClosedLeads(w.ctx, w.admin);
@@ -132,11 +143,11 @@ describe("editing notes", () => {
   });
 });
 
-describe("transaction details on won and renewed leads", () => {
+describe("policy details on client leads", () => {
   let leadId: number;
   let txId: number;
 
-  it("refuses transactions until the lead is Closed Won or Renewed", async () => {
+  it("refuses policy details until the lead is a client", async () => {
     leadId = await createLead(w.ctx, w.amit, { client_name: "Transaction Co Pvt Ltd", renewal_date: addDays(today, 10) });
     await expect(
       saveLeadTransaction(w.ctx, w.amit, leadId, { transaction_date: today, policy_status: "Policy Yet to Receive" }),
@@ -144,14 +155,19 @@ describe("transaction details on won and renewed leads", () => {
   });
 
   it("records the dates, then the received policy copy, readable only by those who see the lead", async () => {
-    await setLeadStatus(w.ctx, w.amit, leadId, "Closed Won");
+    // An admin closes it without a policy: the year is added to its history, unchecked.
+    await setLeadStatus(w.ctx, w.admin, leadId, "Closed Won");
+    const [year] = (await getLeadPage(w.ctx, w.amit, leadId))!.transactions;
+    expect(year).toMatchObject({ kind: "won", verification: "not_checked", policy_status: "Policy Yet to Receive" });
+    expect(year.client_code).toMatch(/^CAP-CLI-\d{4}-\d{4}$/);
     const tx = await saveLeadTransaction(w.ctx, w.amit, leadId, {
+      id: year.id,
       transaction_date: today,
       policy_start_date: addDays(today, 10),
       policy_status: "Policy Yet to Receive",
     });
     txId = tx.id;
-    expect(tx).toMatchObject({ policy_status: "Policy Yet to Receive", policy_doc_path: null });
+    expect(tx).toMatchObject({ id: year.id, policy_status: "Policy Yet to Receive", policy_doc_path: null });
     await expect(
       saveLeadTransaction(w.ctx, w.amit, leadId, { id: txId, transaction_date: today, policy_status: "Policy Yet to Receive" }, { bytes: PDF, name: "p.pdf" }),
     ).rejects.toThrow(/received/);
@@ -193,14 +209,14 @@ describe("transaction details on won and renewed leads", () => {
     expect(outside.leads.map((l) => l.id)).not.toContain(leadId);
 
     const won = await listLeads(w.ctx, w.admin, parseLeadFilters({ outcome: "won" }));
-    expect(won.leads.every((l) => l.status === "Closed Won" || l.status === "Renewed")).toBe(true);
+    expect(won.leads.every((l) => l.status === "Closed Won" || l.status === "Auto Renewed")).toBe(true);
     const lost = await listLeads(w.ctx, w.admin, parseLeadFilters({ outcome: "lost" }));
     expect(lost.leads.length).toBeGreaterThan(0);
     expect(lost.leads.every((l) => l.status === "Closed Lost")).toBe(true);
 
     const exported = await leadsForFilteredExport(w.ctx, w.admin, parseLeadFilters({ outcome: "won", start_from: start }));
     expect(exported.leads.map((l) => l.id)).toEqual([leadId]);
-    expect(exported.leads[0].transaction).toEqual({ transaction_date: today, policy_start_date: start, policy_status: "Policy Received" });
+    expect(exported.leads[0].transaction).toMatchObject({ transaction_date: today, policy_start_date: start, policy_status: "Policy Received" });
     expect((await leadsForExport(w.ctx, w.admin, [leadId]))[0].transaction?.policy_status).toBe("Policy Received");
     await expect(leadsForFilteredExport(w.ctx, w.amit, parseLeadFilters({}))).rejects.toBeInstanceOf(AccessDeniedError);
   });
