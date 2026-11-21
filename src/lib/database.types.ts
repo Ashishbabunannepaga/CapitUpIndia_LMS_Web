@@ -4,8 +4,10 @@
 import type {
   AI_FEATURES,
   BUSINESS_TYPES,
+  LEAD_SOURCES,
   LEAD_STATUSES,
   LEAD_TAGS,
+  LOST_REASONS,
   LEAD_TYPES,
   POLICY_PRODUCTS,
   USER_ROLES,
@@ -24,6 +26,8 @@ export type BusinessType = (typeof BUSINESS_TYPES)[number];
 export type PolicyProduct = (typeof POLICY_PRODUCTS)[number];
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export type LeadTag = (typeof LEAD_TAGS)[number];
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+export type LostReason = (typeof LOST_REASONS)[number];
 export type AiFeature = (typeof AI_FEATURES)[number];
 export type NotificationKind = AppNotification["kind"];
 

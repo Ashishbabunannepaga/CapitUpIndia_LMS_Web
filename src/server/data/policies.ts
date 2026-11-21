@@ -13,7 +13,7 @@ import { isAdmin, type Actor } from "./actor";
 import { auditInsert } from "./audit";
 import type { DataContext } from "./context";
 import { InvalidInputError } from "./errors";
-import { clientIdentity, closedYearTitle, leadChangeStatements, type Lead } from "./leads";
+import { clientIdentity, closedYearTitle, leadChangeStatements, runLeadBatch, type Lead } from "./leads";
 import { storePolicyDoc, type LeadTransaction, type PolicyFile } from "./transactions";
 
 // Closing a lead with its policy: upload, read, check, confirm.
@@ -136,7 +136,7 @@ export async function uploadPolicy(
     auditInsert(ctx, actor, "lead_transactions", leadId, "INSERT", null, row),
     ...statusChange,
   ];
-  await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]).catch(async (error) => {
+  await runLeadBatch(ctx, statements).catch(async (error) => {
     await ctx.db.delete(leadTransactions).where(eq(leadTransactions.id, inserted.id));
     throw error;
   });
@@ -235,7 +235,7 @@ export async function confirmPolicy(
   // Nothing about the lead changed (an admin re-confirming the same year): still confirm the row.
   if (statements.length === 0) statements.push(ctx.db.update(leadTransactions).set(cycle).where(eq(leadTransactions.id, row.id)));
   statements.push(auditInsert(ctx, actor, "lead_transactions", before.id, "UPDATE", row as unknown as Record<string, unknown>, { ...row, ...cycle }));
-  await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, statements);
   return { client_code: identity.client_code };
 }
 

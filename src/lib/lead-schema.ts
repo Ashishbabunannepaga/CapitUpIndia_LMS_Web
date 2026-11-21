@@ -1,7 +1,17 @@
 import { z } from "zod";
 
 import { isValidIsoDate } from "@/lib/date-parse";
-import { BUSINESS_TYPES, DEFAULT_POC_DESIGNATION, LEAD_STATUSES, LEAD_TYPES, POLICY_PRODUCTS, needsRenewalDate } from "@/lib/domain";
+import {
+  BUSINESS_TYPES,
+  DEFAULT_POC_DESIGNATION,
+  LEAD_SOURCES,
+  LEAD_STATUSES,
+  LEAD_TYPES,
+  LOST_REASONS,
+  LOST_STATUS,
+  POLICY_PRODUCTS,
+  needsRenewalDate,
+} from "@/lib/domain";
 
 // Validation for the lead form. The database re-checks lengths, email shape,
 // ownership and duplicate state, so this is about clear messages.
@@ -47,6 +57,18 @@ export const leadFormSchema = z
     notes: text(20000),
     relationship_manager: text(200),
     status: z.enum(LEAD_STATUSES as [string, ...string[]]).default("Prospect"),
+    // Required on a new lead (the create action checks); "" on older leads.
+    lead_source: z.enum(["", ...LEAD_SOURCES] as [string, ...string[]]).default(""),
+    lost_reason: z.enum(["", ...LOST_REASONS] as [string, ...string[]]).default(""),
+    lost_reason_detail: text(500),
+    premium_inr: z
+      .string()
+      .trim()
+      .transform((v) => v.replace(/[₹,\s]/g, ""))
+      .refine((v) => v === "" || (/^\d+(\.\d{1,2})?$/.test(v) && Number(v) <= 1e11), "Enter the premium in rupees, for example 125000.")
+      .default(""),
+    insurer_name: text(200),
+    policy_number: text(100),
     assigned_agent_id: z
       .string()
       .trim()
@@ -61,8 +83,19 @@ export const leadFormSchema = z
     message: "Add the policy's renewal date. Only New leads can leave it empty.",
     path: ["renewal_date"],
   })
+  .refine((v) => v.status !== LOST_STATUS || v.lost_reason !== "", {
+    message: "Pick why the lead was lost.",
+    path: ["lost_reason"],
+  })
+  .refine((v) => v.status !== LOST_STATUS || v.lost_reason !== "Other" || v.lost_reason_detail !== "", {
+    message: "Say in a few words why the lead was lost.",
+    path: ["lost_reason_detail"],
+  })
   .transform((v) => ({
     ...v,
+    premium_inr: v.premium_inr === "" ? null : Number(v.premium_inr),
+    lost_reason: v.status === LOST_STATUS ? v.lost_reason : "",
+    lost_reason_detail: v.status === LOST_STATUS ? v.lost_reason_detail : "",
     poc_designation: v.poc_designation || (v.poc_name ? DEFAULT_POC_DESIGNATION : ""),
     poc2_designation: v.poc2_designation || (v.poc2_name ? DEFAULT_POC_DESIGNATION : ""),
     renewal_date: v.renewal_date || null,
@@ -92,6 +125,12 @@ export const LEAD_FORM_FIELDS = [
   "notes",
   "relationship_manager",
   "status",
+  "lead_source",
+  "lost_reason",
+  "lost_reason_detail",
+  "premium_inr",
+  "insurer_name",
+  "policy_number",
   "assigned_agent_id",
   "visiting_card_path",
   "confirm_duplicate",

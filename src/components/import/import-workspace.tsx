@@ -19,6 +19,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/dates";
 import { LEAD_STATUSES, POLICY_PRODUCTS } from "@/lib/domain";
+import { pickMergeTarget } from "@/lib/import/merge";
 import { safeAction } from "@/lib/safe-action";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,28 @@ type Editable = PreviewRow & { include: boolean };
 const SAMPLE = `NAME OF THE CLIENT\tCONTACT DETAILS\tCONTACT PERSON\tDATE OF RENEWAL\tREMARKS
 Renee Systems Pvt Ltd\t9845012345\tRajesh (Director)\t15 Nov\tGroup health, 120 lives
 Kaveri Textiles\tpriya@kaveri.in\tPriya\t23 rd Feb Renewal\tFire policy, wants a quote`;
+
+/** What happens to a row whose company is already in the CRM; follows the product picked in the row. */
+function MergeNote({ row }: { row: PreviewRow }) {
+  const decision = pickMergeTarget(row.companyLeads, row.lead.policy_product);
+  if (decision.action === "create") return null;
+  if (decision.action === "merge") {
+    return (
+      <p className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-700">
+        <Merge className="size-3" />
+        Merging into lead #{decision.leadId}
+        {decision.setProduct ? ` (its product becomes ${row.lead.policy_product})` : ""}
+      </p>
+    );
+  }
+  const owner = row.companyLeads.find((lead) => lead.agent_id)?.agent_name;
+  return (
+    <p className="mt-1 text-xs font-medium text-sky-700">
+      New product for this company (it has {decision.existingProducts.join(", ")}): added as a separate lead
+      {owner ? ` for ${owner}` : ""}, nothing is merged away.
+    </p>
+  );
+}
 
 function RowIssues({ row }: { row: Editable }) {
   if (row.errors.length === 0 && row.warnings.length === 0) return null;
@@ -137,7 +160,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
 
   const includable = rows?.filter((r) => r.errors.length === 0) ?? [];
   const selected = includable.filter((r) => r.include);
-  const mergeCount = selected.filter((r) => r.existing).length;
+  const mergeCount = selected.filter((r) => pickMergeTarget(r.companyLeads, r.lead.policy_product).action === "merge").length;
 
   return (
     <div className="space-y-6">
@@ -150,7 +173,11 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
           <div>
             <p className="font-semibold">
               Imported {done.created} new {done.created === 1 ? "lead" : "leads"}
-              {done.merged > 0 ? ` and merged ${done.merged} into existing companies` : ""}.
+              {done.merged > 0 ? `, merged ${done.merged} into existing leads` : ""}
+              {done.newProducts > 0
+                ? `, and added ${done.newProducts} new ${done.newProducts === 1 ? "product" : "products"} for companies already in the CRM (as separate leads with the same owner)`
+                : ""}
+              .
             </p>
             {done.failed > 0 ? (
               <p className="mt-1 text-emerald-900/80">
@@ -315,12 +342,7 @@ export function ImportWorkspace({ agents, aiConfigured }: { agents: Agent[]; aiC
                         Row {row.row}: {row.source}
                       </p>
                       <RowIssues row={row} />
-                      {row.existing ? (
-                        <p className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-700">
-                          <Merge className="size-3" />
-                          Merging into lead #{row.existing.id}
-                        </p>
-                      ) : null}
+                      <MergeNote row={row} />
                     </td>
                     <td className="px-3 py-2">
                       <NativeSelect

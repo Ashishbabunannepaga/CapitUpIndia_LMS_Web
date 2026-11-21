@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 import { friendlyError } from "@/lib/action-errors";
 import { getSession, isAdmin } from "@/lib/auth";
-import type { BusinessType, LeadStatus, LeadType, PolicyProduct } from "@/lib/database.types";
+import type { BusinessType, LeadSource, LeadStatus, LeadType, LostReason, PolicyProduct } from "@/lib/database.types";
 import { isLeadStatus } from "@/lib/domain";
 import { tidyLeadNotes } from "@/lib/lead-notes";
 import { businessDateTimeToIso, isIsoDate } from "@/lib/dates";
@@ -16,6 +16,7 @@ import { createTask } from "@/server/data/events";
 import { findSimilarLeads, type SimilarLead } from "@/server/data/duplicates";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 import { isAiConfigured } from "@/lib/ai/client";
+import { ConflictError } from "@/server/data/errors";
 import * as leadData from "@/server/data/leads";
 import * as transactionData from "@/server/data/transactions";
 import { listTeam } from "@/server/data/users";
@@ -28,6 +29,8 @@ export type LeadFormState = {
   /** Similar companies found on save; the user must confirm to continue. */
   duplicates?: SimilarLead[];
   values?: Record<string, string>;
+  /** Someone else saved the lead after this form was opened; the user must reload. */
+  conflict?: boolean;
 };
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
@@ -58,7 +61,19 @@ function toRow(v: LeadFormValues) {
     notes: v.notes,
     relationship_manager: v.relationship_manager,
     status: v.status as LeadStatus,
+    lead_source: v.lead_source as LeadSource | "",
+    lost_reason: v.lost_reason as LostReason | "",
+    lost_reason_detail: v.lost_reason_detail,
+    premium_inr: v.premium_inr,
+    insurer_name: v.insurer_name,
+    policy_number: v.policy_number,
   };
+}
+
+/** The lead's updated_at when the form was opened (edit form only). */
+function expectedVersion(formData: FormData): string | null {
+  const value = formData.get("expected_updated_at");
+  return typeof value === "string" && value ? value.slice(0, 40) : null;
 }
 
 function parseLeadForm(formData: FormData) {
@@ -91,6 +106,9 @@ export async function createLead(_prev: LeadFormState, formData: FormData): Prom
   const parsed = parseLeadForm(formData);
   if (!parsed.ok) return parsed.state;
   const { values, raw } = parsed;
+  if (!values.lead_source) {
+    return { error: "Check the highlighted fields.", fieldErrors: { lead_source: "Pick where the lead came from." }, values: raw };
+  }
   // Checked before the lead is saved, so a bad meeting date never leaves a lead without its meeting.
   const meeting = meetingSchema.safeParse(raw);
   if (!meeting.success) {
@@ -164,12 +182,18 @@ export async function updateLead(leadId: number, _prev: LeadFormState, formData:
       }
     }
 
-    await leadData.updateLead(ctx, actor, leadId, {
-      ...toRow(values),
-      ...(isAdmin(actor) ? { assigned_agent_id: values.assigned_agent_id } : {}),
-    });
+    await leadData.updateLead(
+      ctx,
+      actor,
+      leadId,
+      {
+        ...toRow(values),
+        ...(isAdmin(actor) ? { assigned_agent_id: values.assigned_agent_id } : {}),
+      },
+      { expectedUpdatedAt: expectedVersion(formData) },
+    );
   } catch (error) {
-    return { error: friendlyError(error), values: raw };
+    return { error: friendlyError(error), values: raw, conflict: error instanceof ConflictError };
   }
 
   refreshWorkspace();
@@ -227,10 +251,18 @@ async function run(fn: (session: NonNullable<Awaited<ReturnType<typeof getSessio
  * confirmed when closing the lead (Closed Won, Renewed or Closed Lost); left
  * out, the server rolls the date to next year itself.
  */
-export async function setLeadStatus(leadId: number, status: string, renewalDate?: string | null): Promise<ActionResult> {
+export async function setLeadStatus(
+  leadId: number,
+  status: string,
+  renewalDate?: string | null,
+  lost?: { reason: string; detail: string },
+): Promise<ActionResult> {
   if (!isLeadStatus(status)) return { ok: false, error: "Unknown status." };
   return run(({ ctx, actor }) =>
-    leadData.setLeadStatus(ctx, actor, leadId, status, renewalDate === undefined ? {} : { renewalDate: renewalDate || null }),
+    leadData.setLeadStatus(ctx, actor, leadId, status, {
+      ...(renewalDate === undefined ? {} : { renewalDate: renewalDate || null }),
+      ...(lost ? { lostReason: String(lost.reason ?? ""), lostReasonDetail: String(lost.detail ?? "").slice(0, 500) } : {}),
+    }),
   );
 }
 
@@ -252,9 +284,11 @@ export async function rollForwardClosedLeads(): Promise<ActionResult> {
 }
 
 /** Rewrites the lead's background notes field (anyone who can edit the lead). */
-export async function setLeadNotes(leadId: number, notes: string): Promise<ActionResult> {
+export async function setLeadNotes(leadId: number, notes: string, expectedUpdatedAt?: string): Promise<ActionResult> {
   if (notes.length > 20000) return { ok: false, error: "Keep the notes under 20,000 characters." };
-  return run(({ ctx, actor }) => leadData.updateLead(ctx, actor, leadId, { notes: tidyLeadNotes(notes) }));
+  return run(({ ctx, actor }) =>
+    leadData.updateLead(ctx, actor, leadId, { notes: tidyLeadNotes(notes) }, { expectedUpdatedAt: expectedUpdatedAt ?? null }),
+  );
 }
 
 /** Rewrites a note (agents: their own; admins: any). */

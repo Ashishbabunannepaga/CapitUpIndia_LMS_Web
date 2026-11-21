@@ -1,4 +1,4 @@
-import type { BusinessType, LeadStatus, LeadTag, LeadType, PolicyProduct } from "@/lib/database.types";
+import type { BusinessType, LeadSource, LeadStatus, LeadTag, LeadType, LostReason, PolicyProduct } from "@/lib/database.types";
 
 // Business vocabulary shared by every screen. Values match the database enums.
 
@@ -331,3 +331,36 @@ export const DEFAULT_STALE_DAYS = 7;
 /** Snooze choices for an overdue task on My Day, in days. */
 export const SNOOZE_DAYS = [1, 3, 7] as const;
 export type SnoozeDays = (typeof SNOOZE_DAYS)[number];
+
+/** Where a lead came from; required when someone creates one. Import and card scans set it themselves. */
+export const LEAD_SOURCES: readonly LeadSource[] = [
+  "WhatsApp",
+  "Referral",
+  "Cold Call",
+  "Walk-in",
+  "Website",
+  "LinkedIn",
+  "Excel Import",
+  "OCR/Card",
+  "Other",
+];
+
+export function isLeadSource(value: unknown): value is LeadSource {
+  return typeof value === "string" && (LEAD_SOURCES as readonly string[]).includes(value);
+}
+
+/** The status that needs a lost reason. */
+export const LOST_STATUS: LeadStatus = "Closed Lost";
+
+/** Why a lead was lost; one is required to move a lead to Closed Lost ("Other" also needs a few words). */
+export const LOST_REASONS: readonly LostReason[] = ["Price", "Competitor", "No Response", "Client Deceased", "Not Interested", "Other"];
+
+export function isLostReason(value: unknown): value is LostReason {
+  return typeof value === "string" && (LOST_REASONS as readonly string[]).includes(value);
+}
+
+/** "₹1,25,000" (Indian grouping), or "" when not known. */
+export function formatInr(amount: number | null | undefined): string {
+  if (amount == null || !Number.isFinite(amount)) return "";
+  return `₹${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}

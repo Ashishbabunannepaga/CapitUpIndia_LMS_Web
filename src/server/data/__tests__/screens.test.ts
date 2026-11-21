@@ -16,7 +16,7 @@ import { changeStamp } from "../changes";
 import { myDay } from "../my-day";
 import { shellSummary } from "../shell";
 import { signInWithPassword, signOutSession } from "../sessions";
-import { setActive } from "../users";
+import { deactivateUser, setActive } from "../users";
 import { PASSWORD, testWorld } from "./helpers";
 
 // The loaders behind My Day and the duplicates screen, and the login form's
@@ -191,7 +191,7 @@ describe("login form sign-in", () => {
   });
 
   it("refuses a deactivated account without leaving a session behind", async () => {
-    await setActive(w.ctx, w.admin, w.neha.id, false);
+    await deactivateUser(w.ctx, w.admin, w.neha.id, "skip");
     try {
       expect(await signInWithPassword(w.ctx, { email: "neha@capitup.test", password: PASSWORD }, from())).toEqual({
         status: "inactive",

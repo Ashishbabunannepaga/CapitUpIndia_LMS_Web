@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 
 import { uploadCard } from "@/server/data/cards";
 import { createLead } from "@/server/data/leads";
-import { setActive } from "@/server/data/users";
+import { deactivateUser, setActive } from "@/server/data/users";
 
 import {
   actor,
@@ -150,7 +150,7 @@ test("a deactivated agent's still-open session is shut out", async ({ request })
   const cookie = await sessionCookie(request, "amit");
   const admin = await actor(db, "admin");
   const amit = await actor(db, "amit");
-  await retrying(() => setActive(db.ctx, admin, amit.id, false));
+  await retrying(() => deactivateUser(db.ctx, admin, amit.id, "skip"));
   try {
     const response = await request.get("/my-day", { headers: { cookie }, maxRedirects: 0 });
     expect([303, 307, 308]).toContain(response.status());

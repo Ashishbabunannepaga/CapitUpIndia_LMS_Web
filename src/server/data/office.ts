@@ -279,7 +279,7 @@ export async function handOffCallRequest(
 
   let leadId: number;
   try {
-    leadId = await createLead(ctx, actor, { ...leadFromOffice(detail), assigned_agent_id: agentId, office_lead_id: detail.lead.id });
+    leadId = await createLead(ctx, actor, { ...leadFromOffice(detail), lead_source: "Website", assigned_agent_id: agentId, office_lead_id: detail.lead.id });
   } catch (error) {
     if (String(error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : error).includes("leads_office_lead_id_idx") ||
         String(error).includes("UNIQUE")) {

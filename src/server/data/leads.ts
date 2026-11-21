@@ -13,6 +13,9 @@ import {
   CLOSED_STATUSES,
   NO_OVERDUE_STATUSES,
   DEFAULT_POC_DESIGNATION,
+  LOST_STATUS,
+  isLeadSource,
+  isLostReason,
   LEAD_STATUSES,
   POLICY_GATED_STATUS,
   canAutoRenew,
@@ -29,6 +32,7 @@ import { isOwnCardPath } from "@/lib/visiting-cards";
 
 import {
   appSettings,
+  changeVersion,
   events,
   leadContactLogs,
   leadNoteReads,
@@ -45,7 +49,7 @@ import { isAdmin, assertAdmin, type Actor } from "./actor";
 import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
 import { duplicateState } from "./duplicates";
-import { AccessDeniedError, InvalidInputError } from "./errors";
+import { AccessDeniedError, ConflictError, InvalidInputError, isTriggerError } from "./errors";
 import { DONE_MILESTONE_PREFIX, clientWithProduct, milestoneEvents, renewalEventTitle, renewalMode } from "./milestones";
 import { isStale, lastActivityAt } from "./stale";
 
@@ -97,6 +101,12 @@ export type LeadFields = {
   notes: string;
   relationship_manager: string;
   status: Lead["status"];
+  lead_source: Lead["lead_source"];
+  lost_reason: Lead["lost_reason"];
+  lost_reason_detail: string;
+  premium_inr: number | null;
+  insurer_name: string;
+  policy_number: string;
 };
 
 export type NewLead = Partial<LeadFields> & {
@@ -133,6 +143,12 @@ const FIELD_NAMES: (keyof LeadFields)[] = [
   "notes",
   "relationship_manager",
   "status",
+  "lead_source",
+  "lost_reason",
+  "lost_reason_detail",
+  "premium_inr",
+  "insurer_name",
+  "policy_number",
 ];
 
 function now(): string {
@@ -160,7 +176,53 @@ function tidy<T extends Partial<LeadFields>>(fields: T): T {
   if (out.poc2_email_id !== undefined) out.poc2_email_id = out.poc2_email_id.trim().toLowerCase();
   if (out.poc_designation !== undefined) out.poc_designation = out.poc_designation.trim() || DEFAULT_POC_DESIGNATION;
   if (out.relationship_manager !== undefined) out.relationship_manager = out.relationship_manager.trim();
+  if (out.lead_source !== undefined && out.lead_source !== "" && !isLeadSource(out.lead_source)) {
+    throw new InvalidInputError("Pick where the lead came from.");
+  }
+  if (out.lost_reason !== undefined && out.lost_reason !== "" && !isLostReason(out.lost_reason)) {
+    throw new InvalidInputError("Pick why the lead was lost.");
+  }
+  if (out.lost_reason_detail !== undefined) {
+    out.lost_reason_detail = out.lost_reason_detail.trim();
+    if (out.lost_reason_detail.length > 500) throw new InvalidInputError("Keep the lost reason under 500 characters.");
+  }
+  if (out.premium_inr !== undefined && out.premium_inr !== null) {
+    if (!Number.isFinite(out.premium_inr) || out.premium_inr < 0 || out.premium_inr > 1e11) {
+      throw new InvalidInputError("Enter the premium in rupees, for example 125000.");
+    }
+    out.premium_inr = Math.round(out.premium_inr * 100) / 100;
+  }
+  if (out.insurer_name !== undefined) {
+    out.insurer_name = out.insurer_name.trim();
+    if (out.insurer_name.length > 200) throw new InvalidInputError("Keep the insurer name under 200 characters.");
+  }
+  if (out.policy_number !== undefined) {
+    out.policy_number = out.policy_number.trim();
+    if (out.policy_number.length > 100) throw new InvalidInputError("Keep the policy number under 100 characters.");
+  }
   return out;
+}
+
+/**
+ * The lost-reason rule: moving a lead to Closed Lost needs a reason ("Other"
+ * also needs a few words); leaving Closed Lost clears it (the audit log
+ * keeps the old one). Changes `patch` in place.
+ */
+function applyLostReason(before: Pick<Lead, "status" | "lost_reason" | "lost_reason_detail">, patch: Partial<Lead>): void {
+  const status = patch.status ?? before.status;
+  if (status !== LOST_STATUS) {
+    patch.lost_reason = "";
+    patch.lost_reason_detail = "";
+    return;
+  }
+  // Leads lost before reasons existed keep working: the rule bites when a lead
+  // moves into Closed Lost, or when someone changes the reason itself.
+  const entering = before.status !== LOST_STATUS;
+  if (!entering && patch.lost_reason === undefined && patch.lost_reason_detail === undefined) return;
+  const reason = patch.lost_reason ?? before.lost_reason;
+  const detail = patch.lost_reason_detail ?? before.lost_reason_detail;
+  if (!isLostReason(reason)) throw new InvalidInputError("Pick why the lead was lost.");
+  if (reason === "Other" && !detail) throw new InvalidInputError("Say in a few words why the lead was lost.");
 }
 
 const AUTO_RENEW_ONLY = "Auto Renewed is only for retail term life: set the lead to Retail and the product to Life first.";
@@ -571,6 +633,15 @@ export async function listDuplicateGroups(ctx: DataContext, actor: Actor): Promi
 export async function createLead(ctx: DataContext, actor: Actor, input: NewLead): Promise<number> {
   const fields = tidy(pickFields(input));
   if (!fields.client_name) throw new InvalidInputError("Enter the client or company name.");
+  // Created straight into Closed Lost (an import, say) without a reason.
+  if (fields.status === LOST_STATUS && !fields.lost_reason) {
+    fields.lost_reason = "Other";
+    fields.lost_reason_detail ||= "Created as Closed Lost";
+  }
+  if (fields.status !== LOST_STATUS) {
+    delete fields.lost_reason;
+    delete fields.lost_reason_detail;
+  }
   const owner = isAdmin(actor) ? (input.assigned_agent_id ?? null) : actor.id;
   if (!isAdmin(actor) && input.assigned_agent_id && input.assigned_agent_id !== actor.id) {
     throw new AccessDeniedError("Agents can only create leads for themselves.");
@@ -640,8 +711,42 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
 
 /** Applies a change to a lead with everything that follows from it, in one batch. */
 async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Partial<Lead>, opts: LeadChangeOptions = {}): Promise<void> {
-  const statements = await leadChangeStatements(ctx, actor, before, patch, opts);
-  if (statements.length > 0) await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, await leadChangeStatements(ctx, actor, before, patch, opts));
+}
+
+/**
+ * The marker the version guard's deliberate error carries. SQLite has no
+ * RAISE outside triggers, so the guard calls json() on text that is not
+ * JSON, which aborts the whole batch (a D1 batch is one transaction).
+ */
+const LEAD_CHANGED = "malformed JSON";
+
+/**
+ * A statement that aborts its batch unless the lead still has the
+ * updated_at it had when it was read: someone saved it in between, and
+ * writing now would silently undo their change (lost update). Every lead
+ * write puts this first, so nothing in the batch applies on a conflict.
+ */
+function leadVersionGuard(ctx: DataContext, id: number, expectedUpdatedAt: string): BatchItem<"sqlite"> {
+  // change_version always holds exactly one row, so this select runs once.
+  return ctx.db
+    .select({
+      ok: sql<number>`case when (select ${leads.updated_at} from ${leads} where ${leads.id} = ${id}) is ${expectedUpdatedAt}
+        then 1 else json('lead changed since it was read') end`,
+    })
+    .from(changeVersion)
+    .limit(1);
+}
+
+/** Runs lead write statements as one batch, turning a failed version guard into a ConflictError. */
+export async function runLeadBatch(ctx: DataContext, statements: BatchItem<"sqlite">[]): Promise<void> {
+  if (statements.length === 0) return;
+  try {
+    await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  } catch (error) {
+    if (isTriggerError(error, LEAD_CHANGED)) throw new ConflictError();
+    throw error;
+  }
 }
 
 export type LeadChangeOptions = {
@@ -689,6 +794,8 @@ export async function leadChangeStatements(
   patch: Partial<Lead>,
   { notifyOwner = true, renewal: preloaded, archiveDue, cycle }: LeadChangeOptions = {},
 ): Promise<BatchItem<"sqlite">[]> {
+  // `before` is the row as the caller read it; the guard makes sure it is
+  // still the row in D1 when the batch runs.
   const stamp = now();
   const after: Lead = { ...before, ...patch };
   // A one-time product (Travel) has no renewal.
@@ -705,8 +812,17 @@ export async function leadChangeStatements(
   if (!changed(before, after)) return [];
   after.updated_at = stamp;
 
-  const { id, ...values } = after;
-  const statements: BatchItem<"sqlite">[] = [ctx.db.update(leads).set(values).where(eq(leads.id, id))];
+  // Only the columns that change are written, so a field nobody touched can
+  // never be put back to an older value.
+  const { id } = after;
+  const values: Partial<Lead> = {};
+  for (const key of Object.keys(after) as (keyof Lead)[]) {
+    if (key !== "id" && after[key] !== before[key]) (values as Record<string, unknown>)[key] = after[key];
+  }
+  const statements: BatchItem<"sqlite">[] = [
+    leadVersionGuard(ctx, id, before.updated_at),
+    ctx.db.update(leads).set(values).where(eq(leads.id, id)),
+  ];
   // The countdown of the current date; kept due dates of closed years ("DONE ...") stay.
   const system = and(
     eq(events.lead_id, id),
@@ -797,9 +913,14 @@ export async function updateLead(
   actor: Actor,
   id: number,
   input: Partial<LeadFields> & { assigned_agent_id?: string | null },
+  opts: { expectedUpdatedAt?: string | null } = {},
 ): Promise<void> {
   const before = await findVisible(ctx, actor, id);
+  // A form sends the version it was opened with; anything saved since then
+  // (a reassignment, a status change, another edit) must not be overwritten.
+  if (opts.expectedUpdatedAt && opts.expectedUpdatedAt !== before.updated_at) throw new ConflictError();
   const patch: Partial<Lead> = tidy(pickFields(input));
+  applyLostReason(before, patch);
   if (patch.client_name === "") throw new InvalidInputError("Enter the client or company name.");
   if (input.assigned_agent_id !== undefined && input.assigned_agent_id !== before.assigned_agent_id) {
     assertAdmin(actor);
@@ -835,12 +956,14 @@ export async function setLeadStatus(
   actor: Actor,
   id: number,
   status: unknown,
-  opts: { renewalDate?: string | null } = {},
+  opts: { renewalDate?: string | null; lostReason?: string; lostReasonDetail?: string } = {},
 ): Promise<void> {
   if (!isLeadStatus(status)) throw new InvalidInputError("Unknown status.");
   const before = await findVisible(ctx, actor, id);
   assertStatusAllowed(actor, before, status, before.status);
-  const patch: Partial<Lead> = { status };
+  const patch: Partial<Lead> = tidy({ status, lost_reason: (opts.lostReason ?? undefined) as Lead["lost_reason"] | undefined, lost_reason_detail: opts.lostReasonDetail });
+  for (const key of ["lost_reason", "lost_reason_detail"] as const) if (patch[key] === undefined) delete patch[key];
+  applyLostReason(before, patch);
   if (opts.renewalDate !== undefined && closesCycle(status)) {
     if (opts.renewalDate !== null && !isIsoDate(opts.renewalDate)) throw new InvalidInputError("Pick a valid renewal date.");
     patch.renewal_date = opts.renewalDate;
@@ -894,7 +1017,7 @@ export async function rollForwardClosedLeads(
     const archiveDue = closedYearTitle(verb, before, before.client_code);
     statements.push(...(await leadChangeStatements(ctx, actor, before, { renewal_date: next }, { renewal, archiveDue })));
   }
-  if (statements.length > 0) await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, statements);
   return { rolled: rows.length, remaining: await countClosedLeadsToRoll(ctx, actor, today) };
 }
 
@@ -950,7 +1073,7 @@ export async function rollAutoRenewals(ctx: DataContext, today: string = todayIn
       })),
     );
   }
-  if (statements.length > 0) await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, statements);
   return rows.length;
 }
 
@@ -991,8 +1114,85 @@ export async function reassignLeads(ctx: DataContext, actor: Actor, ids: number[
       }),
     );
   }
-  await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  await runLeadBatch(ctx, statements);
   return moved;
+}
+
+/** What someone leaving the team still holds: their leads and their open tasks and meetings. */
+export async function countBook(ctx: DataContext, actor: Actor, userId: string): Promise<{ leads: number; tasks: number }> {
+  assertAdmin(actor);
+  const [[leadCount], [taskCount]] = await ctx.db.batch([
+    ctx.db.select({ n: count() }).from(leads).where(eq(leads.assigned_agent_id, userId)),
+    ctx.db
+      .select({ n: count() })
+      .from(events)
+      .where(and(eq(events.assigned_agent_id, userId), eq(events.is_system_generated, false), eq(events.is_completed, false))),
+  ]);
+  return { leads: leadCount?.n ?? 0, tasks: taskCount?.n ?? 0 };
+}
+
+/** Leads moved per D1 batch when handing over a whole book. */
+const HANDOVER_BATCH = 100;
+
+/**
+ * Moves everything a person holds to someone else (or leaves the leads
+ * unassigned): every lead assigned to them, with its renewal reminders and
+ * an audit row each, and their open tasks and meetings. Used when an agent
+ * leaves (users.deactivateUser). Admins only. The receiver gets one bell
+ * message. Returns what moved.
+ */
+export async function handOverBook(
+  ctx: DataContext,
+  actor: Actor,
+  fromId: string,
+  toId: string | null,
+): Promise<{ leads: number; tasks: number }> {
+  assertAdmin(actor);
+  if (toId === fromId) throw new InvalidInputError("Pick someone else to take over.");
+  await assertAssignable(ctx, toId);
+  const renewal = await renewalSettings(ctx);
+  let moved = 0;
+  // Each round takes the next batch still assigned to them, so a retry after
+  // a failure carries on where it stopped.
+  for (;;) {
+    const befores = await ctx.db
+      .select()
+      .from(leads)
+      .where(eq(leads.assigned_agent_id, fromId))
+      .orderBy(asc(leads.id))
+      .limit(HANDOVER_BATCH);
+    if (befores.length === 0) break;
+    const statements: BatchItem<"sqlite">[] = [];
+    for (const before of befores) {
+      statements.push(...(await leadChangeStatements(ctx, actor, before, { assigned_agent_id: toId }, { notifyOwner: false, renewal })));
+    }
+    await runLeadBatch(ctx, statements);
+    moved += befores.length;
+  }
+
+  const open = and(eq(events.assigned_agent_id, fromId), eq(events.is_system_generated, false), eq(events.is_completed, false));
+  const openTasks = await ctx.db.select({ id: events.id, title: events.title }).from(events).where(open);
+  // Unassigned tasks would vanish from every My Day, so with no new owner
+  // they go to the admin doing the handover.
+  const taskOwner = toId ?? actor.id;
+  if (openTasks.length > 0) {
+    await ctx.db.batch([
+      ctx.db.update(events).set({ assigned_agent_id: taskOwner, reminder_sent_at: null }).where(open),
+      auditInsert(ctx, actor, "events", `handover:${fromId}`, "UPDATE", { assigned_agent_id: fromId, tasks: openTasks.length }, { assigned_agent_id: taskOwner, tasks: openTasks.length }),
+    ]);
+  }
+
+  const receiver = toId ?? (openTasks.length > 0 ? actor.id : null);
+  if (receiver && receiver !== actor.id && (moved > 0 || openTasks.length > 0)) {
+    const parts = [moved ? `${moved} lead${moved === 1 ? "" : "s"}` : "", openTasks.length ? `${openTasks.length} open task${openTasks.length === 1 ? "" : "s"}` : ""].filter(Boolean);
+    await ctx.db.insert(notifications).values({
+      user_id: receiver,
+      kind: "other",
+      title: `${parts.join(" and ")} handed over to you`.slice(0, 300),
+      body: `${actor.full_name} moved them to you from a team member who left. Open Leads and My Day to see them.`.slice(0, 2000),
+    });
+  }
+  return { leads: moved, tasks: openTasks.length };
 }
 
 /** A lead as exports write it: owner name, tags and its newest transaction (won or renewed cycle). */

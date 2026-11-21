@@ -169,7 +169,12 @@ export async function updateTask(ctx: DataContext, actor: Actor, id: number, inp
     kind: e.kind,
   });
   const [[updated]] = await ctx.db.batch([
-    ctx.db.update(events).set(values).where(eq(events.id, id)).returning(),
+    ctx.db
+      .update(events)
+      // A new time gets its own reminder.
+      .set({ ...values, ...(values.event_timestamp !== event.event_timestamp ? { reminder_sent_at: null } : {}) })
+      .where(eq(events.id, id))
+      .returning(),
     auditInsert(ctx, actor, "events", id, "UPDATE", summary(event), summary(values)),
   ]);
   if (!updated) throw new InvalidInputError("That task no longer exists or isn't yours.");
@@ -201,7 +206,7 @@ export async function snoozeTask(ctx: DataContext, actor: Actor, id: number, day
   const event_timestamp = businessDateTimeToIso(addDays(todayInBusinessTz(now), days), businessHhmm(event.event_timestamp));
   const summary = { title: event.title, lead_id: event.lead_id, kind: event.kind };
   await ctx.db.batch([
-    ctx.db.update(events).set({ event_timestamp }).where(eq(events.id, id)),
+    ctx.db.update(events).set({ event_timestamp, reminder_sent_at: null }).where(eq(events.id, id)),
     auditInsert(
       ctx,
       actor,

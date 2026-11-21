@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Off-Cloudflare backups for the CapitUp LMS D1 database. A private,
+  encrypted, versioned S3 bucket that keeps each nightly dump for 90 days,
+  and an IAM role GitHub Actions can assume (OpenID Connect, so no AWS keys
+  are stored in GitHub) that may only write to the bucket's d1/ folder.
+  Used by .github/workflows/d1-backup.yml; see docs/backups.md.
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Default: Ashishbabunannepaga/CapitUpIndia_LMS_Web
+    Description: owner/name of the repository whose Actions may write backups.
+  RetentionDays:
+    Type: Number
+    Default: 90
+    MinValue: 30
+  CreateOidcProvider:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: >-
+      "false" if this AWS account already has the token.actions.githubusercontent.com
+      identity provider (IAM > Identity providers).
+
+Conditions:
+  MakeOidcProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub capitup-lms-d1-backups-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: keep-backups-90-days
+            Status: Enabled
+            Prefix: d1/
+            ExpirationInDays: !Ref RetentionDays
+            NoncurrentVersionExpiration: { NoncurrentDays: 7 }
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Statement:
+          - Sid: HttpsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt BackupBucket.Arn, !Sub "${BackupBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  BackupWriterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: capitup-lms-d1-backup
+      Description: GitHub Actions (nightly D1 backup) writes dumps to the backup bucket.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - MakeOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                # Only workflow runs on main (the schedule runs there).
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:refs/heads/main
+      Policies:
+        - PolicyName: write-d1-backups
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject]
+                Resource: !Sub "${BackupBucket.Arn}/d1/*"
+              - Effect: Allow
+                Action: [s3:ListBucket]
+                Resource: !GetAtt BackupBucket.Arn
+                Condition: { StringLike: { "s3:prefix": ["d1/*"] } }
+
+Outputs:
+  BucketName:
+    Value: !Ref BackupBucket
+    Description: Set as the GitHub Actions variable BACKUP_BUCKET.
+  RoleArn:
+    Value: !GetAtt BackupWriterRole.Arn
+    Description: Set as the GitHub Actions variable AWS_BACKUP_ROLE_ARN.

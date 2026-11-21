@@ -44,6 +44,32 @@ then set:
 Every merge to `main` then applies any new D1 migrations and deploys. Migrations only
 add to the schema; they never run on their own outside a merge.
 
+### Gated deploys (recommended, replaces the Workers Builds deploy)
+
+Workers Builds deploys every push to `main` straight away, without waiting for the
+GitHub checks. `.github/workflows/deploy.yml` does the same deploy, but only after
+lint, typecheck, unit tests, the build, the migration checks and the browser tests
+all pass on that exact commit. To switch over:
+
+1. Create a Cloudflare API token (My Profile > API Tokens > Create token > Custom):
+   Account > Workers Scripts > Edit and Account > D1 > Edit. It also serves the
+   nightly backup (docs/backups.md).
+2. GitHub repository Settings > Secrets and variables > Actions > New repository
+   secret: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+3. Cloudflare: Worker `capitup-lms-web` > Settings > Build > **Disconnect** the
+   repository (or set the Deploy command to `echo "Deploys run from GitHub Actions"`).
+   Otherwise Cloudflare keeps deploying ungated alongside.
+4. GitHub Settings > Branches > Add rule for `main`: require a pull request and
+   the status checks "Lint, typecheck, test and build", "Cloudflare Worker build and
+   D1 migrations" and "End-to-end", so a failing pull request cannot be merged either.
+
+Until step 2 is done the Deploy workflow runs the checks and skips the deploy with a
+warning. A deploy can be re-run by hand from Actions > Deploy > Run workflow.
+
+CI also refuses any migration that drops, renames or rebuilds `leads`, `events`,
+`lead_notes` or another table that rows point at (`scripts/check-migrations.mjs`):
+on D1 that cascades and deletes every event and note.
+
 On the **Previews Base** tab, leave **Builds for Preview branches** off. Its default build
 command (`npm run build`) doesn't produce the Worker, so every pull request would get a
 red "Workers Builds" check. GitHub Actions already builds and tests each pull request.

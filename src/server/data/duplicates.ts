@@ -84,6 +84,8 @@ export type SimilarLead = {
   client_name: string;
   assigned_agent_id: string | null;
   assigned_agent_name: string;
+  /** The lead's product: one company can hold several leads, one per product. */
+  policy_product: string;
   similarity: number;
   is_exact: boolean;
 };
@@ -132,6 +134,7 @@ export async function findSimilarLeads(
             normalized: leads.client_name_normalized,
             assigned_agent_id: leads.assigned_agent_id,
             assigned_agent_name: profiles.full_name,
+            policy_product: leads.policy_product,
           })
           .from(leads)
           .leftJoin(profiles, eq(profiles.id, leads.assigned_agent_id))
@@ -147,6 +150,7 @@ export async function findSimilarLeads(
       client_name: r.client_name,
       assigned_agent_id: r.assigned_agent_id,
       assigned_agent_name: r.assigned_agent_name ?? "Unassigned",
+      policy_product: r.policy_product,
       similarity: r.normalized === query ? 1 : nameScore(query, r.normalized),
       is_exact: r.normalized === query,
     }))

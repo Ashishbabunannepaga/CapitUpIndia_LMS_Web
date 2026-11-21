@@ -6,13 +6,14 @@ import { LeadLink } from "@/components/leads/lead-link";
 import { GripVertical, User } from "lucide-react";
 
 import { setLeadStatus } from "@/app/(app)/leads/actions";
-import type { LeadStatus } from "@/lib/database.types";
-import { LEAD_STATUSES, POLICY_GATED_STATUS, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
+import type { LeadStatus, LostReason } from "@/lib/database.types";
+import { LEAD_STATUSES, LOST_STATUS, POLICY_GATED_STATUS, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
 import type { LeadTag } from "@/lib/database.types";
 import type { LeadWithAgent } from "@/lib/leads";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 import { DuplicateBadge, RenewalDate } from "./lead-badges";
+import { LostReasonDialog } from "./lead-closing";
 import { AgentName, LeadFlags } from "./lead-views";
 
 type Move = { id: number; status: LeadStatus };
@@ -38,6 +39,19 @@ export function LeadsKanban({
   );
 
   const router = useRouter();
+  const [askLost, setAskLost] = useState<{ id: number; name: string } | null>(null);
+
+  const save = (id: number, status: LeadStatus, lost?: { reason: LostReason; detail: string }) => {
+    const lead = board.find((l) => l.id === id);
+    if (!lead || lead.status === status) return;
+    setError(null);
+    startTransition(async () => {
+      moveOptimistic({ id, status });
+      const result = await safeAction(() => setLeadStatus(id, status, undefined, lost));
+      if (!result.ok) setError(`${lead.client_name}: ${result.error}`);
+    });
+  };
+
   const move = (id: number, status: LeadStatus) => {
     const lead = board.find((l) => l.id === id);
     if (!lead || lead.status === status) return;
@@ -46,16 +60,24 @@ export function LeadsKanban({
       router.push(`/leads/${id}?close=policy`);
       return;
     }
-    setError(null);
-    startTransition(async () => {
-      moveOptimistic({ id, status });
-      const result = await safeAction(() => setLeadStatus(id, status));
-      if (!result.ok) setError(`${lead.client_name}: ${result.error}`);
-    });
+    if (status === LOST_STATUS) setAskLost({ id, name: lead.client_name });
+    else save(id, status);
   };
 
   return (
     <div className="space-y-3">
+      {askLost ? (
+        <LostReasonDialog
+          open
+          clientName={askLost.name}
+          onCancel={() => setAskLost(null)}
+          onConfirm={(lost) => {
+            const target = askLost;
+            setAskLost(null);
+            save(target.id, LOST_STATUS, lost);
+          }}
+        />
+      ) : null}
       {error ? (
         <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
