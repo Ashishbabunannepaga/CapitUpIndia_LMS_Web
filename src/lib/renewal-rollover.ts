@@ -1,21 +1,23 @@
 import type { LeadStatus } from "@/lib/database.types";
 import { addDays, addYears } from "@/lib/dates";
-import { DONE_STATUSES } from "@/lib/domain";
 
-// Annual renewal rollover. When a lead is closed (Closed Won, Renewed or
-// Closed Lost), this year's policy cycle is over: the renewal date moves to
-// next year so the lead stops showing as overdue and its countdown appears on
-// next year's calendar (won or renewed clients renew again; lost ones are
-// approached again). The person closing the lead confirms or edits the date;
-// moves that skip the dialog (the board, the edit form) roll it on the server.
+// Annual renewal rollover by status. A lost client's renewal date moves on a
+// year so the team re-approaches them next year, and a term life policy that
+// renews itself (Auto Renewed) moves on a year each time its date passes. The
+// person closing the lead confirms or edits the date; moves that skip the
+// dialog (the board, the edit form) roll it on the server.
+//
+// Closed Won is different: its next renewal date is the end date of the
+// policy that was uploaded and confirmed (src/server/data/policies.ts), so
+// the status alone never moves it.
 
-/** Statuses that close this year's policy cycle. */
-export const CYCLE_CLOSING_STATUSES: readonly LeadStatus[] = DONE_STATUSES;
+/** Statuses that move the renewal date on a year when a lead takes them. */
+export const CYCLE_CLOSING_STATUSES: readonly LeadStatus[] = ["Auto Renewed", "Closed Lost"];
 
 /**
  * A renewal date further ahead than this is already next cycle's date, so
  * closing the lead leaves it alone (no double roll when someone fixes the
- * status from Closed Won to Renewed, or set the new date by hand first).
+ * status from Auto Renewed to Closed Lost, or set the new date by hand first).
  */
 export const ROLLOVER_WINDOW_DAYS = 90;
 

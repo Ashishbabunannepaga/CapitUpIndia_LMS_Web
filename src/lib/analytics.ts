@@ -51,5 +51,6 @@ export const AI_FEATURE_LABELS: Record<string, string> = {
   follow_up: "Follow-up writer",
   follow_up_rephrase: "Follow-up rephrase",
   bulk_mapping: "Bulk import mapping",
+  policy_ocr: "Policy OCR",
   other: "Other",
 };

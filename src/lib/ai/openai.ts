@@ -12,6 +12,8 @@ export type ProviderRequest = {
   system?: string;
   text: string;
   image?: { mime: string; base64: string };
+  /** A PDF to read (policy documents). */
+  file?: { name: string; mime: string; base64: string };
   /** JSON Schema for strict structured output; omit for plain text. */
   jsonSchema?: { name: string; schema: unknown };
   maxOutputTokens: number;
@@ -48,12 +50,18 @@ type ChatCompletion = {
 };
 
 export async function callOpenAi(apiKey: string, req: ProviderRequest): Promise<ProviderResponse> {
-  const userContent = req.image
-    ? [
-        { type: "text", text: req.text },
-        { type: "image_url", image_url: { url: `data:${req.image.mime};base64,${req.image.base64}`, detail: "high" } },
-      ]
-    : req.text;
+  const userContent =
+    req.image || req.file
+      ? [
+          { type: "text", text: req.text },
+          ...(req.image
+            ? [{ type: "image_url", image_url: { url: `data:${req.image.mime};base64,${req.image.base64}`, detail: "high" } }]
+            : []),
+          ...(req.file
+            ? [{ type: "file", file: { filename: req.file.name, file_data: `data:${req.file.mime};base64,${req.file.base64}` } }]
+            : []),
+        ]
+      : req.text;
 
   const body = {
     model: req.choice.model,

@@ -1,12 +1,13 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { LeadLink } from "@/components/leads/lead-link";
 import { GripVertical, User } from "lucide-react";
 
 import { setLeadStatus } from "@/app/(app)/leads/actions";
 import type { LeadStatus, LostReason } from "@/lib/database.types";
-import { LEAD_STATUSES, LOST_STATUS, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
+import { LEAD_STATUSES, LOST_STATUS, POLICY_GATED_STATUS, STATUS_COLORS, STATUS_STYLES } from "@/lib/domain";
 import type { LeadTag } from "@/lib/database.types";
 import type { LeadWithAgent } from "@/lib/leads";
 import { safeAction } from "@/lib/safe-action";
@@ -37,6 +38,7 @@ export function LeadsKanban({
     current.map((lead) => (lead.id === move.id ? { ...lead, status: move.status } : lead)),
   );
 
+  const router = useRouter();
   const [askLost, setAskLost] = useState<{ id: number; name: string } | null>(null);
 
   const save = (id: number, status: LeadStatus, lost?: { reason: LostReason; detail: string }) => {
@@ -53,6 +55,11 @@ export function LeadsKanban({
   const move = (id: number, status: LeadStatus) => {
     const lead = board.find((l) => l.id === id);
     if (!lead || lead.status === status) return;
+    // Closed Won needs the policy: open the lead with the upload dialog.
+    if (status === POLICY_GATED_STATUS) {
+      router.push(`/leads/${id}?close=policy`);
+      return;
+    }
     if (status === LOST_STATUS) setAskLost({ id, name: lead.client_name });
     else save(id, status);
   };
@@ -77,7 +84,7 @@ export function LeadsKanban({
         </p>
       ) : null}
       <div className="relative -mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-        <div className="grid min-w-[1040px] grid-cols-6 gap-2.5">
+        <div className="grid min-w-[1260px] grid-cols-7 gap-2.5">
           {LEAD_STATUSES.map((status) => {
             const column = board.filter((lead) => lead.status === status);
             // Cards moved in or out since the counts were taken shift the total too.

@@ -79,7 +79,7 @@ export const leadFormSchema = z
     confirm_duplicate: z.string().optional(),
   })
   // A New lead may not have a policy yet; a Renewal or Rollover always has an expiry date.
-  .refine((v) => !needsRenewalDate(v.type) || v.renewal_date !== "", {
+  .refine((v) => !needsRenewalDate(v.type, v.policy_product) || v.renewal_date !== "", {
     message: "Add the policy's renewal date. Only New leads can leave it empty.",
     path: ["renewal_date"],
   })

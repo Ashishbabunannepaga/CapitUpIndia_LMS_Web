@@ -1,3 +1,4 @@
+import { todayInBusinessTz } from "@/lib/dates";
 import { appLeadsFeed } from "@/server/appfeed/feed";
 import { syncAppWithdrawals } from "@/server/data/app-leads";
 import { createDataContext } from "@/server/data/context";
@@ -9,6 +10,7 @@ import {
   type AlertSender,
   type SiteProbe,
 } from "@/server/data/monitoring";
+import { rollAutoRenewals } from "@/server/data/leads";
 import { deliverDueReminders, deliverTaskReminders } from "@/server/data/notifications";
 import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
@@ -69,6 +71,17 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
   }
 
   const minute = at.getUTCMinutes();
+  // Hourly: Auto Renewed (term life) policies whose date passed renewed themselves.
+  if (minute === 7) {
+    try {
+      const rolled = await rollAutoRenewals(ctx, todayInBusinessTz(at));
+      if (rolled > 0) console.log(`Moved ${rolled} auto-renewed polic${rolled === 1 ? "y" : "ies"} to next year.`);
+    } catch (error) {
+      console.error("Auto-renewal roll failed", { message: message(error) });
+      await recordAppError(ctx, { source: "job", path: "Auto renewals", message: message(error) }, at);
+    }
+  }
+
   if (minute % 15 === 0) {
     try {
       const stopped = await syncAppWithdrawals(appLeadsFeed, ctx);

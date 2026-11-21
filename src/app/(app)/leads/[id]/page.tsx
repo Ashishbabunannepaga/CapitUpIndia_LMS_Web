@@ -18,7 +18,8 @@ import { CopySummaryButton, LeadTagsEditor, WhatsAppIconLink } from "@/component
 import { LeadHistory } from "@/components/leads/lead-history";
 import { RollRenewalButton } from "@/components/leads/lead-closing";
 import { LeadNotesField, NoteEntry } from "@/components/leads/note-entry";
-import { TransactionPanel } from "@/components/leads/transaction-panel";
+import { PolicyCloseButton } from "@/components/leads/policy-close";
+import { PolicyHistory, type PolicyHistoryRow } from "@/components/leads/policy-history";
 import { FollowUpWriter } from "@/components/leads/follow-up-writer";
 import { AgentName } from "@/components/leads/lead-views";
 import { StatusSelect } from "@/components/leads/status-select";
@@ -29,8 +30,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { mailtoHref, telHref, whatsappHref } from "@/lib/contact-links";
-import { addYears, businessDateOf, formatDate, formatDateTime, nowMs, todayInBusinessTz } from "@/lib/dates";
-import { CONTACT_CHANNEL_LABELS, formatInr, formatNoteLine, isActiveClientStatus, LOST_STATUS } from "@/lib/domain";
+import { businessDateOf, formatDate, formatDateTime, nowMs, todayInBusinessTz } from "@/lib/dates";
+import { leadCode } from "@/lib/codes";
+import { AWAITING_POLICY_STATUS, CONTACT_CHANNEL_LABELS, formatInr, formatNoteLine, isActiveClientStatus, isOneTimeProduct, LOST_STATUS } from "@/lib/domain";
 import { closesCycle, nextRenewalDate } from "@/lib/renewal-rollover";
 import { findSimilarLeads, getLeadPage } from "@/lib/leads";
 import { cn } from "@/lib/utils";
@@ -188,6 +190,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
 
   const query = await searchParams;
   const showHistory = query.tab === "history";
+  const showPolicies = query.tab === "policies";
   const [data, history] = await Promise.all([getLeadPage(id), showHistory ? leadHistory(ctx, profile, id) : null]);
   if (!data) notFound();
   const { lead, notes, events, contacts } = data;
@@ -232,9 +235,11 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
     }));
   // A closed lead whose renewal is near or past can be moved on to next year.
   const rollTo = closesCycle(lead.status) ? nextRenewalDate(lead.renewal_date, today) : null;
-  const wonOrRenewed = isActiveClientStatus(lead.status);
-  // The policy cycle that just closed started a year before the next renewal date.
-  const cycleStart = lead.renewal_date && lead.renewal_date > today ? addYears(lead.renewal_date, -1) : (lead.renewal_date ?? today);
+  const isClient = isActiveClientStatus(lead.status);
+  const oneTime = isOneTimeProduct(lead.policy_product);
+  const pendingUpload = data.transactions.find((t) => t.verification === "pending") ?? null;
+  const policyYears = data.transactions.filter((t) => t.verification !== "pending") as PolicyHistoryRow[];
+  const autoOpenClose = query.close === "policy" && !pendingUpload && lead.status !== "Closed Won";
   const pendingReminders = events.filter(
     (e) => e.is_background_reminder && !e.reminder_sent_at && Date.parse(e.event_timestamp) > now,
   );
@@ -251,17 +256,57 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
 
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2">
+          <p className="flex flex-wrap items-center gap-2 font-mono text-xs text-muted-foreground">
+            <span title="Lead code">{leadCode(lead.id)}</span>
+            {lead.client_code ? (
+              <span title="Client code (this policy year)" className="rounded border border-green-300 bg-green-50 px-1.5 py-0.5 font-semibold text-green-800">
+                {lead.client_code}
+              </span>
+            ) : null}
+          </p>
           <h1 className="text-[28px] leading-tight font-medium tracking-tight">{lead.client_name}</h1>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusSelect leadId={lead.id} status={lead.status} renewalDate={lead.renewal_date} />
+            <StatusSelect
+              leadId={lead.id}
+              status={lead.status}
+              renewalDate={lead.renewal_date}
+              lead={lead}
+              clientName={lead.client_name}
+              isAdmin={admin}
+            />
             <Badge variant="secondary">{lead.type}</Badge>
             <Badge variant="secondary">{lead.business_type}</Badge>
             <Badge variant="secondary">{lead.policy_product}</Badge>
+            {oneTime ? (
+              <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-800">
+                One-time · No renewal
+              </Badge>
+            ) : null}
             {lead.is_duplicate ? <DuplicateBadge label={lead.duplicate_label} /> : null}
           </div>
           <LeadTagsEditor leadId={lead.id} tags={data.tags} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {pendingUpload ? (
+            <PolicyCloseButton
+              leadId={lead.id}
+              clientName={lead.client_name}
+              isAdmin={admin}
+              resumeCycleId={pendingUpload.id}
+              label="Finish policy check"
+              variant="default"
+            />
+          ) : lead.status === "Closed Lost" ? null : (
+            <PolicyCloseButton
+              leadId={lead.id}
+              clientName={lead.client_name}
+              isAdmin={admin}
+              renewing={isClient}
+              label={isClient ? "Upload renewed policy" : lead.status === AWAITING_POLICY_STATUS ? "Upload policy" : "Close with policy"}
+              variant={lead.status === AWAITING_POLICY_STATUS ? "default" : "outline"}
+              autoOpen={autoOpenClose}
+            />
+          )}
           <CopySummaryButton summary={leadSummary(lead, notes[0])} />
           <Button asChild variant="outline">
             <Link href={`/leads/${lead.id}/edit`}>
@@ -359,7 +404,8 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
         <div className="min-w-0 space-y-6 xl:col-span-2">
           <nav aria-label="Lead sections" className="flex gap-1 border-b">
             {[
-              { label: "Details", href: `/leads/${lead.id}`, active: !showHistory },
+              { label: "Details", href: `/leads/${lead.id}`, active: !showHistory && !showPolicies },
+              { label: `Policy history (${policyYears.length})`, href: `/leads/${lead.id}?tab=policies`, active: showPolicies },
               { label: "History", href: `/leads/${lead.id}?tab=history`, active: showHistory },
             ].map((tab) => (
               <Link
@@ -384,13 +430,25 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
               </p>
               <LeadHistory items={history ?? []} />
             </Panel>
+          ) : showPolicies ? (
+            <Panel title="Policy history">
+              <p className="mb-4 text-sm text-muted-foreground">
+                One entry per policy year: the client code of that year, its dates, premium, insurer and policy copy, and how the
+                policy was checked. Past years stay here after the renewal date moves on, and their due dates stay on the calendar.
+              </p>
+              <PolicyHistory leadId={lead.id} rows={policyYears} isAdmin={admin} />
+            </Panel>
           ) : (
             <>
               <Panel title="Policy">
                 <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  <Fact label="Renewal date">
+                  <Fact label={lead.status === "Auto Renewed" ? "Auto-renews on" : "Renewal date"}>
                     <span className="flex flex-col items-start gap-2">
-                      <RenewalDate date={lead.renewal_date} status={lead.status} />
+                      {oneTime ? (
+                        <span className="text-muted-foreground">No renewal (one-time policy)</span>
+                      ) : (
+                        <RenewalDate date={lead.renewal_date} status={lead.status} />
+                      )}
                       {rollTo && lead.renewal_date ? (
                         <RollRenewalButton
                           leadId={lead.id}
@@ -401,6 +459,14 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                       ) : null}
                     </span>
                   </Fact>
+                  {lead.client_code ? (
+                    <Fact label="Client code">
+                      <span className="font-mono">{lead.client_code}</span>
+                    </Fact>
+                  ) : null}
+                  {lead.status === AWAITING_POLICY_STATUS && lead.status_changed_at ? (
+                    <Fact label="Awaiting policy since">{formatDateTime(lead.status_changed_at)}</Fact>
+                  ) : null}
                   <Fact label="Product">
                     {lead.policy_product}
                     {lead.sub_product_name ? <span className="text-muted-foreground"> · {lead.sub_product_name}</span> : null}
@@ -444,22 +510,16 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
                 </dl>
               </Panel>
 
-              {wonOrRenewed ? (
-                <Panel title="Transaction details">
-                  <TransactionPanel
-                    leadId={lead.id}
-                    rows={data.transactions}
-                    defaults={{ transaction_date: today, policy_start_date: cycleStart > today ? today : cycleStart }}
-                    today={today}
-                    isAdmin={admin}
-                  />
-                </Panel>
-              ) : data.transactions.length > 0 ? (
-                <Panel title="Transaction details">
-                  <p className="text-sm text-muted-foreground">
-                    {data.transactions.length} earlier transaction{data.transactions.length === 1 ? "" : "s"} on record. Transaction
-                    details can be changed while the lead is Closed Won or Renewed.
-                  </p>
+              {policyYears.length > 0 ? (
+                <Panel
+                  title="Latest policy"
+                  actions={
+                    <Link href={`/leads/${lead.id}?tab=policies`} className="text-xs text-muted-foreground hover:text-foreground">
+                      All years
+                    </Link>
+                  }
+                >
+                  <PolicyHistory leadId={lead.id} rows={policyYears.slice(0, 1)} isAdmin={admin} />
                 </Panel>
               ) : null}
 

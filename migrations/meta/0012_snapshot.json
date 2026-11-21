@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "350a458f-18fe-4419-b3c4-69dc7fc39b33",
+  "id": "a92bcefc-7abb-4434-92e1-553a7277206c",
   "prevId": "62ee6aca-bac8-4004-b706-417a52879b3c",
   "tables": {
     "ai_model_pricing": {
@@ -197,7 +197,7 @@
       "checkConstraints": {
         "ai_usage_logs_feature": {
           "name": "ai_usage_logs_feature",
-          "value": "\"ai_usage_logs\".\"feature_name\" in ('lead_intake', 'card_ocr', 'follow_up', 'follow_up_rephrase', 'bulk_mapping', 'other')"
+          "value": "\"ai_usage_logs\".\"feature_name\" in ('lead_intake', 'card_ocr', 'follow_up', 'follow_up_rephrase', 'bulk_mapping', 'policy_ocr', 'other')"
         },
         "ai_usage_logs_tokens": {
           "name": "ai_usage_logs_tokens",
@@ -994,14 +994,6 @@
           ],
           "isUnique": false,
           "where": "\"events\".\"is_background_reminder\" = 1 and \"events\".\"reminder_sent_at\" is null"
-        },
-        "events_pending_task_reminders_idx": {
-          "name": "events_pending_task_reminders_idx",
-          "columns": [
-            "event_timestamp"
-          ],
-          "isUnique": false,
-          "where": "\"events\".\"is_system_generated\" = 0 and \"events\".\"is_completed\" = 0 and \"events\".\"reminder_sent_at\" is null"
         }
       },
       "foreignKeys": {
@@ -1627,6 +1619,115 @@
           "notNull": true,
           "autoincrement": false,
           "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "policy_end_date": {
+          "name": "policy_end_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "premium": {
+          "name": "premium",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sum_insured": {
+          "name": "sum_insured",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "insurer": {
+          "name": "insurer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "policy_number": {
+          "name": "policy_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "product": {
+          "name": "product",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'won'"
+        },
+        "verification": {
+          "name": "verification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'not_checked'"
+        },
+        "client_code": {
+          "name": "client_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "extracted": {
+          "name": "extracted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "checks": {
+          "name": "checks",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "previous_renewal_date": {
+          "name": "previous_renewal_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "next_renewal_date": {
+          "name": "next_renewal_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "confirmed_by": {
+          "name": "confirmed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -1635,6 +1736,13 @@
           "columns": [
             "lead_id",
             "transaction_date"
+          ],
+          "isUnique": false
+        },
+        "lead_transactions_client_code_idx": {
+          "name": "lead_transactions_client_code_idx",
+          "columns": [
+            "client_code"
           ],
           "isUnique": false
         },
@@ -1685,6 +1793,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "lead_transactions_confirmed_by_profiles_id_fk": {
+          "name": "lead_transactions_confirmed_by_profiles_id_fk",
+          "tableFrom": "lead_transactions",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "confirmed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1705,6 +1826,34 @@
         "lead_transactions_doc_mime": {
           "name": "lead_transactions_doc_mime",
           "value": "\"lead_transactions\".\"policy_doc_mime\" is null or \"lead_transactions\".\"policy_doc_mime\" in ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')"
+        },
+        "lead_transactions_end_date": {
+          "name": "lead_transactions_end_date",
+          "value": "\"lead_transactions\".\"policy_end_date\" is null or \"lead_transactions\".\"policy_end_date\" = date(\"lead_transactions\".\"policy_end_date\")"
+        },
+        "lead_transactions_premium": {
+          "name": "lead_transactions_premium",
+          "value": "\"lead_transactions\".\"premium\" is null or \"lead_transactions\".\"premium\" >= 0"
+        },
+        "lead_transactions_sum_insured": {
+          "name": "lead_transactions_sum_insured",
+          "value": "\"lead_transactions\".\"sum_insured\" is null or \"lead_transactions\".\"sum_insured\" >= 0"
+        },
+        "lead_transactions_insurer_len": {
+          "name": "lead_transactions_insurer_len",
+          "value": "length(\"lead_transactions\".\"insurer\") <= 200"
+        },
+        "lead_transactions_policy_number_len": {
+          "name": "lead_transactions_policy_number_len",
+          "value": "length(\"lead_transactions\".\"policy_number\") <= 100"
+        },
+        "lead_transactions_kind": {
+          "name": "lead_transactions_kind",
+          "value": "\"lead_transactions\".\"kind\" in ('won', 'renewal', 'auto_renewed')"
+        },
+        "lead_transactions_verification": {
+          "name": "lead_transactions_verification",
+          "value": "\"lead_transactions\".\"verification\" in ('pending', 'verified', 'differences', 'manual', 'not_checked')"
         }
       }
     },
@@ -1867,6 +2016,14 @@
           "autoincrement": false,
           "default": "''"
         },
+        "pipeline_status": {
+          "name": "pipeline_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Prospect'"
+        },
         "lead_status": {
           "name": "lead_status",
           "type": "text",
@@ -1882,6 +2039,27 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'Prospect'"
+        },
+        "status_changed_at": {
+          "name": "status_changed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "client_no": {
+          "name": "client_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "client_code": {
+          "name": "client_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "assigned_agent_id": {
           "name": "assigned_agent_id",
@@ -1956,53 +2134,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "lead_source": {
-          "name": "lead_source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "lost_reason": {
-          "name": "lost_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "lost_reason_detail": {
-          "name": "lost_reason_detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "premium_inr": {
-          "name": "premium_inr",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "insurer_name": {
-          "name": "insurer_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "policy_number": {
-          "name": "policy_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -2056,18 +2187,32 @@
           ],
           "isUnique": false
         },
-        "leads_assigned_lead_status_idx": {
-          "name": "leads_assigned_lead_status_idx",
+        "leads_assigned_pipeline_status_idx": {
+          "name": "leads_assigned_pipeline_status_idx",
           "columns": [
             "assigned_agent_id",
-            "lead_status"
+            "pipeline_status"
           ],
           "isUnique": false
         },
-        "leads_lead_status_idx": {
-          "name": "leads_lead_status_idx",
+        "leads_pipeline_status_idx": {
+          "name": "leads_pipeline_status_idx",
           "columns": [
-            "lead_status"
+            "pipeline_status"
+          ],
+          "isUnique": false
+        },
+        "leads_client_no_idx": {
+          "name": "leads_client_no_idx",
+          "columns": [
+            "client_no"
+          ],
+          "isUnique": true
+        },
+        "leads_client_code_idx": {
+          "name": "leads_client_code_idx",
+          "columns": [
+            "client_code"
           ],
           "isUnique": false
         },
@@ -2168,6 +2313,10 @@
         "leads_lead_status": {
           "name": "leads_lead_status",
           "value": "\"leads\".\"lead_status\" in ('Prospect', 'Quoted', 'Follow-up', 'Closed Won', 'Renewed', 'Closed Lost')"
+        },
+        "leads_pipeline_status": {
+          "name": "leads_pipeline_status",
+          "value": "\"leads\".\"pipeline_status\" in ('Prospect', 'Quoted', 'Follow-up', 'Closed Awaiting Policy', 'Closed Won', 'Auto Renewed', 'Closed Lost')"
         },
         "leads_renewal_date": {
           "name": "leads_renewal_date",

@@ -102,3 +102,14 @@ export function rephrasePrompt(tone: FollowUpTone, senderName: string): string {
   return `${followUpPrompt(tone, senderName)}
 - Rewrite the previous draft into a clearly different version (different opening, structure and wording) that keeps the same intent.`;
 }
+
+export function policyDocumentPrompt(): string {
+  return `You are reading an insurance policy document (schedule or certificate) for CapitUp India, an insurance broker. Extract what the document says so the team can check it against their records.
+- insured_name: the insured / proposer / policyholder (a company, or a person for retail cover).
+- insurer: the insurance company that issued the policy.
+- policy_number: exactly as printed.
+- policy_product: one of ${"Health, Fire or Property, Life, Motor, Liability, Travel, Marine, Credit"}; group health / GMC / mediclaim is Health; use "Not Specified" when unclear.
+- policy_start_date and policy_end_date: the period of insurance, as YYYY-MM-DD. Indian documents write dates day first (05/11/2026 is 5 November 2026).
+- premium: the total premium payable including GST; sum_insured: the cover amount. Digits only, no commas or currency.
+- Never guess. Leave a field "" when the document does not show it clearly.`;
+}

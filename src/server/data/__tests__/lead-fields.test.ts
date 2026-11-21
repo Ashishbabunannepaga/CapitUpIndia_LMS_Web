@@ -49,7 +49,7 @@ describe("lost reason", () => {
 
   it("still lets people edit a lead that was lost before reasons existed", async () => {
     const id = await createLead(w.ctx, w.amit, { client_name: "Old Loss Co", status: "Closed Lost" });
-    // Simulate a row from before migration 0012.
+    // Simulate a row from before migration 0013.
     await w.d1.prepare(`update leads set lost_reason = '', lost_reason_detail = '' where id = ?`).bind(id).run();
     await updateLead(w.ctx, w.amit, id, { notes: "called once more" });
     expect((await getLead(w.ctx, w.amit, id))!.notes).toBe("called once more");

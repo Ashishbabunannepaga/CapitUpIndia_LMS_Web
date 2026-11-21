@@ -12,7 +12,7 @@ import { auditInsert } from "./audit";
 import type { DataContext } from "./context";
 import { InvalidInputError } from "./errors";
 
-// Transaction details of a won or renewed lead: when the deal was done, when
+// Policy history rows (see also src/server/data/policies.ts). Transaction details of a won lead: when the deal was done, when
 // the policy starts, and whether CapitUp has the policy copy yet. One row per
 // policy cycle, so next year's renewal adds a row and last year's stays.
 //
@@ -74,7 +74,7 @@ function displayName(name: string, ext: string): string {
   return base || `policy.${ext}`;
 }
 
-async function storePolicyDoc(ctx: DataContext, leadId: number, file: PolicyFile) {
+export async function storePolicyDoc(ctx: DataContext, leadId: number, file: PolicyFile) {
   if (file.bytes.byteLength === 0) throw new InvalidInputError("The policy file is empty.");
   if (file.bytes.byteLength > MAX_POLICY_DOC_BYTES) throw new InvalidInputError("Use a policy file under 4 MB.");
   const type = sniffPolicyDoc(file.bytes);
@@ -113,7 +113,7 @@ export async function saveLeadTransaction(
 ): Promise<LeadTransaction> {
   const lead = await visibleLead(ctx, actor, leadId);
   if (!isActiveClientStatus(lead.status)) {
-    throw new InvalidInputError("Transaction details are for Closed Won or Renewed leads. Change the status first.");
+    throw new InvalidInputError("Policy details are for Closed Won or Auto Renewed leads. Upload the policy to close the lead first.");
   }
   const values = checkedInput(input);
   if (file && values.policy_status !== "Policy Received") {

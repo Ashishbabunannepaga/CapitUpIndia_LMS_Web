@@ -17,24 +17,47 @@ export const POLICY_PRODUCTS: readonly PolicyProduct[] = [
   "Credit",
 ];
 
-// There is no "Active Client" status: a Closed Won or Renewed lead is an
-// active client ("Active Client" was folded into Closed Won in migration 0009).
-// Closed Won is new business won; Renewed is an existing client's policy
-// renewed for another year.
+// The pipeline. Closed Won is a client with us, new business or renewed
+// ("Renewed" and "Active Client" were folded into it). A closed deal stays
+// Closed Awaiting Policy until its policy is uploaded and confirmed (only
+// admins can set Closed Won directly). Auto Renewed is retail term life
+// that renews itself every year.
 export const LEAD_STATUSES: readonly LeadStatus[] = [
   "Prospect",
   "Quoted",
   "Follow-up",
+  "Closed Awaiting Policy",
   "Closed Won",
-  "Renewed",
+  "Auto Renewed",
   "Closed Lost",
 ];
+
+/** Agents reach Closed Won only by confirming the uploaded policy (src/server/data/policies.ts). */
+export const POLICY_GATED_STATUS: LeadStatus = "Closed Won";
+export const AWAITING_POLICY_STATUS: LeadStatus = "Closed Awaiting Policy";
+
+/** Auto Renewed is only for retail term life: a Retail lead whose product is Life. */
+export function canAutoRenew(lead: { business_type: string; policy_product: string }): boolean {
+  return lead.business_type === "Retail" && lead.policy_product === "Life";
+}
+
+/** Products bought once (a trip's travel cover): no renewal date, countdown or reminders. */
+export const ONE_TIME_PRODUCTS: readonly PolicyProduct[] = ["Travel"];
+
+export function isOneTimeProduct(product: string | null | undefined): boolean {
+  return (ONE_TIME_PRODUCTS as readonly string[]).includes(product ?? "");
+}
+
+/** The statuses a lead with these details can be given (Auto Renewed only for retail term life). */
+export function statusesFor(lead: { business_type: string; policy_product: string }, current?: LeadStatus): LeadStatus[] {
+  return LEAD_STATUSES.filter((s) => s !== "Auto Renewed" || canAutoRenew(lead) || s === current);
+}
 
 export const LEAD_TYPES: readonly LeadType[] = ["New", "Renewal", "Rollover"];
 
 /** A Renewal or Rollover lead needs its policy expiry date; a New lead may have none. */
-export function needsRenewalDate(type: string): boolean {
-  return type === "Renewal" || type === "Rollover";
+export function needsRenewalDate(type: string, product?: string | null): boolean {
+  return (type === "Renewal" || type === "Rollover") && !isOneTimeProduct(product);
 }
 
 export const BUSINESS_TYPES: readonly BusinessType[] = ["Corporate", "Retail"];
@@ -75,8 +98,8 @@ export function formatNoteLine(agentName: string, createdAt: string | Date, cont
   return `[${agentName} - ${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")}]: ${content}`;
 }
 
-/** The statuses that make a lead an active client of CapitUp. */
-export const ACTIVE_CLIENT_STATUSES: readonly LeadStatus[] = ["Closed Won", "Renewed"];
+/** The statuses that make a lead an active client of CapitUp (they carry a client code). */
+export const ACTIVE_CLIENT_STATUSES: readonly LeadStatus[] = ["Closed Won", "Auto Renewed"];
 
 export function isActiveClientStatus(status: string | null | undefined): boolean {
   return (ACTIVE_CLIENT_STATUSES as readonly string[]).includes(status ?? "");
@@ -84,8 +107,8 @@ export function isActiveClientStatus(status: string | null | undefined): boolean
 
 /**
  * Statuses whose renewals are no longer chased: only Closed Lost. A Closed
- * Won or Renewed lead is an active client, so its renewal countdown,
- * reminders and overdue warnings carry on.
+ * Won lead is an active client, so its renewal countdown, reminders and
+ * overdue warnings carry on.
  */
 export const CLOSED_STATUSES: readonly LeadStatus[] = ["Closed Lost"];
 
@@ -94,8 +117,9 @@ export const STATUS_STYLES: Record<LeadStatus, { badge: string; dot: string }> =
   Prospect: { badge: "border-slate-200 bg-slate-100 text-slate-700", dot: "bg-slate-400" },
   Quoted: { badge: "border-sky-200 bg-sky-50 text-sky-700", dot: "bg-sky-500" },
   "Follow-up": { badge: "border-amber-200 bg-amber-50 text-amber-800", dot: "bg-amber-500" },
+  "Closed Awaiting Policy": { badge: "border-violet-200 bg-violet-50 text-violet-800", dot: "bg-violet-500" },
   "Closed Won": { badge: "border-green-300 bg-green-100 text-green-800", dot: "bg-green-600" },
-  Renewed: { badge: "border-emerald-300 bg-emerald-50 text-emerald-800", dot: "bg-emerald-500" },
+  "Auto Renewed": { badge: "border-teal-300 bg-teal-50 text-teal-800", dot: "bg-teal-500" },
   "Closed Lost": { badge: "border-rose-200 bg-rose-50 text-rose-700", dot: "bg-rose-500" },
 };
 
@@ -104,8 +128,9 @@ export const STATUS_COLORS: Record<LeadStatus, string> = {
   Prospect: "#94a3b8",
   Quoted: "#0ea5e9",
   "Follow-up": "#f59e0b",
+  "Closed Awaiting Policy": "#8b5cf6",
   "Closed Won": "#16a34a",
-  Renewed: "#10b981",
+  "Auto Renewed": "#14b8a6",
   "Closed Lost": "#f43f5e",
 };
 
@@ -277,16 +302,24 @@ export function isLeadTag(value: unknown): value is LeadTag {
   return typeof value === "string" && (LEAD_TAGS as readonly string[]).includes(value);
 }
 
-/** Statuses that are finished pipeline work: never "stale" and not counted as open workload. */
-export const DONE_STATUSES: readonly LeadStatus[] = ["Closed Won", "Renewed", "Closed Lost"];
+/**
+ * Statuses that are finished pipeline work: never "stale" and not counted as
+ * open workload. A deal awaiting its policy is closed; the upload is tracked
+ * on My Day ("Policies to upload").
+ */
+export const DONE_STATUSES: readonly LeadStatus[] = ["Closed Awaiting Policy", "Closed Won", "Auto Renewed", "Closed Lost"];
+
+/** Every closed outcome (the leads filter "Closed"). */
+export const CLOSED_OUTCOME_STATUSES: readonly LeadStatus[] = DONE_STATUSES;
 
 /**
- * A renewal can only be overdue on a lead still being worked. A Closed Won,
- * Renewed or Closed Lost lead has finished this cycle, so a past renewal date
- * on it is last cycle's date (waiting to roll to next year), never overdue.
- * Upcoming renewals of won and renewed clients still count as due.
+ * Statuses whose past renewal date is never overdue: a deal awaiting its
+ * policy (the upload sets next year's date), a policy that renews itself, and
+ * a lost client (the date moves on a year to re-approach). A Closed Won
+ * client's renewal date is its policy's end date, so once that passes without
+ * next year's policy being uploaded, the renewal is overdue.
  */
-export const NO_OVERDUE_STATUSES: readonly LeadStatus[] = DONE_STATUSES;
+export const NO_OVERDUE_STATUSES: readonly LeadStatus[] = ["Closed Awaiting Policy", "Auto Renewed", "Closed Lost"];
 
 export function canBeOverdue(status: string | null | undefined): boolean {
   return !(NO_OVERDUE_STATUSES as readonly string[]).includes(status ?? "");

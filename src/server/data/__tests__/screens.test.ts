@@ -42,8 +42,8 @@ describe("My Day", () => {
     await createLead(w.ctx, w.amit, { client_name: "Day Overdue", renewal_date: addDays(today, -2), status: "Follow-up" });
     // Closed Lost renewals are no longer chased; Closed Won is an active client whose renewal still is.
     await createLead(w.ctx, w.amit, { client_name: "Day Lost", renewal_date: addDays(today, 2), status: "Closed Lost" });
-    await createLead(w.ctx, w.amit, { client_name: "Day Won", renewal_date: addDays(today, 2), status: "Closed Won" });
-    await createLead(w.ctx, w.neha, { client_name: "Day Neha", renewal_date: addDays(today, 4), status: "Closed Won" });
+    await createLead(w.ctx, w.admin, { client_name: "Day Won", renewal_date: addDays(today, 2), status: "Closed Won", assigned_agent_id: w.amit.id });
+    await createLead(w.ctx, w.admin, { client_name: "Day Neha", renewal_date: addDays(today, 4), status: "Closed Won", assigned_agent_id: w.neha.id });
     await createLead(w.ctx, w.admin, { client_name: "Day Nobody" });
     const neha = await createLead(w.ctx, w.admin, { client_name: "Day Shared", assigned_agent_id: w.amit.id });
     await addLeadNote(w.ctx, w.admin, neha, "Admin looked at this");
@@ -77,9 +77,9 @@ describe("My Day", () => {
 
   it("the app frame's badge, bell and change stamp come from one batch", async () => {
     const amit = await shellSummary(w.ctx, w.amit);
-    expect(amit).toMatchObject({ stamp: await changeStamp(w.ctx, w.amit), unreadNotes: 1, unreadNotifications: 1 });
-    // Asha gave Amit "Day Shared": that is in his bell.
-    expect(amit.notifications.map((n) => [n.kind, n.title])).toEqual([["other", "New lead assigned: Day Shared"]]);
+    expect(amit).toMatchObject({ stamp: await changeStamp(w.ctx, w.amit), unreadNotes: 1, unreadNotifications: 2 });
+    // Asha gave Amit "Day Won" (a client) and "Day Shared": both are in his bell.
+    expect(amit.notifications.map((n) => n.title).sort()).toEqual(["New lead assigned: Day Shared", "New lead assigned: Day Won"]);
     expect(amit.stamp).toBeGreaterThan(0);
     // Unread notes are scoped like the leads: Neha has none on Amit's lead.
     expect((await shellSummary(w.ctx, w.neha)).unreadNotes).toBe(0);
@@ -103,14 +103,15 @@ describe("calendar colours", () => {
   beforeAll(async () => {
     await createLead(w.ctx, w.amit, { client_name: "Cal Corporate", renewal_date: addDays(today, 30), policy_product: "Health" });
     await createLead(w.ctx, w.amit, { client_name: "Cal Motor", renewal_date: addDays(today, 31), policy_product: "Motor" });
-    await createLead(w.ctx, w.amit, {
+    await createLead(w.ctx, w.admin, {
+      assigned_agent_id: w.amit.id,
       client_name: "Cal Retail Active",
       renewal_date: addDays(today, 32),
       business_type: "Retail",
       policy_product: "Health",
       status: "Closed Won",
     });
-    const active = await createLead(w.ctx, w.amit, { client_name: "Cal Active", status: "Closed Won" });
+    const active = await createLead(w.ctx, w.admin, { client_name: "Cal Active", status: "Closed Won", assigned_agent_id: w.amit.id });
     await createTask(w.ctx, w.amit, { title: "Cal visit", event_timestamp: businessDateTimeToIso(addDays(today, 33), "11:00"), lead_id: active });
     await createTask(w.ctx, w.amit, { title: "Cal plain task", event_timestamp: businessDateTimeToIso(addDays(today, 34), "11:00") });
     await createTask(w.ctx, w.neha, { title: "Cal Neha task", event_timestamp: businessDateTimeToIso(addDays(today, 34), "12:00") });

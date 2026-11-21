@@ -23,13 +23,15 @@ import type { Lead } from "@/lib/database.types";
 import {
   BUSINESS_TYPES,
   LEAD_SOURCES,
-  LEAD_STATUSES,
   LEAD_TYPES,
   LOST_REASONS,
   LOST_STATUS,
+  POLICY_GATED_STATUS,
   POLICY_PRODUCTS,
   UNSPECIFIED_PRODUCT,
+  isOneTimeProduct,
   needsRenewalDate,
+  statusesFor,
 } from "@/lib/domain";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
@@ -275,16 +277,23 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
   // Reset to the form's values whenever the form is re-rendered from the server.
   const [typeChoice, setTypeChoice] = useState({ key: formKey, type: values.type });
   const leadType = typeChoice.key === formKey ? typeChoice.type : values.type;
-  const dateRequired = needsRenewalDate(leadType);
+  // Business type and product decide which statuses fit (Auto Renewed: retail
+  // term life) and whether there is a renewal at all (Travel has none).
+  const [kindChoice, setKindChoice] = useState({ key: formKey, business_type: values.business_type, policy_product: values.policy_product });
+  const kind = kindChoice.key === formKey ? kindChoice : { business_type: values.business_type, policy_product: values.policy_product };
+  const oneTime = isOneTimeProduct(kind.policy_product);
+  const dateRequired = needsRenewalDate(leadType, kind.policy_product);
+  // Closed Won comes from the policy check on the lead page (admins may still pick it).
+  const statusOptions = statusesFor(kind, values.status as never).filter(
+    (s) => s !== POLICY_GATED_STATUS || isAdmin || values.status === POLICY_GATED_STATUS,
+  );
   // Lost reason shows for Closed Lost; premium, insurer and policy number once a product is picked.
   const [statusChoice, setStatusChoice] = useState({ key: formKey, status: values.status });
   const status = statusChoice.key === formKey ? statusChoice.status : values.status;
-  const [productChoice, setProductChoice] = useState({ key: formKey, product: values.policy_product });
-  const product = productChoice.key === formKey ? productChoice.product : values.policy_product;
   const [reasonChoice, setReasonChoice] = useState({ key: formKey, reason: values.lost_reason });
   const lostReason = reasonChoice.key === formKey ? reasonChoice.reason : values.lost_reason;
   const isLost = status === LOST_STATUS;
-  const hasProduct = product !== UNSPECIFIED_PRODUCT;
+  const hasProduct = kind.policy_product !== UNSPECIFIED_PRODUCT;
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
   return (
@@ -367,20 +376,29 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
             </NativeSelect>
           </Field>
           <Field label="Corporate or retail" name="business_type">
-            <NativeSelect id="business_type" name="business_type" defaultValue={values.business_type}>
+            <NativeSelect
+              id="business_type"
+              name="business_type"
+              defaultValue={values.business_type}
+              onChange={(event) => setKindChoice({ ...kind, key: formKey, business_type: event.target.value })}
+            >
               {BUSINESS_TYPES.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </NativeSelect>
           </Field>
-          <Field label="Status" name="status">
+          <Field
+            label="Status"
+            name="status"
+            hint={kind.business_type === "Retail" && kind.policy_product === "Life" ? "Term life that renews itself each year: Auto Renewed." : undefined}
+          >
             <NativeSelect
               id="status"
               name="status"
               defaultValue={values.status}
               onChange={(event) => setStatusChoice({ key: formKey, status: event.target.value })}
             >
-              {LEAD_STATUSES.map((s) => (
+              {statusOptions.map((s) => (
                 <option key={s}>{s}</option>
               ))}
             </NativeSelect>
@@ -445,7 +463,7 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
               id="policy_product"
               name="policy_product"
               defaultValue={values.policy_product}
-              onChange={(event) => setProductChoice({ key: formKey, product: event.target.value })}
+              onChange={(event) => setKindChoice({ ...kind, key: formKey, policy_product: event.target.value })}
             >
               {POLICY_PRODUCTS.map((p) => (
                 <option key={p}>{p}</option>
@@ -490,25 +508,35 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
               placeholder="Office address (from the visiting card)"
             />
           </Field>
-          <Field
-            label={dateRequired ? "Renewal date" : "Renewal date (optional)"}
-            name="renewal_date"
-            error={errors.renewal_date}
-            hint={
-              dateRequired
-                ? "Required for renewals and rollovers. Reminders run from T-30 days to T-5 minutes."
-                : "Optional for a new lead. Add it when you know the policy's expiry to get reminders."
-            }
-          >
-            <Input
-              id="renewal_date"
+          {oneTime ? (
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">Renewal date</p>
+              <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                One-time policy: travel cover is bought per trip, so there is no renewal date or reminders.
+              </p>
+              <input type="hidden" name="renewal_date" value="" />
+            </div>
+          ) : (
+            <Field
+              label={dateRequired ? "Renewal date" : "Renewal date (optional)"}
               name="renewal_date"
-              type="date"
-              required={dateRequired}
-              defaultValue={values.renewal_date}
-              aria-invalid={Boolean(errors.renewal_date)}
-            />
-          </Field>
+              error={errors.renewal_date}
+              hint={
+                dateRequired
+                  ? "Required for renewals and rollovers. Reminders run from T-30 days to T-5 minutes."
+                  : "Optional for a new lead. Add it when you know the policy's expiry to get reminders."
+              }
+            >
+              <Input
+                id="renewal_date"
+                name="renewal_date"
+                type="date"
+                required={dateRequired}
+                defaultValue={values.renewal_date}
+                aria-invalid={Boolean(errors.renewal_date)}
+              />
+            </Field>
+          )}
           <Field
             label="RM (relationship manager)"
             name="relationship_manager"

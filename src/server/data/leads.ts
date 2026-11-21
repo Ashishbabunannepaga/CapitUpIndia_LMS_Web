@@ -4,10 +4,12 @@ import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNull, lt, l
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { BatchItem } from "drizzle-orm/batch";
 
+import { clientCode, parseCode, policyYear } from "@/lib/codes";
 import { normalizeCompanyName } from "@/lib/company-name";
-import { addDays, formatDate, isIsoDate, todayInBusinessTz } from "@/lib/dates";
+import { addDays, addYears, formatDate, isIsoDate, todayInBusinessTz } from "@/lib/dates";
 import {
   ACTIVE_CLIENT_STATUSES,
+  CLOSED_OUTCOME_STATUSES,
   CLOSED_STATUSES,
   NO_OVERDUE_STATUSES,
   DEFAULT_POC_DESIGNATION,
@@ -15,12 +17,17 @@ import {
   isLeadSource,
   isLostReason,
   LEAD_STATUSES,
+  POLICY_GATED_STATUS,
+  canAutoRenew,
+  isActiveClientStatus,
   isContactChannel,
   isLeadStatus,
   isLeadTag,
+  isOneTimeProduct,
 } from "@/lib/domain";
 import { type LeadFilters, searchTerms } from "@/lib/lead-filters";
 import { CYCLE_CLOSING_STATUSES, closesCycle, nextRenewalDate, rolloverForStatusChange } from "@/lib/renewal-rollover";
+import type { LeadStatus } from "@/lib/database.types";
 import { isOwnCardPath } from "@/lib/visiting-cards";
 
 import {
@@ -43,7 +50,7 @@ import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
 import { duplicateState } from "./duplicates";
 import { AccessDeniedError, ConflictError, InvalidInputError, isTriggerError } from "./errors";
-import { clientWithProduct, milestoneEvents } from "./milestones";
+import { DONE_MILESTONE_PREFIX, clientWithProduct, milestoneEvents, renewalEventTitle, renewalMode } from "./milestones";
 import { isStale, lastActivityAt } from "./stale";
 
 // Leads, their notes and contacts. These carry the rules the Supabase RLS
@@ -218,6 +225,68 @@ function applyLostReason(before: Pick<Lead, "status" | "lost_reason" | "lost_rea
   if (reason === "Other" && !detail) throw new InvalidInputError("Say in a few words why the lead was lost.");
 }
 
+const AUTO_RENEW_ONLY = "Auto Renewed is only for retail term life: set the lead to Retail and the product to Life first.";
+export const CLOSED_WON_NEEDS_POLICY =
+  "Upload the policy to mark this lead Closed Won. Until the policy is checked, the lead is Closed Awaiting Policy.";
+
+/**
+ * The status rules: agents reach Closed Won only through the policy check
+ * (src/server/data/policies.ts), admins may also set it directly (it is
+ * audited); Auto Renewed is only for retail term life.
+ */
+export function assertStatusAllowed(
+  actor: Actor,
+  lead: Pick<Lead, "business_type" | "policy_product">,
+  next: LeadStatus,
+  current: LeadStatus | null,
+): void {
+  if (next === "Auto Renewed" && !canAutoRenew(lead)) throw new InvalidInputError(AUTO_RENEW_ONLY);
+  if (next !== current && next === POLICY_GATED_STATUS && !isAdmin(actor)) throw new AccessDeniedError(CLOSED_WON_NEEDS_POLICY);
+}
+
+/** The highest client number given so far (0 for none). */
+export async function lastClientNo(ctx: DataContext): Promise<number> {
+  const [row] = await ctx.db.select({ n: sql<number | null>`max(${leads.client_no})` }).from(leads);
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * The client number and code a lead takes for the policy year `year`: its
+ * own number when it has one (a client renewing), otherwise the next one.
+ */
+export async function clientIdentity(ctx: DataContext, lead: Pick<Lead, "client_no">, year: number) {
+  const client_no = lead.client_no ?? (await lastClientNo(ctx)) + 1;
+  return { client_no, client_code: clientCode(client_no, year) };
+}
+
+/** Policy history row for a lead that became a client without a policy check (admin override, Auto Renewed). */
+function uncheckedCycleRow(
+  actor: Actor,
+  leadId: number | SQL<number>,
+  before: Pick<Lead, "client_no" | "renewal_date"> | null,
+  after: Pick<Lead, "client_code" | "renewal_date" | "policy_product" | "status">,
+  today: string,
+  stamp: string,
+): typeof leadTransactions.$inferInsert {
+  return {
+    lead_id: leadId as number,
+    transaction_date: today,
+    policy_status: "Policy Yet to Receive",
+    kind: after.status === "Auto Renewed" && before?.client_no ? "auto_renewed" : before?.client_no ? "renewal" : "won",
+    verification: "not_checked",
+    client_code: after.client_code,
+    product: after.policy_product,
+    previous_renewal_date: before?.renewal_date ?? null,
+    next_renewal_date: after.renewal_date,
+    confirmed_at: stamp,
+    confirmed_by: actor.id,
+    created_by: actor.id,
+    updated_by: actor.id,
+    created_at: stamp,
+    updated_at: stamp,
+  };
+}
+
 type RenewalSettings = Awaited<ReturnType<typeof renewalSettings>>;
 
 async function renewalSettings(ctx: DataContext) {
@@ -373,6 +442,10 @@ function filterConditions(actor: Actor, filters: LeadFilters, today: string): SQ
           if (/^\d{4,}$/.test(term)) {
             matches.push(sql`${digitsOnly(leads.poc_contact_number)} like ${pattern}`, sql`${digitsOnly(leads.poc2_contact_number)} like ${pattern}`);
           }
+          // "LEAD-0042" finds lead 42; any year's client code finds the client.
+          const code = parseCode(term);
+          if (code && "leadId" in code) matches.push(eq(leads.id, code.leadId));
+          if (code && "clientNo" in code) matches.push(eq(leads.client_no, code.clientNo));
           return matches;
         }),
       ),
@@ -390,7 +463,7 @@ function filterConditions(actor: Actor, filters: LeadFilters, today: string): SQ
   }
   if (filters.outcome === "won") conditions.push(inArray(leads.status, [...ACTIVE_CLIENT_STATUSES]));
   else if (filters.outcome === "lost") conditions.push(inArray(leads.status, [...CLOSED_STATUSES]));
-  else if (filters.outcome === "closed") conditions.push(inArray(leads.status, [...CYCLE_CLOSING_STATUSES]));
+  else if (filters.outcome === "closed") conditions.push(inArray(leads.status, [...CLOSED_OUTCOME_STATUSES]));
   if (filters.startFrom || filters.startTo) {
     // Any of the lead's transactions (one per policy cycle) starting in the range.
     conditions.push(
@@ -577,9 +650,16 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
   assertCardPath(actor, input.visiting_card_path);
   if (input.office_lead_id && !isAdmin(actor)) throw new AccessDeniedError("Only admins can hand over office call requests.");
   if (input.app_user_id && !isAdmin(actor)) throw new AccessDeniedError("Only admins can hand over app leads.");
+  const product = fields.policy_product ?? "Not Specified";
+  const status = fields.status ?? "Prospect";
+  assertStatusAllowed(actor, { business_type: fields.business_type ?? "Corporate", policy_product: product }, status, null);
+  if (isOneTimeProduct(product)) fields.renewal_date = null;
 
   const [dup, renewal] = await Promise.all([duplicateState(ctx, fields.client_name), renewalSettings(ctx)]);
   const stamp = now();
+  const today = todayInBusinessTz();
+  // A lead entered as a client (an admin, or retail term life on Auto Renewed) gets its client code now.
+  const client = isActiveClientStatus(status) ? await clientIdentity(ctx, { client_no: null }, Number(today.slice(0, 4))) : null;
   const row = {
     ...fields,
     client_name: fields.client_name,
@@ -595,13 +675,16 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
     ...dup,
     duplicate_resolved_at: null,
     duplicate_resolved_by: null,
+    status_changed_at: stamp,
+    client_no: client?.client_no ?? null,
+    client_code: client?.client_code ?? null,
   };
 
   // One D1 batch (a transaction). Later statements find the new lead as the
   // highest id: nothing else can write in between.
   const newId = sql<number>`(select max(${leads.id}) from ${leads})`;
   const milestones = milestoneEvents(
-    { client_name: row.client_name, policy_product: row.policy_product ?? "Not Specified", renewal_date: row.renewal_date ?? null, assigned_agent_id: owner },
+    { client_name: row.client_name, policy_product: product, renewal_date: row.renewal_date ?? null, assigned_agent_id: owner, status },
     renewal.offsets,
     renewal.dueTime,
   );
@@ -609,6 +692,15 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
     ctx.db.insert(leads).values(row).returning({ id: leads.id }),
     ...milestones.map((event) => ctx.db.insert(events).values({ ...event, lead_id: newId })),
     auditInsert(ctx, actor, "leads", sql`(select cast(max(${leads.id}) as text) from ${leads})`, "INSERT", null, row),
+    ...(client
+      ? [
+          ctx.db
+            .insert(leadTransactions)
+            .values(
+              uncheckedCycleRow(actor, newId, null, { client_code: client.client_code, renewal_date: row.renewal_date ?? null, policy_product: product, status }, today, stamp),
+            ),
+        ]
+      : []),
     // An admin creating a lead for an agent tells the agent.
     ...(owner && owner !== actor.id && input.notifyOwner !== false
       ? [ctx.db.insert(notifications).values(assignmentNotice(actor, owner, { client_name: row.client_name, policy_product: row.policy_product ?? "Not Specified", renewal_date: row.renewal_date ?? null }, newId))]
@@ -618,8 +710,8 @@ export async function createLead(ctx: DataContext, actor: Actor, input: NewLead)
 }
 
 /** Applies a change to a lead with everything that follows from it, in one batch. */
-async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Partial<Lead>): Promise<void> {
-  await runLeadBatch(ctx, await leadChangeStatements(ctx, actor, before, patch));
+async function writeLead(ctx: DataContext, actor: Actor, before: Lead, patch: Partial<Lead>, opts: LeadChangeOptions = {}): Promise<void> {
+  await runLeadBatch(ctx, await leadChangeStatements(ctx, actor, before, patch, opts));
 }
 
 /**
@@ -647,7 +739,7 @@ function leadVersionGuard(ctx: DataContext, id: number, expectedUpdatedAt: strin
 }
 
 /** Runs lead write statements as one batch, turning a failed version guard into a ConflictError. */
-async function runLeadBatch(ctx: DataContext, statements: BatchItem<"sqlite">[]): Promise<void> {
+export async function runLeadBatch(ctx: DataContext, statements: BatchItem<"sqlite">[]): Promise<void> {
   if (statements.length === 0) return;
   try {
     await ctx.db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
@@ -657,22 +749,58 @@ async function runLeadBatch(ctx: DataContext, statements: BatchItem<"sqlite">[])
   }
 }
 
+export type LeadChangeOptions = {
+  notifyOwner?: boolean;
+  renewal?: RenewalSettings;
+  /**
+   * When the renewal date moves because a policy year closed: the title the
+   * old due date keeps on the calendar as a completed entry (for example
+   * "Renewed: Acme (Health) · CAP-CLI-2026-0007"), instead of disappearing.
+   */
+  archiveDue?: string;
+  /** Adds the client's Policy history row (see becomeClient), given the lead as written. */
+  cycle?: ((after: Lead, stamp: string) => BatchItem<"sqlite">) | null;
+};
+
+/** The calendar title a closed policy year leaves on its old due date. */
+export function closedYearTitle(verb: string, lead: Pick<Lead, "client_name" | "policy_product">, code?: string | null): string {
+  return `${verb}: ${clientWithProduct(lead.client_name, lead.policy_product)}${code ? ` · ${code}` : ""}`.slice(0, 300);
+}
+
+/**
+ * The statements that make a status change into a client status (Closed Won
+ * set by an admin, or Auto Renewed) give the lead its client code for this
+ * year and add the year to its Policy history. Other changes need none.
+ */
+async function becomeClient(ctx: DataContext, actor: Actor, before: Lead, patch: Partial<Lead>) {
+  const next = patch.status ?? before.status;
+  if (next === before.status || !isActiveClientStatus(next) || isActiveClientStatus(before.status)) return null;
+  const today = todayInBusinessTz();
+  const year = policyYear(null, today);
+  Object.assign(patch, await clientIdentity(ctx, before, year));
+  return (after: Lead, stamp: string) =>
+    ctx.db.insert(leadTransactions).values(uncheckedCycleRow(actor, before.id, before, after, today, stamp));
+}
+
 /**
  * The statements that apply a change to a lead: the row, its renewal
  * milestones, the audit row and (unless `notifyOwner` is off) the new owner's
  * bell message. Empty when nothing changes.
  */
-async function leadChangeStatements(
+export async function leadChangeStatements(
   ctx: DataContext,
-  actor: Actor,
+  actor: Actor | null,
   before: Lead,
   patch: Partial<Lead>,
-  { notifyOwner = true, renewal: preloaded }: { notifyOwner?: boolean; renewal?: RenewalSettings } = {},
+  { notifyOwner = true, renewal: preloaded, archiveDue, cycle }: LeadChangeOptions = {},
 ): Promise<BatchItem<"sqlite">[]> {
   // `before` is the row as the caller read it; the guard makes sure it is
   // still the row in D1 when the batch runs.
   const stamp = now();
   const after: Lead = { ...before, ...patch };
+  // A one-time product (Travel) has no renewal.
+  if (isOneTimeProduct(after.policy_product)) after.renewal_date = null;
+  if (after.status !== before.status) after.status_changed_at = stamp;
   if (after.assigned_agent_id !== before.assigned_agent_id) after.assigned_at = after.assigned_agent_id ? stamp : null;
   after.client_name_normalized = normalizeCompanyName(after.client_name);
   if (after.client_name_normalized !== before.client_name_normalized) {
@@ -695,10 +823,27 @@ async function leadChangeStatements(
     leadVersionGuard(ctx, id, before.updated_at),
     ctx.db.update(leads).set(values).where(eq(leads.id, id)),
   ];
-  const system = and(eq(events.lead_id, id), eq(events.is_system_generated, true));
+  // The countdown of the current date; kept due dates of closed years ("DONE ...") stay.
+  const system = and(
+    eq(events.lead_id, id),
+    eq(events.is_system_generated, true),
+    sql`${events.milestone} not like ${DONE_MILESTONE_PREFIX + "%"}`,
+  );
+  const mode = renewalMode(after);
 
-  if (after.renewal_date !== before.renewal_date) {
+  if (after.renewal_date !== before.renewal_date || mode !== renewalMode(before)) {
     const renewal = preloaded ?? (await renewalSettings(ctx));
+    if (archiveDue && before.renewal_date && after.renewal_date !== before.renewal_date) {
+      // Keep last year's due date on the calendar as a completed entry.
+      const kept = DONE_MILESTONE_PREFIX + before.renewal_date;
+      statements.push(
+        ctx.db.delete(events).where(and(eq(events.lead_id, id), eq(events.is_system_generated, true), eq(events.milestone, kept))),
+        ctx.db
+          .update(events)
+          .set({ milestone: kept, title: archiveDue, is_completed: true, completed_at: stamp, is_background_reminder: false })
+          .where(and(eq(events.lead_id, id), eq(events.is_system_generated, true), eq(events.milestone, "DUE"))),
+      );
+    }
     statements.push(ctx.db.delete(events).where(system));
     for (const event of milestoneEvents(after, renewal.offsets, renewal.dueTime)) {
       statements.push(ctx.db.insert(events).values({ ...event, lead_id: id }));
@@ -713,7 +858,7 @@ async function leadChangeStatements(
         ctx.db
           .update(events)
           .set({
-            title: sql`substr(case when ${events.milestone} = 'DUE' then ${"Renewal due: " + suffix}
+            title: sql`substr(case when ${events.milestone} = 'DUE' then ${renewalEventTitle("DUE", after.client_name, after.policy_product, mode)}
               else ${events.milestone} || ${" renewal reminder: " + suffix} end, 1, 300)`,
           })
           .where(system),
@@ -721,10 +866,12 @@ async function leadChangeStatements(
     }
   }
   statements.push(auditInsert(ctx, actor, "leads", id, "UPDATE", before, after));
+  if (cycle) statements.push(cycle(after, stamp));
   if (
     notifyOwner &&
     after.assigned_agent_id &&
     after.assigned_agent_id !== before.assigned_agent_id &&
+    actor &&
     after.assigned_agent_id !== actor.id
   ) {
     statements.push(ctx.db.insert(notifications).values(assignmentNotice(actor, after.assigned_agent_id, after, id)));
@@ -780,13 +927,21 @@ export async function updateLead(
     await assertAssignable(ctx, input.assigned_agent_id);
     patch.assigned_agent_id = input.assigned_agent_id;
   }
+  const merged = { ...before, ...patch };
+  assertStatusAllowed(actor, merged, merged.status, before.status);
   // Closing the lead on the edit form without touching the renewal date
   // rolls it to next year, like the status menu does.
+  let archiveDue: string | undefined;
   if (patch.status && (patch.renewal_date === undefined || patch.renewal_date === before.renewal_date)) {
     const rolled = rolloverForStatusChange(before, patch.status, todayInBusinessTz());
-    if (rolled) patch.renewal_date = rolled;
+    if (rolled) {
+      patch.renewal_date = rolled;
+      archiveDue = closedYearTitle(patch.status === "Closed Lost" ? "Closed Lost" : "Auto-renewed", merged, merged.client_code);
+    }
   }
-  await writeLead(ctx, actor, before, patch);
+  const cycle = await becomeClient(ctx, actor, before, patch);
+  if (cycle && archiveDue) archiveDue = closedYearTitle("Auto-renewed", merged, patch.client_code);
+  await writeLead(ctx, actor, before, patch, { archiveDue, cycle });
 }
 
 /**
@@ -805,6 +960,7 @@ export async function setLeadStatus(
 ): Promise<void> {
   if (!isLeadStatus(status)) throw new InvalidInputError("Unknown status.");
   const before = await findVisible(ctx, actor, id);
+  assertStatusAllowed(actor, before, status, before.status);
   const patch: Partial<Lead> = tidy({ status, lost_reason: (opts.lostReason ?? undefined) as Lead["lost_reason"] | undefined, lost_reason_detail: opts.lostReasonDetail });
   for (const key of ["lost_reason", "lost_reason_detail"] as const) if (patch[key] === undefined) delete patch[key];
   applyLostReason(before, patch);
@@ -815,7 +971,13 @@ export async function setLeadStatus(
     const rolled = rolloverForStatusChange(before, status, todayInBusinessTz());
     if (rolled) patch.renewal_date = rolled;
   }
-  await writeLead(ctx, actor, before, patch);
+  const cycle = await becomeClient(ctx, actor, before, patch);
+  const verb = status === "Closed Lost" ? "Closed Lost" : status === "Auto Renewed" ? "Auto-renewed" : "Closed";
+  const archiveDue =
+    status !== before.status && patch.renewal_date !== undefined && closesCycle(status)
+      ? closedYearTitle(verb, before, patch.client_code ?? before.client_code)
+      : undefined;
+  await writeLead(ctx, actor, before, patch, { archiveDue, cycle });
 }
 
 /** How many closed leads (won, renewed or lost) the caller can see still carry a renewal date that has passed. */
@@ -851,10 +1013,68 @@ export async function rollForwardClosedLeads(
   for (const before of rows) {
     const next = nextRenewalDate(before.renewal_date, today);
     if (!next) continue;
-    statements.push(...(await leadChangeStatements(ctx, actor, before, { renewal_date: next }, { renewal })));
+    const verb = before.status === "Auto Renewed" ? "Auto-renewed" : "Closed Lost";
+    const archiveDue = closedYearTitle(verb, before, before.client_code);
+    statements.push(...(await leadChangeStatements(ctx, actor, before, { renewal_date: next }, { renewal, archiveDue })));
   }
   await runLeadBatch(ctx, statements);
   return { rolled: rows.length, remaining: await countClosedLeadsToRoll(ctx, actor, today) };
+}
+
+/**
+ * The nightly move of Auto Renewed (retail term life) policies: each one whose
+ * renewal date has passed renewed itself, so its date moves on a year, its
+ * client code moves to the new policy year, the year is added to its Policy
+ * history and the passed date stays on the calendar as "Auto-renewed". Run by
+ * the cron as the system (no actor). Returns how many moved.
+ */
+export async function rollAutoRenewals(ctx: DataContext, today: string = todayInBusinessTz(), limit = ROLL_FORWARD_BATCH): Promise<number> {
+  const [rows, renewal] = await Promise.all([
+    ctx.db
+      .select()
+      .from(leads)
+      .where(and(eq(leads.status, "Auto Renewed"), lt(leads.renewal_date, today)))
+      .orderBy(asc(leads.renewal_date), asc(leads.id))
+      .limit(limit),
+    renewalSettings(ctx),
+  ]);
+  let next = await lastClientNo(ctx);
+  const statements: BatchItem<"sqlite">[] = [];
+  const stamp = now();
+  for (const before of rows) {
+    const rolled = nextRenewalDate(before.renewal_date, today);
+    if (!rolled || !before.renewal_date) continue;
+    // The policy year that just began started on the passed renewal date.
+    const start = addYears(rolled, -1);
+    const clientNo = before.client_no ?? ++next;
+    const code = clientCode(clientNo, policyYear(start, today));
+    const patch: Partial<Lead> = { renewal_date: rolled, client_no: clientNo, client_code: code };
+    statements.push(
+      ...(await leadChangeStatements(ctx, null, before, patch, {
+        renewal,
+        archiveDue: closedYearTitle("Auto-renewed", before, code),
+        cycle: () =>
+          ctx.db.insert(leadTransactions).values({
+            lead_id: before.id,
+            transaction_date: today,
+            policy_start_date: start,
+            policy_end_date: rolled,
+            policy_status: "Policy Yet to Receive",
+            kind: "auto_renewed",
+            verification: "not_checked",
+            client_code: code,
+            product: before.policy_product,
+            previous_renewal_date: before.renewal_date,
+            next_renewal_date: rolled,
+            confirmed_at: stamp,
+            created_at: stamp,
+            updated_at: stamp,
+          }),
+      })),
+    );
+  }
+  await runLeadBatch(ctx, statements);
+  return rows.length;
 }
 
 /** Gives a lead to an active team member, or unassigns it. Admins only. */
@@ -978,7 +1198,16 @@ export async function handOverBook(
 /** A lead as exports write it: owner name, tags and its newest transaction (won or renewed cycle). */
 export type ExportedLead = LeadWithAgent & {
   tags: LeadTag[];
-  transaction: { transaction_date: string; policy_start_date: string | null; policy_status: string } | null;
+  transaction: {
+    transaction_date: string;
+    policy_start_date: string | null;
+    policy_end_date: string | null;
+    premium: number | null;
+    insurer: string;
+    policy_number: string;
+    policy_status: string;
+    verification: string;
+  } | null;
 };
 
 /** At most this many leads in one filtered export (one Excel file). */
@@ -992,7 +1221,9 @@ const exportColumns = () => ({
   ...getTableColumns(leads),
   tag_list: sql<string | null>`(select group_concat(t.tag, '|') from ${leadTags} t where t.lead_id = ${leads.id})`,
   tx: sql<string | null>`(select json_object('transaction_date', x.transaction_date, 'policy_start_date', x.policy_start_date,
-    'policy_status', x.policy_status) from ${leadTransactions} x where x.lead_id = leads.id
+    'policy_end_date', x.policy_end_date, 'premium', x.premium, 'insurer', x.insurer, 'policy_number', x.policy_number,
+    'policy_status', x.policy_status, 'verification', x.verification) from ${leadTransactions} x
+    where x.lead_id = leads.id and x.verification != 'pending'
     order by x.transaction_date desc, x.id desc limit 1)`,
 });
 

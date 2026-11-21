@@ -56,6 +56,7 @@ export const MODEL_TIMEOUT_MS = 25_000;
 /** Upper bounds on the answer length, so a confused model can't run on. */
 export const MAX_OUTPUT_TOKENS = {
   lead: 1_200,
+  policy: 800,
   bulk: 6_000,
   followUp: 300,
 } as const;

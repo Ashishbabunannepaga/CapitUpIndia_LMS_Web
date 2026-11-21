@@ -69,8 +69,10 @@ type GenerateOptions<T> = {
   system?: string;
   /** The user's material: notes, sheet rows, lead context. */
   text: string;
-  /** An image to read (visiting cards). */
+  /** An image to read (visiting cards, policy photos). */
   image?: { mime: string; base64: string };
+  /** A PDF to read (policy documents). */
+  file?: { name: string; mime: string; base64: string };
   /** JSON Schema for strict structured output; omit for plain text. */
   jsonSchema?: { name: string; schema: unknown };
   maxOutputTokens: number;
@@ -97,6 +99,7 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<{ value: T;
         system: opts.system,
         text: opts.text,
         image: opts.image,
+        file: opts.file,
         jsonSchema: opts.jsonSchema,
         maxOutputTokens: opts.maxOutputTokens,
         timeoutMs: MODEL_TIMEOUT_MS,

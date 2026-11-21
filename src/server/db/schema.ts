@@ -19,11 +19,22 @@ export const POLICY_PRODUCTS = ["Not Specified", "Health", "Fire or Property", "
 /** What the original `policy_product` column allows (see `leads.policy_product`). */
 const LEGACY_POLICY_PRODUCTS = ["Health", "Fire or Property", "Life", "Motor", "Liability", "Travel", "Marine", "Credit"] as const;
 /**
- * Closed Won (new business won) and Renewed (an existing client renewed) are
- * the active clients; "Active Client" was folded into Closed Won (migration
- * 0009). Renewed came in migration 0011.
+ * The pipeline (migration 0012). Closed Won is a client with us, new or
+ * renewed ("Renewed" was folded into it); it is reached by uploading and
+ * confirming the policy, and until then a closed deal is Closed Awaiting
+ * Policy. Auto Renewed is retail term life that renews itself every year.
  */
-export const LEAD_STATUSES = ["Prospect", "Quoted", "Follow-up", "Closed Won", "Renewed", "Closed Lost"] as const;
+export const LEAD_STATUSES = [
+  "Prospect",
+  "Quoted",
+  "Follow-up",
+  "Closed Awaiting Policy",
+  "Closed Won",
+  "Auto Renewed",
+  "Closed Lost",
+] as const;
+/** What the `lead_status` column (migrations 0011 to 0012) allows. */
+const LEAD_STATUSES_0011 = ["Prospect", "Quoted", "Follow-up", "Closed Won", "Renewed", "Closed Lost"] as const;
 /**
  * What the original `status` column's CHECK allows (see `leads.status`). It
  * has no "Renewed", and SQLite changes a CHECK only by rebuilding the table,
@@ -32,6 +43,15 @@ export const LEAD_STATUSES = ["Prospect", "Quoted", "Follow-up", "Closed Won", "
 const LEGACY_LEAD_STATUSES = ["Prospect", "Quoted", "Active Client", "Follow-up", "Closed Won", "Closed Lost"] as const;
 /** Whether a won or renewed policy has reached CapitUp yet (lead_transactions). */
 export const POLICY_DOC_STATUSES = ["Policy Received", "Policy Yet to Receive"] as const;
+/** What one policy year was: the first win, a later year's renewal, or a term life policy renewing itself. */
+export const POLICY_CYCLE_KINDS = ["won", "renewal", "auto_renewed"] as const;
+/**
+ * How a policy year was checked: `pending` (uploaded, not confirmed yet),
+ * `verified` (the policy matched), `differences` (confirmed despite
+ * differences), `manual` (confirmed without an AI reading) or `not_checked`
+ * (entered before policy checks existed, or logged by the system).
+ */
+export const POLICY_VERIFICATIONS = ["pending", "verified", "differences", "manual", "not_checked"] as const;
 export const EVENT_KINDS = ["task", "meeting"] as const; // Mirrored in src/lib/domain.ts.
 /** Labels agents put on leads; admins filter by them. Mirrored in src/lib/domain.ts. */
 export const LEAD_TAGS = ["Hot", "VIP", "Price sensitive", "Referral", "Cold"] as const;
@@ -39,7 +59,7 @@ export const LEAD_TAGS = ["Hot", "VIP", "Price sensitive", "Referral", "Cold"] a
 export const LEAD_SOURCES = ["WhatsApp", "Referral", "Cold Call", "Walk-in", "Website", "LinkedIn", "Excel Import", "OCR/Card", "Other"] as const;
 /** Why a lead was lost (required when it moves to Closed Lost). Mirrored in src/lib/domain.ts. */
 export const LOST_REASONS = ["Price", "Competitor", "No Response", "Client Deceased", "Not Interested", "Other"] as const;
-export const AI_FEATURES = ["lead_intake", "card_ocr", "follow_up", "follow_up_rephrase", "bulk_mapping", "other"] as const;
+export const AI_FEATURES = ["lead_intake", "card_ocr", "follow_up", "follow_up_rephrase", "bulk_mapping", "policy_ocr", "other"] as const;
 
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
 const inList = (values: readonly string[]) => sql.raw(values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", "));
@@ -178,14 +198,26 @@ export const leads = sqliteTable(
     address: text("address").notNull().default(""),
     notes: text("notes").notNull().default(""),
     /**
-     * The pipeline status. Stored in `lead_status`: the original `status`
-     * column's CHECK has no "Renewed", and changing a CHECK means a table
-     * rebuild that would delete every event and note (migration 0011, same as
-     * `type` in 0006 and `policy_product` in 0009).
+     * The pipeline status. Stored in `pipeline_status`: the earlier columns'
+     * CHECKs lack the current statuses, and changing a CHECK means a table
+     * rebuild that would delete every event and note (migration 0012; the
+     * same move as 0011, `type` in 0006 and `policy_product` in 0009).
      */
-    status: text("lead_status", { enum: LEAD_STATUSES }).notNull().default("Prospect"),
+    status: text("pipeline_status", { enum: LEAD_STATUSES }).notNull().default("Prospect"),
+    /** Unused since migration 0012 (see `status`). Kept because dropping it needs a table rebuild. */
+    legacy_lead_status: text("lead_status", { enum: LEAD_STATUSES_0011 }).notNull().default("Prospect"),
     /** Unused since migration 0011 (see `status`). Kept because dropping it needs a table rebuild. */
     legacy_status: text("status", { enum: LEGACY_LEAD_STATUSES }).notNull().default("Prospect"),
+    /** When the status last changed (null: not since migration 0012). */
+    status_changed_at: text("status_changed_at"),
+    /**
+     * The client's permanent number, given the first time the lead becomes
+     * Closed Won or Auto Renewed and never reused. The client code is
+     * CAP-CLI-<policy year>-<number> (src/lib/codes.ts).
+     */
+    client_no: integer("client_no"),
+    /** The current client code (this policy year's); each year's code stays on its lead_transactions row. */
+    client_code: text("client_code"),
     assigned_agent_id: text("assigned_agent_id").references(() => profiles.id, { onDelete: "set null" }),
     assigned_at: text("assigned_at"),
     is_duplicate: bool("is_duplicate").notNull().default(false),
@@ -223,8 +255,10 @@ export const leads = sqliteTable(
     uniqueIndex("leads_app_user_id_idx").on(t.app_user_id),
     index("leads_client_name_normalized_idx").on(t.client_name_normalized),
     index("leads_renewal_date_idx").on(t.renewal_date),
-    index("leads_assigned_lead_status_idx").on(t.assigned_agent_id, t.status),
-    index("leads_lead_status_idx").on(t.status),
+    index("leads_assigned_pipeline_status_idx").on(t.assigned_agent_id, t.status),
+    index("leads_pipeline_status_idx").on(t.status),
+    uniqueIndex("leads_client_no_idx").on(t.client_no),
+    index("leads_client_code_idx").on(t.client_code),
     index("leads_created_at_idx").on(t.created_at),
     index("leads_updated_at_idx").on(t.updated_at),
     index("leads_duplicate_idx").on(t.is_duplicate),
@@ -235,7 +269,8 @@ export const leads = sqliteTable(
     check("leads_policy_product", sql`${t.legacy_policy_product} in (${inList(LEGACY_POLICY_PRODUCTS)})`),
     check("leads_product", sql`${t.policy_product} in (${inList(POLICY_PRODUCTS)})`),
     check("leads_status", sql`${t.legacy_status} in (${inList(LEGACY_LEAD_STATUSES)})`),
-    check("leads_lead_status", sql`${t.status} in (${inList(LEAD_STATUSES)})`),
+    check("leads_lead_status", sql`${t.legacy_lead_status} in (${inList(LEAD_STATUSES_0011)})`),
+    check("leads_pipeline_status", sql`${t.status} in (${inList(LEAD_STATUSES)})`),
     check("leads_renewal_date", sql`${t.renewal_date} is null or coalesce(${t.renewal_date} = date(${t.renewal_date}), 0)`),
     check("leads_sub_product_len", sql`length(${t.sub_product_name}) <= 200`),
     check("leads_poc_name_len", sql`length(${t.poc_name}) <= 120 and length(${t.poc2_name}) <= 120`),
@@ -360,10 +395,12 @@ export const leadTags = sqliteTable(
 );
 
 /**
- * What happened when a lead was won or renewed: one row per policy cycle, so
- * every year's renewal keeps its own dates and policy copy. The policy file
- * sits in the private R2 bucket under `policy_doc_path`; it is read only
- * through src/server/data/transactions.ts, for someone who can see the lead.
+ * Policy history: one row per policy year of a client (the first win, each
+ * renewal, each auto-renewal), so every year keeps its own dates, premium,
+ * client code and policy copy (shown on the lead's Policy history tab). The
+ * policy file sits in the private R2 bucket under `policy_doc_path`; it is
+ * read only through src/server/data/transactions.ts, for someone who can see
+ * the lead. Columns from `policy_end_date` on came in migration 0012.
  */
 export const leadTransactions = sqliteTable(
   "lead_transactions",
@@ -382,14 +419,41 @@ export const leadTransactions = sqliteTable(
     updated_by: text("updated_by").references(() => profiles.id, { onDelete: "set null" }),
     created_at: createdAt(),
     updated_at: updatedAt(),
+    policy_end_date: text("policy_end_date"),
+    premium: real("premium"),
+    sum_insured: real("sum_insured"),
+    insurer: text("insurer").notNull().default(""),
+    policy_number: text("policy_number").notNull().default(""),
+    product: text("product"),
+    kind: text("kind", { enum: POLICY_CYCLE_KINDS }).notNull().default("won"),
+    verification: text("verification", { enum: POLICY_VERIFICATIONS }).notNull().default("not_checked"),
+    /** This policy year's client code (CAP-CLI-<year>-<number>), set when the year is confirmed. */
+    client_code: text("client_code"),
+    /** What the AI read from the policy (JSON), kept so the checks can be re-run and audited. */
+    extracted: text("extracted", { mode: "json" }),
+    /** The checks of the policy against the lead and the agent's entries (JSON), as confirmed. */
+    checks: text("checks", { mode: "json" }),
+    /** The lead's renewal date before this year was confirmed, and the one it moved to. */
+    previous_renewal_date: text("previous_renewal_date"),
+    next_renewal_date: text("next_renewal_date"),
+    confirmed_at: text("confirmed_at"),
+    confirmed_by: text("confirmed_by").references(() => profiles.id, { onDelete: "set null" }),
   },
   (t) => [
     index("lead_transactions_lead_idx").on(t.lead_id, t.transaction_date),
+    index("lead_transactions_client_code_idx").on(t.client_code),
     index("lead_transactions_start_idx").on(t.policy_start_date),
     check("lead_transactions_dates", sql`${t.transaction_date} = date(${t.transaction_date}) and (${t.policy_start_date} is null or ${t.policy_start_date} = date(${t.policy_start_date}))`),
     check("lead_transactions_policy_status", sql`${t.policy_status} in (${inList(POLICY_DOC_STATUSES)})`),
     check("lead_transactions_doc_name_len", sql`length(${t.policy_doc_name}) <= 200`),
     check("lead_transactions_doc_mime", sql`${t.policy_doc_mime} is null or ${t.policy_doc_mime} in ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')`),
+    check("lead_transactions_end_date", sql`${t.policy_end_date} is null or ${t.policy_end_date} = date(${t.policy_end_date})`),
+    check("lead_transactions_premium", sql`${t.premium} is null or ${t.premium} >= 0`),
+    check("lead_transactions_sum_insured", sql`${t.sum_insured} is null or ${t.sum_insured} >= 0`),
+    check("lead_transactions_insurer_len", sql`length(${t.insurer}) <= 200`),
+    check("lead_transactions_policy_number_len", sql`length(${t.policy_number}) <= 100`),
+    check("lead_transactions_kind", sql`${t.kind} in (${inList(POLICY_CYCLE_KINDS)})`),
+    check("lead_transactions_verification", sql`${t.verification} in (${inList(POLICY_VERIFICATIONS)})`),
   ],
 );
 

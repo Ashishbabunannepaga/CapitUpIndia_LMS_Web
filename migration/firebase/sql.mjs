@@ -138,7 +138,7 @@ export function buildImportSql(result, { sourceLabel = "firebase export", genera
     push("  client_name, client_name_normalized, type, lead_type, business_type, policy_product, sub_product_name, renewal_date,");
     push("  poc_name, poc_designation, poc_contact_number, poc_email_id,");
     push("  poc2_name, poc2_designation, poc2_contact_number, poc2_email_id,");
-    push("  notes, status, lead_status, assigned_agent_id, assigned_at, created_at, updated_at");
+    push("  notes, status, lead_status, pipeline_status, assigned_agent_id, assigned_at, created_at, updated_at");
     push(") values (");
     push(
       `  ${lit(str(l.clientName))}, ${lit(normalizeCompanyName(str(l.clientName)))}, ${lit(l.type)}, ${lit(l.type)}, ${lit(l.businessType)}, ${lit(l.policyProduct)}, ${lit(l.subProductName)}, ${lit(l.renewalDate)},`,
@@ -148,8 +148,9 @@ export function buildImportSql(result, { sourceLabel = "firebase export", genera
     push(`  ${lit(l.poc2Name)}, ${lit(l.poc2Designation)}, ${lit(l.poc2ContactNumber)}, ${lit(email(l.poc2EmailId))},`);
     // Keep each lead's original assignment time instead of the import time, so My
     // Day does not list every imported lead as a new assignment.
-    // `lead_status` holds the status since migration 0011 (`status` is kept, unused).
-    push(`  ${lit(l.notes)}, ${lit(l.status)}, ${lit(l.status === "Active Client" ? "Closed Won" : l.status)}, ${agent}, case when ${agent} is not null then ${created} end, ${created}, ${created}`);
+    // `pipeline_status` holds the status since migration 0012 (`status` and `lead_status` are kept, unused).
+    const current = l.status === "Active Client" ? "Closed Won" : l.status;
+    push(`  ${lit(l.notes)}, ${lit(l.status)}, ${lit(current)}, ${lit(current)}, ${agent}, case when ${agent} is not null then ${created} end, ${created}, ${created}`);
     push(");");
     push(`insert into firebase_import_leads (legacy_id, lead_id) values (${lit(l.legacyId)}, ${newLead});`);
     // A note signed by someone with a web account carries that account's name, as

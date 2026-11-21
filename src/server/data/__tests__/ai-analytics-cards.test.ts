@@ -71,7 +71,7 @@ describe("AI usage", () => {
 describe("analytics", () => {
   beforeAll(async () => {
     await createLead(w.ctx, w.amit, { client_name: "Analytics A", status: "Quoted", renewal_date: "2020-01-01" });
-    await createLead(w.ctx, w.amit, { client_name: "Analytics B", status: "Closed Won" });
+    await createLead(w.ctx, w.amit, { client_name: "Analytics B", status: "Closed Awaiting Policy" });
     await createLead(w.ctx, w.neha, { client_name: "Analytics C" });
     await createLead(w.ctx, w.admin, { client_name: "Analytics D" });
   });
@@ -79,10 +79,10 @@ describe("analytics", () => {
   it("an agent's numbers cover only their leads", async () => {
     const amit = await pipelineAnalytics(w.ctx, w.amit);
     expect(amit.total).toBe(2);
-    expect(amit.by_status).toEqual({ Quoted: 1, "Closed Won": 1 });
+    expect(amit.by_status).toEqual({ Quoted: 1, "Closed Awaiting Policy": 1 });
     expect(amit.renewals.overdue).toBe(1);
     expect(amit.agents).toHaveLength(1);
-    expect(amit.agents[0]).toMatchObject({ agent_name: "Amit Agent", quoted: 1, won: 1, overdue_renewals: 1 });
+    expect(amit.agents[0]).toMatchObject({ agent_name: "Amit Agent", quoted: 1, won: 0, awaiting_policy: 1, overdue_renewals: 1 });
   });
 
   it("admins see every lead and agent, with unassigned counted", async () => {
