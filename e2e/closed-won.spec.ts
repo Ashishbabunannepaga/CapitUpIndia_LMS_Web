@@ -123,8 +123,11 @@ test("the policy year is kept in Policy history with its copy", async ({ page })
 test("admins export the won leads by policy start date", async ({ page }) => {
   await signIn(page, "admin");
   await page.goto("/leads");
-  await page.getByRole("combobox", { name: "Closed" }).selectOption("won");
-  await expect(page).toHaveURL(/outcome=won/);
+  // Corporate/retail and the closed outcomes are separate filters that combine.
+  await page.getByRole("combobox", { name: "Corporate or retail" }).selectOption("Corporate");
+  await expect(page).toHaveURL(/business=Corporate/);
+  await page.getByRole("combobox", { name: "Status", exact: true }).selectOption("outcome:won");
+  await expect(page).toHaveURL(/business=Corporate.*outcome=won/);
   await page.getByLabel("Policy start from").fill(due);
   await expect(page).toHaveURL(/outcome=won.*start_from=/);
   await expect(page.getByRole("link", { name: "Rollover Fire Pvt Ltd" }).first()).toBeVisible();

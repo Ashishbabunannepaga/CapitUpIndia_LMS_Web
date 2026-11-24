@@ -8,7 +8,7 @@ import { AlertTriangle, Columns3, Download, LayoutGrid, Loader2, Search, Snowfla
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { LEAD_STATUSES, LEAD_TAGS, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
+import { BUSINESS_TYPES, LEAD_STATUSES, LEAD_TAGS, LEAD_TYPES, POLICY_PRODUCTS } from "@/lib/domain";
 import {
   LEAD_SORTS,
   leadsHref,
@@ -65,6 +65,7 @@ export function LeadFiltersBar({
     filters.status ||
     filters.product ||
     filters.type ||
+    filters.business ||
     filters.agent ||
     filters.renewal ||
     filters.duplicates ||
@@ -116,22 +117,40 @@ export function LeadFiltersBar({
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:items-center">
-        {filters.view !== "kanban" ? (
-          <NativeSelect
-            size="sm"
-            aria-label="Status"
-            className="lg:w-40"
-            value={filters.status ?? ""}
-            onChange={(e) => apply({ status: (e.target.value || null) as LeadFilters["status"] })}
-          >
-            <option value="">All statuses</option>
-            {LEAD_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
+        {/* One Status filter: a single status, or a closed outcome ("outcome:won").
+            The board already shows every status as a column, so it only offers outcomes. */}
+        <NativeSelect
+          size="sm"
+          aria-label="Status"
+          className="lg:w-44"
+          value={filters.outcome ? `outcome:${filters.outcome}` : filters.view === "kanban" ? "" : (filters.status ?? "")}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value.startsWith("outcome:")) {
+              apply({ status: null, outcome: value.slice("outcome:".length) as LeadFilters["outcome"] });
+            } else {
+              apply({ status: (value || null) as LeadFilters["status"], outcome: null });
+            }
+          }}
+        >
+          <option value="">All statuses</option>
+          {filters.view !== "kanban" ? (
+            <optgroup label="Status">
+              {LEAD_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
+          <optgroup label="Closed">
+            {Object.entries(OUTCOME_FILTERS).map(([value, label]) => (
+              <option key={value} value={`outcome:${value}`}>
+                {label}
               </option>
             ))}
-          </NativeSelect>
-        ) : null}
+          </optgroup>
+        </NativeSelect>
         <NativeSelect
           size="sm"
           aria-label="Product"
@@ -207,15 +226,15 @@ export function LeadFiltersBar({
         </NativeSelect>
         <NativeSelect
           size="sm"
-          aria-label="Closed"
+          aria-label="Corporate or retail"
           className="lg:w-44"
-          value={filters.outcome ?? ""}
-          onChange={(e) => apply({ outcome: (e.target.value || null) as LeadFilters["outcome"] })}
+          value={filters.business ?? ""}
+          onChange={(e) => apply({ business: (e.target.value || null) as LeadFilters["business"] })}
         >
-          <option value="">Open &amp; closed</option>
-          {Object.entries(OUTCOME_FILTERS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
+          <option value="">Corporate &amp; retail</option>
+          {BUSINESS_TYPES.map((b) => (
+            <option key={b} value={b}>
+              {b}
             </option>
           ))}
         </NativeSelect>

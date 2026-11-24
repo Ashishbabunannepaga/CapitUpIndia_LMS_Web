@@ -454,6 +454,7 @@ function filterConditions(actor: Actor, filters: LeadFilters, today: string): SQ
   if (filters.status) conditions.push(eq(leads.status, filters.status));
   if (filters.product) conditions.push(eq(leads.policy_product, filters.product));
   if (filters.type) conditions.push(eq(leads.type, filters.type));
+  if (filters.business) conditions.push(eq(leads.business_type, filters.business));
   if (filters.agent === "unassigned") conditions.push(isNull(leads.assigned_agent_id));
   else if (filters.agent) conditions.push(eq(leads.assigned_agent_id, filters.agent));
   if (filters.duplicates) conditions.push(eq(leads.is_duplicate, true));

@@ -1,6 +1,6 @@
-import type { LeadStatus, LeadTag, LeadType, PolicyProduct } from "@/lib/database.types";
+import type { BusinessType, LeadStatus, LeadTag, LeadType, PolicyProduct } from "@/lib/database.types";
 import { isIsoDate } from "@/lib/dates";
-import { isLeadStatus, isLeadTag, isPolicyProduct, LEAD_TYPES } from "@/lib/domain";
+import { BUSINESS_TYPES, isLeadStatus, isLeadTag, isPolicyProduct, LEAD_TYPES } from "@/lib/domain";
 
 // Leads screen filters live in the URL so views are shareable and the server
 // renders the filtered list. Unknown values are ignored.
@@ -17,7 +17,7 @@ export const RENEWAL_WINDOWS = {
 } as const;
 export type RenewalWindow = keyof typeof RENEWAL_WINDOWS;
 
-/** Closed outcomes, for the "Closed" filter (and the export that follows it). */
+/** Closed outcomes, offered in the Status filter (and followed by the export). */
 export const OUTCOME_FILTERS = {
   won: "Clients (Closed Won or Auto Renewed)",
   lost: "Closed Lost",
@@ -40,6 +40,8 @@ export type LeadFilters = {
   status: LeadStatus | null;
   product: PolicyProduct | null;
   type: LeadType | null;
+  /** Corporate or Retail, or null for both. */
+  business: BusinessType | null;
   /** Agent id, "unassigned", or null for everyone (admins only). */
   agent: string | null;
   renewal: RenewalWindow | null;
@@ -69,6 +71,7 @@ export function parseLeadFilters(params: RawParams): LeadFilters {
   const status = one(params, "status");
   const product = one(params, "product");
   const type = one(params, "type");
+  const business = one(params, "business");
   const renewal = one(params, "renewal");
   const sort = one(params, "sort");
   const agent = one(params, "agent");
@@ -79,6 +82,7 @@ export function parseLeadFilters(params: RawParams): LeadFilters {
     status: isLeadStatus(status) ? status : null,
     product: isPolicyProduct(product) ? product : null,
     type: (LEAD_TYPES as readonly string[]).includes(type) ? (type as LeadType) : null,
+    business: (BUSINESS_TYPES as readonly string[]).includes(business) ? (business as BusinessType) : null,
     agent: agent === "unassigned" || /^[0-9a-f-]{36}$/i.test(agent) ? agent : null,
     renewal: Object.hasOwn(RENEWAL_WINDOWS, renewal) ? (renewal as RenewalWindow) : null,
     duplicates: one(params, "duplicates") === "1",
@@ -107,6 +111,7 @@ export function leadsHref(filters: Partial<LeadFilters>): string {
   if (filters.status) params.set("status", filters.status);
   if (filters.product) params.set("product", filters.product);
   if (filters.type) params.set("type", filters.type);
+  if (filters.business) params.set("business", filters.business);
   if (filters.agent) params.set("agent", filters.agent);
   if (filters.renewal) params.set("renewal", filters.renewal);
   if (filters.duplicates) params.set("duplicates", "1");

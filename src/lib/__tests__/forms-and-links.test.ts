@@ -103,6 +103,7 @@ describe("parseLeadFilters", () => {
       status: null,
       product: null,
       type: null,
+      business: null,
       agent: null,
       renewal: null,
       duplicates: false,
@@ -125,6 +126,13 @@ describe("parseLeadFilters", () => {
       startFrom: null,
       startTo: null,
     });
+  });
+
+  it("reads the corporate/retail filter alongside the closed filter", () => {
+    const filters = parseLeadFilters({ business: "Retail", outcome: "closed" });
+    expect(filters).toMatchObject({ business: "Retail", outcome: "closed" });
+    expect(leadsHref(filters)).toBe("/leads?business=Retail&outcome=closed");
+    expect(parseLeadFilters({ business: "retail" }).business).toBeNull();
   });
 
   it("ignores values that are not allowed, including object prototype keys", () => {

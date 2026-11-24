@@ -42,6 +42,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/leads">) {
       effective.status ||
       effective.product ||
       effective.type ||
+      effective.business ||
       effective.agent ||
       effective.renewal ||
       effective.duplicates ||
