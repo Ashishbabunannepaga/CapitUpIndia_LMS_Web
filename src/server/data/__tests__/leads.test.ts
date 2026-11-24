@@ -285,6 +285,17 @@ describe("search and filters", () => {
     expect(all).not.toContain("Neha Own Co");
   });
 
+  it("filters corporate and retail separately from closed outcomes, within the caller's scope", async () => {
+    await createLead(w.ctx, w.amit, { client_name: "Biz Retail Home", business_type: "Retail", policy_product: "Motor" });
+    await createLead(w.ctx, w.neha, { client_name: "Biz Retail Neha", business_type: "Retail", policy_product: "Motor" });
+    await createLead(w.ctx, w.amit, { client_name: "Biz Corporate Works", business_type: "Corporate" });
+    const names = async (patch: Record<string, string>) =>
+      (await listLeads(w.ctx, w.amit, filters({ q: "Biz", ...patch }))).leads.map((l) => l.client_name).sort();
+    expect(await names({ business: "Retail" })).toEqual(["Biz Retail Home"]);
+    expect(await names({ business: "Corporate" })).toEqual(["Biz Corporate Works"]);
+    expect(await names({ business: "Retail", outcome: "closed" })).toEqual([]);
+  });
+
   it("counts by status within the caller's scope", async () => {
     const counts = await countLeadsByStatus(w.ctx, w.amit, filters({ q: "Search" }));
     expect(counts.Quoted).toBe(1);
