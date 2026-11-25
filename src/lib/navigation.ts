@@ -10,6 +10,7 @@ import {
   Globe,
   IndianRupee,
   KanbanSquare,
+  ListTodo,
   ScanText,
   Smartphone,
   Sun,
@@ -41,6 +42,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/my-day",
         icon: Sun,
         description: "Renewals due, overdue follow-ups, today's tasks and your pipeline at a glance.",
+      },
+      {
+        title: "Task Grid",
+        href: "/tasks",
+        icon: ListTodo,
+        description: "Tasks admins give and your own to-dos, each with a conversation thread.",
       },
       {
         title: "Leads",

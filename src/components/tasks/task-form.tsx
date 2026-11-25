@@ -30,8 +30,12 @@ export type EditableTask = {
 type Assignee = { id: string; full_name: string };
 
 /** Search-as-you-type picker for the lead a task or meeting is about. Submits `lead_id`. */
-export function LeadPicker({ defaultLead = null }: { defaultLead?: LeadRef | null }) {
-  const [lead, setLead] = useState<LeadRef | null>(defaultLead);
+export function LeadPicker({ defaultLead = null, onChange }: { defaultLead?: LeadRef | null; onChange?: (lead: LeadRef | null) => void }) {
+  const [lead, setLeadState] = useState<LeadRef | null>(defaultLead);
+  const setLead = (next: LeadRef | null) => {
+    setLeadState(next);
+    onChange?.(next);
+  };
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ query: string; leads: LeadRef[] }>({ query: "", leads: [] });
   const [open, setOpen] = useState(false);

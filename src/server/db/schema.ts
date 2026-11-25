@@ -59,6 +59,11 @@ export const LEAD_TAGS = ["Hot", "VIP", "Price sensitive", "Referral", "Cold"] a
 export const LEAD_SOURCES = ["WhatsApp", "Referral", "Cold Call", "Walk-in", "Website", "LinkedIn", "Excel Import", "OCR/Card", "Other"] as const;
 /** Why a lead was lost (required when it moves to Closed Lost). Mirrored in src/lib/domain.ts. */
 export const LOST_REASONS = ["Price", "Competitor", "No Response", "Client Deceased", "Not Interested", "Other"] as const;
+/** Task Grid (work_tasks): P1 is urgent, P3 can wait. Mirrored in src/lib/work-tasks.ts. */
+export const WORK_TASK_PRIORITIES = ["P1", "P2", "P3"] as const;
+export const WORK_TASK_STATUSES = ["todo", "in_progress", "blocked", "done"] as const;
+/** `personal`: someone's own to-do, seen only by them. `assigned`: given by one person to another, shared by both (and admins). */
+export const WORK_TASK_KINDS = ["personal", "assigned"] as const;
 export const AI_FEATURES = ["lead_intake", "card_ocr", "follow_up", "follow_up_rephrase", "bulk_mapping", "policy_ocr", "other"] as const;
 
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
@@ -504,6 +509,8 @@ export const notifications = sqliteTable(
     body: text("body").notNull().default(""),
     lead_id: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }),
     event_id: integer("event_id").references(() => events.id, { onDelete: "set null" }),
+    /** A Task Grid task the notification is about (migration 0014); the bell links to its thread. */
+    task_id: integer("task_id").references(() => workTasks.id, { onDelete: "cascade" }),
     milestone: text("milestone"),
     created_at: createdAt(),
     read_at: text("read_at"),
@@ -512,11 +519,115 @@ export const notifications = sqliteTable(
   },
   (t) => [
     index("notifications_user_idx").on(t.user_id, t.read_at, t.created_at),
+    index("notifications_task_idx").on(t.task_id).where(sql`${t.task_id} is not null`),
     uniqueIndex("notifications_event_user_key").on(t.event_id, t.user_id),
     check("notifications_kind", sql`${t.kind} in ('renewal_reminder', 'other')`),
     check("notifications_title_len", sql`length(${t.title}) between 1 and 300`),
     check("notifications_body_len", sql`length(${t.body}) <= 2000`),
   ],
+);
+
+// --- Task Grid (src/server/data/work-tasks.ts, migration 0014) ---------------
+// Work items with a conversation, apart from calendar `events`: an admin gives
+// an agent a task and both talk it through in its thread, or anyone keeps
+// their own to-do list. New tables only, so nothing touches `leads`.
+
+export const workTasks = sqliteTable(
+  "work_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    kind: text("kind", { enum: WORK_TASK_KINDS }).notNull().default("personal"),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    priority: text("priority", { enum: WORK_TASK_PRIORITIES }).notNull().default("P2"),
+    status: text("status", { enum: WORK_TASK_STATUSES }).notNull().default("todo"),
+    /** When it is due (ISO UTC), or null for no deadline. */
+    due_at: text("due_at"),
+    assignee_id: text("assignee_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    /** Who created (and, for assigned tasks, gave) it. */
+    created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    created_by_name: text("created_by_name").notNull().default(""),
+    lead_id: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
+    /** When the assignee first opened an assigned task (the giver sees "Seen"). */
+    seen_at: text("seen_at"),
+    /** Last time an admin nudged the assignee about it. */
+    nudged_at: text("nudged_at"),
+    completed_at: text("completed_at"),
+    last_activity_at: text("last_activity_at").notNull().default(now),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (t) => [
+    index("work_tasks_assignee_idx").on(t.assignee_id, t.status, t.due_at),
+    index("work_tasks_creator_idx").on(t.created_by, t.status),
+    index("work_tasks_lead_idx").on(t.lead_id),
+    check("work_tasks_kind", sql`${t.kind} in (${inList(WORK_TASK_KINDS)})`),
+    check("work_tasks_priority", sql`${t.priority} in (${inList(WORK_TASK_PRIORITIES)})`),
+    check("work_tasks_status", sql`${t.status} in (${inList(WORK_TASK_STATUSES)})`),
+    check("work_tasks_title_len", sql`length(trim(${t.title})) between 1 and 200`),
+    check("work_tasks_description_len", sql`length(${t.description}) <= 5000`),
+  ],
+);
+
+/** Free-text labels on a task, stored lower case ("renewal", "health", "docs pending"). */
+export const workTaskTags = sqliteTable(
+  "work_task_tags",
+  {
+    task_id: integer("task_id")
+      .notNull()
+      .references(() => workTasks.id, { onDelete: "cascade" }),
+    tag: text("tag").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.task_id, t.tag] }),
+    index("work_task_tags_tag_idx").on(t.tag, t.task_id),
+    check("work_task_tags_tag_len", sql`length(${t.tag}) between 1 and 30`),
+  ],
+);
+
+/**
+ * A task's thread. `kind` message is something someone wrote (typed or
+ * dictated, `via`); `system` is a line the app writes (status changed,
+ * reassigned, nudged), so the thread is the task's whole history.
+ */
+export const workTaskMessages = sqliteTable(
+  "work_task_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    task_id: integer("task_id")
+      .notNull()
+      .references(() => workTasks.id, { onDelete: "cascade" }),
+    author_id: text("author_id").references(() => profiles.id, { onDelete: "set null" }),
+    author_name: text("author_name").notNull(),
+    kind: text("kind", { enum: ["message", "system"] }).notNull().default("message"),
+    via: text("via", { enum: ["text", "voice"] }).notNull().default("text"),
+    body: text("body").notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [
+    index("work_task_messages_task_idx").on(t.task_id, t.id),
+    check("work_task_messages_kind", sql`${t.kind} in ('message', 'system')`),
+    check("work_task_messages_via", sql`${t.via} in ('text', 'voice')`),
+    check("work_task_messages_body_len", sql`length(trim(${t.body})) between 1 and 4000`),
+  ],
+);
+
+/** How far each person has read a task's thread, for unread badges. */
+export const workTaskReads = sqliteTable(
+  "work_task_reads",
+  {
+    task_id: integer("task_id")
+      .notNull()
+      .references(() => workTasks.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    last_read_message_id: integer("last_read_message_id").notNull().default(0),
+    read_at: text("read_at").notNull().default(now),
+  },
+  (t) => [primaryKey({ columns: [t.task_id, t.user_id] }), index("work_task_reads_user_idx").on(t.user_id)],
 );
 
 /**

@@ -18,7 +18,7 @@ import { SidebarNav } from "./sidebar-nav";
 type ShellUser = Pick<Profile, "full_name" | "email" | "role">;
 
 
-type NotificationItem = Pick<AppNotification, "id" | "kind" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
+type NotificationItem = Pick<AppNotification, "id" | "kind" | "title" | "body" | "lead_id" | "task_id" | "created_at" | "read_at">;
 
 function UserPanel({
   user,

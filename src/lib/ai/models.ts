@@ -59,4 +59,5 @@ export const MAX_OUTPUT_TOKENS = {
   policy: 800,
   bulk: 6_000,
   followUp: 300,
+  taskSummary: 350,
 } as const;

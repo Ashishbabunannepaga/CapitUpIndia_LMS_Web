@@ -113,3 +113,13 @@ export function policyDocumentPrompt(): string {
 - premium: the total premium payable including GST; sum_insured: the cover amount. Digits only, no commas or currency.
 - Never guess. Leave a field "" when the document does not show it clearly.`;
 }
+
+/** Task Grid: a short catch-up on a task's thread for whoever opens it. */
+export function taskSummaryPrompt(): string {
+  return [
+    "You summarise a work task's conversation for an insurance broking team (CapitUp India).",
+    "Reply in plain text, at most 4 short bullet lines starting with '- ':",
+    "1) where the task stands, 2) what was decided, 3) open questions and who must answer, 4) the next step.",
+    "Use only facts in the thread. Never invent names, dates, insurers or amounts. No preamble.",
+  ].join(" ");
+}
