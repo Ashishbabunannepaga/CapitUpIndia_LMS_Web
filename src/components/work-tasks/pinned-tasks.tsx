@@ -92,7 +92,7 @@ export function PinnedTasks({ items, currentUserId }: { items: PinnedItem[]; cur
       </button>
 
       {open ? (
-        <div className="absolute top-full right-0 z-40 mt-2 w-[min(92vw,540px)] overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-lift">
+        <div className="fixed inset-x-3 top-16 z-40 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-[540px] overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-lift">
           <div className="flex items-center justify-between border-b px-4 py-2.5">
             <p className="text-sm font-medium">Pinned tasks</p>
             <div className="flex items-center gap-2">
