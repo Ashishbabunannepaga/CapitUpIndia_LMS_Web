@@ -15,6 +15,7 @@ let taskId: number;
 test.beforeAll(async () => {
   db = await openLocalDb();
   await execute(db, "delete from work_tasks where title like 'E2E grid %'");
+  await execute(db, "delete from work_task_templates where name like 'E2E grid %'");
   const admin = await actor(db, "admin");
   const amit = await actor(db, "amit");
   const task = await retrying(() =>
@@ -31,6 +32,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await execute(db, "delete from work_tasks where title like 'E2E grid %'");
+  await execute(db, "delete from work_task_templates where name like 'E2E grid %'");
   await db?.dispose();
 });
 
@@ -70,4 +72,40 @@ test("the admin reads the question in the thread and the agent's grid shows the 
 
   await page.goto("/tasks?view=given");
   await expect(page.getByRole("link", { name: /E2E grid collect KYC/ })).toBeVisible();
+});
+
+test("an agent raises a task to the admin, who sees it pinned on My Day", async ({ page, browser }) => {
+  await signIn(page, "amit");
+  await page.goto("/tasks");
+  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByLabel("Title").fill("E2E grid insurer wants signed proposal");
+  await page.getByLabel("For / raise to").selectOption({ label: `Raise to ${USERS.admin.name} (admin)` });
+  await page.getByRole("button", { name: "Create task" }).click();
+  await expect(page.getByRole("heading", { name: "E2E grid insurer wants signed proposal" })).toBeVisible();
+  await expect(page.getByText("Raised", { exact: true })).toBeVisible();
+
+  const admin = await browser.newPage();
+  await signIn(admin, "admin");
+  await admin.goto("/my-day");
+  await expect(admin.getByRole("button", { name: /raised to you/ })).toBeVisible();
+  await admin.close();
+});
+
+test("an agent saves a template and starts a task from it", async ({ page }) => {
+  await signIn(page, "amit");
+  await page.goto("/tasks/templates");
+  await page.getByRole("button", { name: "New template" }).click();
+  await page.getByLabel("Template name").fill("E2E grid follow-up");
+  await page.getByLabel("Task title").fill("E2E grid call the client back");
+  await page.getByLabel("Due in (days)").fill("2");
+  await page.getByRole("button", { name: "Save template" }).click();
+  await expect(page.getByText("E2E grid follow-up")).toBeVisible();
+
+  await page.goto("/tasks");
+  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByLabel("Start from a template").selectOption({ label: "E2E grid follow-up" });
+  await expect(page.getByLabel("Title")).toHaveValue("E2E grid call the client back");
+  await expect(page.getByLabel("Due date")).not.toHaveValue("");
+  await page.getByRole("button", { name: "Create task" }).click();
+  await expect(page.getByRole("heading", { name: "E2E grid call the client back" })).toBeVisible();
 });

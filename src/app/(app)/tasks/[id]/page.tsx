@@ -3,8 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Eye, Link2 } from "lucide-react";
 
-import { DueChip, PriorityBadge, TagChips, TaskStatusBadge } from "@/components/work-tasks/task-badges";
+import { DueChip, PriorityBadge, RaisedBadge, TagChips, TaskStatusBadge } from "@/components/work-tasks/task-badges";
 import { TaskEditor } from "@/components/work-tasks/task-editor";
+import { TemplateDialog } from "@/components/work-tasks/task-templates";
 import {
   Composer,
   DeleteTaskButton,
@@ -16,9 +17,8 @@ import {
 } from "@/components/work-tasks/task-thread";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { businessDateOf, formatDateTime, formatNoteTimestamp } from "@/lib/dates";
-import { getTeam } from "@/lib/leads";
 import { waitingOn } from "@/lib/work-tasks";
-import { getTaskThread } from "@/server/data/work-tasks";
+import { getTaskThread, taskRecipients } from "@/server/data/work-tasks";
 
 export const metadata: Metadata = { title: "Task" };
 
@@ -38,10 +38,10 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
   if (!Number.isInteger(id) || id <= 0) notFound();
   const { ctx, actor } = await requireSession();
   const admin = isAdmin(actor);
-  const [thread, team] = await Promise.all([getTaskThread(ctx, actor, id), admin ? getTeam() : Promise.resolve([])]);
+  const [thread, recipients] = await Promise.all([getTaskThread(ctx, actor, id), taskRecipients(ctx, actor)]);
   if (!thread) notFound();
   const { task, messages, can } = thread;
-  const members = admin ? team.filter((m) => m.is_active).map((m) => ({ id: m.id, full_name: m.full_name })) : undefined;
+  const members = recipients.length > 1 ? recipients : undefined;
   const lastHuman = [...messages].reverse().find((m) => m.kind === "message");
   const waiting = waitingOn(task, lastHuman?.author_id ?? null);
   const latest = messages.at(-1)?.id ?? 0;
@@ -61,6 +61,7 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
               <TaskStatusBadge status={task.status} />
               <DueChip dueAt={task.due_at} done={task.status === "done"} />
               {task.kind === "personal" ? <span className="text-xs text-muted-foreground">Private to-do: only you see it</span> : null}
+              {task.raised ? <RaisedBadge /> : null}
             </div>
             <h1 className="text-2xl leading-tight font-medium tracking-tight">{task.title}</h1>
             {task.description ? <p className="text-sm whitespace-pre-wrap text-muted-foreground">{task.description}</p> : null}
@@ -100,7 +101,7 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
             {task.kind === "assigned" ? (
               <>
                 <Row label="Assigned to">{task.assignee_id === actor.id ? "You" : task.assignee_name}</Row>
-                <Row label="Given by">{task.created_by === actor.id ? "You" : task.created_by_name || "—"}</Row>
+                <Row label={task.raised ? "Raised by" : "Given by"}>{task.created_by === actor.id ? "You" : task.created_by_name || "—"}</Row>
                 <Row label="Seen">
                   {task.seen_at ? (
                     <span className="inline-flex items-center gap-1">
@@ -133,6 +134,7 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
                 <TaskEditor
                   trigger="icon"
                   members={can.reassign ? members : undefined}
+                  admin={admin}
                   currentUserId={actor.id}
                   task={{
                     id: task.id,
@@ -147,6 +149,19 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
                   }}
                 />
               ) : null}
+              <TemplateDialog
+                admin={admin}
+                trigger="save-from-task"
+                draft={{
+                  name: task.title.slice(0, 80),
+                  title: task.title,
+                  description: task.description,
+                  priority: task.priority,
+                  tags: task.tags.join(", "),
+                  due_in_days: null,
+                  shared: false,
+                }}
+              />
               {can.delete ? <DeleteTaskButton taskId={task.id} /> : null}
             </div>
           </section>

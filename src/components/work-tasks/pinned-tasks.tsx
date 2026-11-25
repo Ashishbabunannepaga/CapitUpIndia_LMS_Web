@@ -18,6 +18,7 @@ export type PinnedItem = {
   tags: string[];
   unread: number;
   role: "incoming" | "given";
+  raised: boolean;
   created_by_name: string;
   assignee_name: string | null;
   lead_name: string | null;
@@ -66,8 +67,11 @@ export function PinnedTasks({ items, currentUserId }: { items: PinnedItem[]; cur
 
   if (!items.length) return null;
 
+  const raisedIn = incoming.filter((i) => i.raised).length;
   const label = incoming.length
-    ? `${incoming.length} task${incoming.length === 1 ? "" : "s"} from admin`
+    ? raisedIn === incoming.length
+      ? `${incoming.length} task${incoming.length === 1 ? "" : "s"} raised to you`
+      : `${incoming.length} task${incoming.length === 1 ? "" : "s"} from admin`
     : `${given.length} task${given.length === 1 ? "" : "s"} need${given.length === 1 ? "s" : ""} you`;
 
   return (
@@ -135,7 +139,7 @@ export function PinnedTasks({ items, currentUserId }: { items: PinnedItem[]; cur
                         <DueChip dueAt={item.due_at} />
                         <span>
                           {item.role === "incoming"
-                            ? `by ${item.created_by_name || "an admin"}`
+                            ? `${item.raised ? "raised by" : "by"} ${item.created_by_name || "an admin"}`
                             : `${item.assignee_name ?? "Assignee"} · ${item.status === "blocked" ? "blocked" : "replied"}`}
                         </span>
                       </span>
@@ -148,7 +152,7 @@ export function PinnedTasks({ items, currentUserId }: { items: PinnedItem[]; cur
                       <MessageList messages={item.recent} currentUserId={currentUserId} compact />
                       <Composer
                         taskId={item.id}
-                        placeholder={item.role === "incoming" ? "Ask the admin or post an update…" : "Reply…"}
+                        placeholder={item.role === "incoming" && !item.raised ? "Ask the admin or post an update…" : "Reply…"}
                       />
                       <Link
                         href={`/tasks/${item.id}`}

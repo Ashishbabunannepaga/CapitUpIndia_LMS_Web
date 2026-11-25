@@ -59,8 +59,17 @@ export const DEFAULT_MODEL_PRICING: readonly {
 }[] = [
   { model_name: "gpt-5.6-luna", display_name: "GPT-5.6 Luna (OpenAI)", input_usd_per_million: 0.2, output_usd_per_million: 1.2 },
   { model_name: "gpt-6-luna", display_name: "GPT-6 Luna (OpenAI)", input_usd_per_million: 0.1, output_usd_per_million: 0.5 },
+  // Billed per minute of audio: logged as one "input token" per second, so this is $0.0045 / 60 per second.
+  { model_name: "gpt-transcribe", display_name: "GPT Transcribe (OpenAI, per second of audio)", input_usd_per_million: 75, output_usd_per_million: 0 },
   { model_name: "gpt-5.6-terra", display_name: "GPT-5.6 Terra (OpenAI)", input_usd_per_million: 2, output_usd_per_million: 12 },
 ];
+
+/**
+ * Speech to text for Task Grid voice notes. gpt-transcribe ($0.0045 a minute)
+ * is OpenAI's current file transcription model; the cheaper gpt-4o-mini-transcribe
+ * shuts down on 26 Feb 2027, so it isn't used.
+ */
+export const TRANSCRIBE_MODEL = "gpt-transcribe";
 
 /** Longest the app waits for one model before trying the next one. */
 export const MODEL_TIMEOUT_MS = 25_000;
@@ -72,4 +81,6 @@ export const MAX_OUTPUT_TOKENS = {
   bulk: 6_000,
   followUp: 300,
   taskSummary: 350,
+  copilotAnswer: 600,
+  copilotDrafts: 1_500,
 } as const;

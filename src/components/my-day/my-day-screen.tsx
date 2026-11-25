@@ -401,6 +401,7 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
     tags: t.tags,
     unread: t.unread,
     role: t.role,
+    raised: t.raised,
     created_by_name: t.created_by_name,
     assignee_name: t.assignee_name,
     lead_name: t.lead_name,

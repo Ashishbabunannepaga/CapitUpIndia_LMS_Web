@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, Loader2, Send, Sparkles, Trash2 } from "lucide-react";
+import { BellRing, CircleStop, Loader2, Radio, Send, Sparkles, Trash2, X } from "lucide-react";
 
 import {
   deleteWorkTaskAction,
   markTaskReadAction,
   nudgeWorkTaskAction,
   postTaskMessageAction,
+  postVoiceNoteAction,
   setWorkTaskStatusAction,
   summarizeTaskAction,
 } from "@/app/(app)/tasks/actions";
@@ -23,13 +24,21 @@ import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/work-t
 
 export type ThreadMessage = {
   id: number;
+  task_id: number;
   author_id: string | null;
   author_name: string;
   kind: "message" | "system";
   via: "text" | "voice";
   body: string;
+  audio_key?: string | null;
+  audio_ms?: number | null;
   created_at: string;
 };
+
+function clock(ms: number) {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 function initials(name: string) {
   return name
@@ -87,9 +96,20 @@ export function MessageList({
               >
                 <span className="font-medium">{m.author_id === currentUserId ? "You" : m.author_name}</span>
                 <span>{formatNoteTimestamp(m.created_at)}</span>
-                {m.via === "voice" ? <VoiceMark /> : null}
+                {m.via === "voice" ? <VoiceMark recorded={Boolean(m.audio_key)} /> : null}
               </p>
-              <p className="break-words whitespace-pre-wrap">{m.body}</p>
+              {m.audio_key ? (
+                <audio
+                  controls
+                  preload="none"
+                  src={`/tasks/${m.task_id}/voice?m=${m.id}`}
+                  className="my-1 h-9 w-64 max-w-full"
+                  aria-label={`Voice note from ${m.author_name}${m.audio_ms ? `, ${clock(m.audio_ms)}` : ""}`}
+                />
+              ) : null}
+              {m.audio_key && /^Voice note \(\d+:\d{2}\)$/.test(m.body) ? null : (
+                <p className={cn("break-words whitespace-pre-wrap", m.audio_key && "text-[13px] opacity-90")}>{m.body}</p>
+              )}
             </div>
           </li>
         ),
@@ -147,8 +167,11 @@ export function Composer({
         }}
       />
       <div className="flex items-center justify-between gap-2">
-        <div onClickCapture={() => setVoice(true)}>
-          <DictateButton target={ref} />
+        <div className="flex items-center gap-1.5">
+          <div onClickCapture={() => setVoice(true)}>
+            <DictateButton target={ref} />
+          </div>
+          <VoiceRecorder taskId={taskId} />
         </div>
         <div className="flex items-center gap-2">
           {error ? <span className="text-xs text-destructive">{error}</span> : null}
@@ -321,6 +344,123 @@ export function SummaryButton({ taskId }: { taskId: number }) {
         </div>
       ) : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+const RECORDER_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"];
+const MAX_RECORDING_MS = 180_000;
+
+/**
+ * Records a voice note in the browser and posts it to the thread. The server
+ * keeps the audio and adds an OpenAI transcript as the message text.
+ */
+export function VoiceRecorder({ taskId }: { taskId: number }) {
+  const router = useRouter();
+  const [state, setState] = useState<"idle" | "recording" | "sending">("idle");
+  const [elapsed, setElapsed] = useState(0);
+  const [message, setMessage] = useState<string | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const chunks = useRef<Blob[]>([]);
+  const started = useRef(0);
+  const cancelled = useRef(false);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearInterval(timer.current);
+      recorder.current?.stream.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
+
+  const supported = typeof window !== "undefined" && typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+
+  async function begin() {
+    setMessage(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setMessage("The microphone is blocked. Allow it for this site in the browser's settings.");
+      return;
+    }
+    const mimeType = RECORDER_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
+    const rec = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 32_000 });
+    chunks.current = [];
+    cancelled.current = false;
+    rec.ondataavailable = (e) => {
+      if (e.data.size) chunks.current.push(e.data);
+    };
+    rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (timer.current) clearInterval(timer.current);
+      const duration = Date.now() - started.current;
+      if (cancelled.current || !chunks.current.length) {
+        setState("idle");
+        return;
+      }
+      void send(new Blob(chunks.current, { type: rec.mimeType || mimeType || "audio/webm" }), duration);
+    };
+    recorder.current = rec;
+    // eslint-disable-next-line react-hooks/purity -- runs in a click handler, not during render
+    started.current = Date.now();
+    setElapsed(0);
+    rec.start(1000);
+    setState("recording");
+    timer.current = setInterval(() => {
+      const ms = Date.now() - started.current;
+      setElapsed(ms);
+      if (ms >= MAX_RECORDING_MS && rec.state !== "inactive") rec.stop();
+    }, 250);
+  }
+
+  function stop(cancel = false) {
+    cancelled.current = cancel;
+    if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
+  }
+
+  async function send(blob: Blob, durationMs: number) {
+    setState("sending");
+    const form = new FormData();
+    form.append("audio", new File([blob], "voice", { type: blob.type }));
+    form.append("duration_ms", String(Math.round(durationMs)));
+    const result = await safeAction(() => postVoiceNoteAction(taskId, form));
+    setState("idle");
+    if (!result.ok) {
+      setMessage(result.error);
+      return;
+    }
+    if ("notice" in result && result.notice) setMessage(`Sent without a transcript: ${result.notice}`);
+    router.refresh();
+  }
+
+  if (!supported) return null;
+  return (
+    <div className="flex items-center gap-1.5">
+      {state === "recording" ? (
+        <>
+          <Button type="button" size="sm" variant="destructive" onClick={() => stop()} aria-label="Stop and send voice note">
+            <CircleStop /> <span className="tabular-nums">{clock(elapsed)}</span> Send
+          </Button>
+          <Button type="button" size="icon" variant="ghost" className="size-8" onClick={() => stop(true)} aria-label="Cancel recording">
+            <X />
+          </Button>
+        </>
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => void begin()}
+          disabled={state === "sending"}
+          title="Record a voice note (up to 3 minutes)"
+        >
+          {state === "sending" ? <Loader2 className="animate-spin" /> : <Radio />}
+          {state === "sending" ? "Sending…" : "Voice note"}
+        </Button>
+      )}
+      {message ? <span className="max-w-56 text-xs text-muted-foreground">{message}</span> : null}
     </div>
   );
 }

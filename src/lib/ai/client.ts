@@ -6,8 +6,8 @@ import type { AiFeature, Profile } from "@/lib/database.types";
 import { aiCallsThisHour, logAiUsage } from "@/server/data/ai";
 import type { DataContext } from "@/server/data/context";
 
-import { MODEL_TIMEOUT_MS, type ModelChoice } from "./models";
-import { callOpenAi, openAiKey, ProviderFatalError } from "./openai";
+import { MODEL_TIMEOUT_MS, TRANSCRIBE_MODEL, type ModelChoice } from "./models";
+import { callOpenAi, callOpenAiTranscribe, openAiKey, ProviderFatalError } from "./openai";
 
 // The only door to the AI provider. Features (intake, card OCR, follow-ups,
 // import mapping) call generate() and never see which provider answers.
@@ -142,4 +142,47 @@ export function parseJsonObject(text: string): Record<string, unknown> {
     }
   }
   throw lastError;
+}
+
+/**
+ * Transcribes a recorded voice note. Usage is logged per second of audio
+ * (the model is billed by the minute; its pricing row is per million seconds).
+ * Throws AiUnavailableError when AI is off or the call fails.
+ */
+export async function transcribe(opts: {
+  ctx: DataContext;
+  user: Caller;
+  feature: AiFeature;
+  audio: Uint8Array;
+  mime: string;
+  ext: string;
+  durationMs: number;
+  prompt?: string;
+}): Promise<{ text: string; model: string }> {
+  const apiKey = openAiKey();
+  if (!apiKey) throw new AiUnavailableError("AI is not configured on this server (OPENAI_API_KEY is missing).");
+  await enforceRateLimit(opts.ctx, opts.user, 1);
+  try {
+    const text = await callOpenAiTranscribe(apiKey, {
+      model: TRANSCRIBE_MODEL,
+      audio: opts.audio,
+      mime: opts.mime,
+      ext: opts.ext,
+      prompt: opts.prompt,
+      timeoutMs: MODEL_TIMEOUT_MS,
+    });
+    // At least one second, rounded up, like the provider's own billing.
+    const seconds = Math.max(1, Math.ceil(opts.durationMs / 1000));
+    await logLater(() => logUsage(opts.ctx, opts.user, opts.feature, TRANSCRIBE_MODEL, seconds, 0));
+    return { text, model: TRANSCRIBE_MODEL };
+  } catch (error) {
+    console.warn(`AI transcription failed for ${opts.feature}`, error instanceof Error ? error.message : error);
+    throw new AiUnavailableError(
+      error instanceof ProviderFatalError
+        ? error.kind === "quota"
+          ? "The OpenAI account is out of credit. An admin needs to add credit on platform.openai.com."
+          : "The OpenAI key was refused. An admin needs to check the OPENAI_API_KEY secret."
+        : "The voice note couldn't be transcribed.",
+    );
+  }
 }

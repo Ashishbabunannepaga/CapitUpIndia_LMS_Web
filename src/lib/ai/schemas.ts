@@ -88,3 +88,31 @@ export const policySchema = {
     additionalProperties: false,
   },
 };
+
+/** Task Grid copilot drafts (strict: every field required, "" for not given). */
+export const taskDraftsSchema = {
+  name: "task_drafts",
+  schema: {
+    type: "object",
+    properties: {
+      drafts: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: text("Short task title starting with a verb"),
+            description: text("Extra detail from the request, or empty"),
+            assignee_id: text("Id from the team list"),
+            priority: { type: "string", enum: ["P1", "P2", "P3"] },
+            due_date: text("YYYY-MM-DD or empty"),
+            tags: { type: "array", items: { type: "string" } },
+          },
+          required: ["title", "description", "assignee_id", "priority", "due_date", "tags"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["drafts"],
+    additionalProperties: false,
+  },
+};

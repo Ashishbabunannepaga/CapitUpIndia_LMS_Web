@@ -106,3 +106,38 @@ export async function callOpenAi(apiKey: string, req: ProviderRequest): Promise<
         : undefined,
   };
 }
+
+const TRANSCRIBE_ENDPOINT = "https://api.openai.com/v1/audio/transcriptions";
+
+export type TranscribeRequest = {
+  model: string;
+  audio: Uint8Array;
+  mime: string;
+  ext: string;
+  /** Words to listen for (product names, insurer names). */
+  prompt?: string;
+  timeoutMs: number;
+};
+
+/** Speech to text for a recorded voice note. Billed by the minute of audio. */
+export async function callOpenAiTranscribe(apiKey: string, req: TranscribeRequest): Promise<string> {
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(req.audio)], { type: req.mime }), `voice.${req.ext}`);
+  form.append("model", req.model);
+  form.append("response_format", "json");
+  if (req.prompt) form.append("prompt", req.prompt);
+  const response = await fetch(TRANSCRIBE_ENDPOINT, {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(req.timeoutMs),
+  });
+  const data = (await response.json().catch(() => ({}))) as { text?: string; error?: { message?: string; code?: string } };
+  if (!response.ok) {
+    const detail = data.error?.message ?? `HTTP ${response.status}`;
+    if (response.status === 401 || response.status === 403) throw new ProviderFatalError(`OpenAI refused the request (${response.status}): ${detail}`, "auth");
+    if (response.status === 429 && data.error?.code === "insufficient_quota") throw new ProviderFatalError(`OpenAI account is out of credit: ${detail}`, "quota");
+    throw new Error(`OpenAI ${response.status}: ${detail}`);
+  }
+  return (data.text ?? "").trim();
+}

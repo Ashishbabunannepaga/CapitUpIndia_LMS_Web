@@ -62,10 +62,21 @@ export function TagChips({ tags, className }: { tags: readonly string[]; classNa
   );
 }
 
-export function VoiceMark() {
+export function VoiceMark({ recorded = false }: { recorded?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground" title="Dictated">
-      <Mic className="size-3" /> voice
+    <span className="inline-flex items-center gap-0.5 text-[11px]" title={recorded ? "Voice note, with an AI transcript" : "Dictated"}>
+      <Mic className="size-3" /> {recorded ? "voice note" : "voice"}
+    </span>
+  );
+}
+
+export function RaisedBadge() {
+  return (
+    <span
+      className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-1.5 py-px text-[11px] font-medium text-violet-700"
+      title="An agent raised this to an admin"
+    >
+      Raised
     </span>
   );
 }

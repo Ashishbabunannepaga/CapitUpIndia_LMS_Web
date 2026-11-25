@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Link2, MessageSquare, UserRound } from "lucide-react";
+import { LayoutTemplate, Link2, MessageSquare, UserRound } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell/page-header";
-import { DueChip, PriorityBadge, TagChips, UnreadDot } from "@/components/work-tasks/task-badges";
+import { DueChip, PriorityBadge, RaisedBadge, TagChips, UnreadDot } from "@/components/work-tasks/task-badges";
+import { TaskCopilot } from "@/components/work-tasks/task-copilot";
 import { TaskEditor } from "@/components/work-tasks/task-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { isAdmin, requireSession } from "@/lib/auth";
-import { getTeam } from "@/lib/leads";
 import { cn } from "@/lib/utils";
 import {
   isTaskPriority,
@@ -21,7 +21,7 @@ import {
   waitingOn,
   type TaskStatus,
 } from "@/lib/work-tasks";
-import { listTasks, taskTags, type TaskFilters, type TaskListItem } from "@/server/data/work-tasks";
+import { listTasks, listTaskTemplates, taskRecipients, taskTags, type TaskFilters, type TaskListItem } from "@/server/data/work-tasks";
 
 export const metadata: Metadata = { title: "Task Grid" };
 
@@ -30,6 +30,7 @@ const VIEWS = [
   { value: "mine", label: "Assigned to me" },
   { value: "given", label: "Given by me" },
   { value: "personal", label: "My to-dos" },
+  { value: "raised", label: "Raised to admins" },
 ] as const;
 
 const DUE = [
@@ -88,13 +89,16 @@ function TaskCard({ task, currentUserId, admin }: { task: TaskListItem; currentU
           {task.kind === "personal" ? (
             <span className="text-[11px] text-muted-foreground">Private</span>
           ) : null}
+          {task.raised ? <RaisedBadge /> : null}
         </div>
         <TagChips tags={task.tags} className="mt-1.5" />
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {task.kind === "assigned" ? (
             <span className="inline-flex items-center gap-1">
               <UserRound className="size-3" />
-              {task.assignee_id === currentUserId ? `From ${task.created_by_name || "an admin"}` : `${task.assignee_name ?? "Someone"}${admin && task.created_by !== currentUserId ? ` · by ${task.created_by_name}` : ""}`}
+              {task.assignee_id === currentUserId
+                ? `${task.raised ? "Raised by" : "From"} ${task.created_by_name || "an admin"}`
+                : `${task.assignee_name ?? "Someone"}${admin && task.created_by !== currentUserId ? ` · by ${task.created_by_name}` : ""}`}
             </span>
           ) : null}
           {task.lead_name ? (
@@ -133,8 +137,15 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
   const admin = isAdmin(actor);
   const query = await searchParams;
   const filters = parseFilters(query);
-  const [tasks, tags, team] = await Promise.all([listTasks(ctx, actor, filters), taskTags(ctx, actor), admin ? getTeam() : Promise.resolve([])]);
-  const members = admin ? team.filter((m) => m.is_active).map((m) => ({ id: m.id, full_name: m.full_name })) : undefined;
+  const [tasks, tags, recipients, templates] = await Promise.all([
+    listTasks(ctx, actor, filters),
+    taskTags(ctx, actor),
+    taskRecipients(ctx, actor),
+    listTaskTemplates(ctx, actor),
+  ]);
+  // Agents with no active admin to raise to just keep private to-dos.
+  const editorMembers = recipients.length > 1 ? recipients : undefined;
+  const members = admin ? recipients : undefined;
   const columns: readonly TaskStatus[] = filters.status && filters.status !== "open" ? [filters.status] : TASK_STATUSES;
   const href = (view: string) => {
     const params = new URLSearchParams();
@@ -153,9 +164,19 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
         description={
           admin
             ? "Give work to the team and talk it through on each task. Your own to-dos stay private."
-            : "Tasks from your admins and your own to-dos. Ask questions right on the task."
+            : "Tasks from your admins, your own to-dos, and anything you raise to an admin. Ask questions right on the task."
         }
-        actions={<TaskEditor members={members} currentUserId={actor.id} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <TaskCopilot admin={admin} />
+            <Button asChild variant="outline">
+              <Link href="/tasks/templates">
+                <LayoutTemplate /> Templates
+              </Link>
+            </Button>
+            <TaskEditor members={editorMembers} admin={admin} currentUserId={actor.id} templates={templates} />
+          </div>
+        }
       />
 
       <nav className="mb-4 flex flex-wrap gap-1.5" aria-label="Task views">

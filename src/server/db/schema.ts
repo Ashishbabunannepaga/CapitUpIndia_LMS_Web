@@ -548,6 +548,8 @@ export const workTasks = sqliteTable(
       .references(() => profiles.id, { onDelete: "cascade" }),
     /** Who created (and, for assigned tasks, gave) it. */
     created_by: text("created_by").references(() => profiles.id, { onDelete: "set null" }),
+    /** An agent raised it to an admin (the admin is the assignee), as opposed to an admin giving work. */
+    raised: integer("raised", { mode: "boolean" }).notNull().default(false),
     created_by_name: text("created_by_name").notNull().default(""),
     lead_id: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
     /** When the assignee first opened an assigned task (the giver sees "Seen"). */
@@ -604,6 +606,9 @@ export const workTaskMessages = sqliteTable(
     kind: text("kind", { enum: ["message", "system"] }).notNull().default("message"),
     via: text("via", { enum: ["text", "voice"] }).notNull().default("text"),
     body: text("body").notNull(),
+    /** A recorded voice note in R2 (the body holds its transcript), and its length. */
+    audio_key: text("audio_key"),
+    audio_ms: integer("audio_ms"),
     created_at: createdAt(),
   },
   (t) => [
@@ -611,6 +616,41 @@ export const workTaskMessages = sqliteTable(
     check("work_task_messages_kind", sql`${t.kind} in ('message', 'system')`),
     check("work_task_messages_via", sql`${t.via} in ('text', 'voice')`),
     check("work_task_messages_body_len", sql`length(trim(${t.body})) between 1 and 4000`),
+  ],
+);
+
+/**
+ * Reusable task starters. Everyone keeps their own; admins can share one with
+ * the whole team. Picking one fills the New task form (nothing is linked
+ * afterwards, so editing a template never changes existing tasks).
+ */
+export const workTaskTemplates = sqliteTable(
+  "work_task_templates",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    owner_id: text("owner_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    shared: integer("shared", { mode: "boolean" }).notNull().default(false),
+    name: text("name").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    priority: text("priority", { enum: WORK_TASK_PRIORITIES }).notNull().default("P2"),
+    /** Comma separated, already normalised. */
+    tags: text("tags").notNull().default(""),
+    /** Due this many days after the task is created, or null for no deadline. */
+    due_in_days: integer("due_in_days"),
+    created_at: createdAt(),
+    updated_at: updatedAt(),
+  },
+  (t) => [
+    index("work_task_templates_owner_idx").on(t.owner_id),
+    index("work_task_templates_shared_idx").on(t.shared),
+    check("work_task_templates_priority", sql`${t.priority} in (${inList(WORK_TASK_PRIORITIES)})`),
+    check("work_task_templates_name_len", sql`length(trim(${t.name})) between 1 and 80`),
+    check("work_task_templates_title_len", sql`length(trim(${t.title})) between 1 and 200`),
+    check("work_task_templates_description_len", sql`length(${t.description}) <= 5000`),
+    check("work_task_templates_due", sql`${t.due_in_days} is null or ${t.due_in_days} between 0 and 365`),
   ],
 );
 

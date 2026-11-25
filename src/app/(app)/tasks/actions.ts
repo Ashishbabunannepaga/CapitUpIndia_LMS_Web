@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { friendlyError } from "@/lib/action-errors";
-import { AiRateLimitError, AiUnavailableError, generate } from "@/lib/ai/client";
+import { AiRateLimitError, AiUnavailableError, generate, transcribe } from "@/lib/ai/client";
 import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
 import { taskSummaryPrompt } from "@/lib/ai/prompts";
 import { getSession } from "@/lib/auth";
@@ -196,4 +196,111 @@ export async function summarizeTaskAction(id: number): Promise<SummaryResult> {
     if (!(error instanceof AiUnavailableError)) return { ok: false, error: friendlyError(error) };
     return { ok: true, text: fallback(), source: "rules", notice: error.message };
   }
+}
+
+export type VoiceResult = { ok: true; transcribed: boolean; notice?: string } | { ok: false; error: string };
+
+/**
+ * A recorded voice note: stored in R2, transcribed with OpenAI when AI is set
+ * up (the transcript becomes the message text, so it is searchable and shows
+ * in alerts), then posted to the thread. Without AI it posts as "Voice note".
+ */
+export async function postVoiceNoteAction(id: number, formData: FormData): Promise<VoiceResult> {
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  const { ctx, actor } = session;
+  const file = formData.get("audio");
+  const durationMs = Math.min(tasks.VOICE_MAX_MS, Math.max(0, Number(formData.get("duration_ms")) || 0));
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "The recording is empty. Try again." };
+  if (file.size > tasks.VOICE_MAX_BYTES) return { ok: false, error: "Keep voice notes under 3 minutes." };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  let stored: Awaited<ReturnType<typeof tasks.storeTaskVoice>>;
+  try {
+    stored = await tasks.storeTaskVoice(ctx, actor, Number(id), bytes);
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
+  }
+
+  let text = "";
+  let notice: string | undefined;
+  try {
+    ({ text } = await transcribe({
+      ctx,
+      user: actor,
+      feature: "other",
+      audio: bytes,
+      mime: stored.mime,
+      ext: stored.ext,
+      durationMs,
+      prompt: "An Indian insurance broker's team talking about a task: GMC, GPA, GTL, WC, fire, marine, motor, health, renewal, quote, KYC, PAN, policy.",
+    }));
+  } catch (error) {
+    notice = error instanceof AiRateLimitError || error instanceof AiUnavailableError ? error.message : "The voice note couldn't be transcribed.";
+  }
+
+  const seconds = Math.round(durationMs / 1000);
+  const length = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  try {
+    await tasks.postTaskMessage(ctx, actor, Number(id), {
+      body: text ? text.slice(0, tasks.MESSAGE_MAX) : `Voice note (${length})`,
+      via: "voice",
+      audio: { key: stored.key, ms: durationMs },
+    });
+  } catch (error) {
+    await tasks.discardTaskVoice(ctx, stored.key);
+    return { ok: false, error: friendlyError(error) };
+  }
+  done();
+  return { ok: true, transcribed: Boolean(text), notice };
+}
+
+const templateSchema = z.object({
+  name: z.string().trim().min(1, "Name the template.").max(80, "Keep the template name under 80 characters."),
+  title: z.string().trim().min(1, "Give the task a title.").max(200, "Keep the title under 200 characters."),
+  description: z.string().trim().max(5000, "Keep the details under 5,000 characters."),
+  priority: z.enum(["P1", "P2", "P3"]).catch("P2"),
+  tags: z.string().trim().max(400),
+  due_in_days: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || (/^\d{1,3}$/.test(v) && Number(v) <= 365), "Due in days must be between 0 and 365.")
+    .transform((v) => (v === "" ? null : Number(v))),
+  shared: z.string().optional(),
+});
+
+export async function saveTaskTemplateAction(id: number | null, formData: FormData): Promise<TaskActionResult> {
+  const session = await getSession();
+  if (!session) return SIGNED_OUT;
+  const parsed = templateSchema.safeParse({
+    name: formData.get("name") ?? "",
+    title: formData.get("title") ?? "",
+    description: formData.get("description") ?? "",
+    priority: formData.get("priority") ?? "P2",
+    tags: formData.get("tags") ?? "",
+    due_in_days: formData.get("due_in_days") ?? "",
+    shared: formData.get("shared") ?? undefined,
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the template." };
+  const f = parsed.data;
+  try {
+    const row = await tasks.saveTaskTemplate(session.ctx, session.actor, {
+      id: id ? Number(id) : null,
+      name: f.name,
+      title: f.title,
+      description: f.description,
+      priority: f.priority,
+      tags: f.tags,
+      due_in_days: f.due_in_days,
+      shared: f.shared === "on",
+    });
+    revalidatePath("/tasks", "layout");
+    return { ok: true, id: row.id };
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
+  }
+}
+
+export async function deleteTaskTemplateAction(id: number): Promise<TaskActionResult> {
+  return run((s) => tasks.deleteTaskTemplate(s.ctx, s.actor, Number(id)));
 }

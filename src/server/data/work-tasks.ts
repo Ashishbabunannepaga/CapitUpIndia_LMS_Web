@@ -16,7 +16,7 @@ import {
   type TaskStatus,
 } from "@/lib/work-tasks";
 
-import { leads, notifications, profiles, workTaskMessages, workTaskReads, workTasks, workTaskTags } from "../db/schema";
+import { leads, notifications, profiles, workTaskMessages, workTaskReads, workTasks, workTaskTags, workTaskTemplates } from "../db/schema";
 import { isAdmin, type Actor } from "./actor";
 import { auditInsert } from "./audit";
 import type { DataContext } from "./context";
@@ -27,8 +27,9 @@ import { AccessDeniedError, InvalidInputError } from "./errors";
 // Who sees what (enforced here, never in the browser):
 //   * A personal task is its owner's alone. Not even admins see it.
 //   * An assigned task is seen by its assignee, the person who gave it, and
-//     every admin. Only admins (and agents for themselves) create tasks, so an
-//     agent can never put work on someone else.
+//     every admin. Admins give tasks to anyone; an agent keeps their own
+//     to-dos and can raise a task to an admin (`raised`), but never puts work
+//     on another agent.
 //   * The giver and admins edit an assigned task; its assignee moves its
 //     status and talks in the thread. Anyone who sees a task can write in it.
 
@@ -82,7 +83,8 @@ export function taskPermissions(actor: Actor, task: WorkTask) {
     status: canSetStatus(actor, task),
     nudge: task.kind === "assigned" && edit && task.assignee_id !== actor.id && task.status !== "done",
     delete: edit,
-    reassign: edit && isAdmin(actor),
+    // Admins hand work to anyone; an agent can raise their own to-do (or a task they raised) to an admin.
+    reassign: edit && (isAdmin(actor) || task.kind === "personal" || task.raised),
   };
 }
 
@@ -142,7 +144,7 @@ async function withTags(ctx: DataContext, rows: ListRow[]): Promise<TaskListItem
 
 export type TaskFilters = {
   /** mine: assigned to the caller; given: tasks the caller gave others; personal: the caller's own to-dos; all: everything visible. */
-  view?: "all" | "mine" | "given" | "personal";
+  view?: "all" | "mine" | "given" | "personal" | "raised";
   status?: TaskStatus | "open" | null;
   priority?: TaskPriority | null;
   assignee?: string | null;
@@ -163,6 +165,7 @@ export async function listTasks(
   if (filters.view === "given")
     conditions.push(eq(workTasks.created_by, actor.id), eq(workTasks.kind, "assigned"), ne(workTasks.assignee_id, actor.id));
   if (filters.view === "personal") conditions.push(eq(workTasks.kind, "personal"), eq(workTasks.assignee_id, actor.id));
+  if (filters.view === "raised") conditions.push(eq(workTasks.raised, true));
   if (filters.status === "open") conditions.push(ne(workTasks.status, "done"));
   else if (filters.status && isTaskStatus(filters.status)) conditions.push(eq(workTasks.status, filters.status));
   if (filters.priority && isTaskPriority(filters.priority)) conditions.push(eq(workTasks.priority, filters.priority));
@@ -254,12 +257,24 @@ async function checkLead(ctx: DataContext, actor: Actor, leadId: number | null |
 
 async function checkAssignee(ctx: DataContext, actor: Actor, id: string): Promise<Actor> {
   if (id === actor.id) return actor;
-  if (!isAdmin(actor)) throw new AccessDeniedError("Only admins can give tasks to other people.");
   const member = await ctx.db.query.profiles.findFirst({
     where: eq(profiles.id, id),
   });
+  // Agents may only raise work to an admin, never hand it to another agent.
+  if (!isAdmin(actor) && member?.role !== "ADMIN") throw new AccessDeniedError("You can raise a task to an admin, not to another agent.");
   if (!member?.is_active) throw new InvalidInputError("Pick an active team member.");
   return member;
+}
+
+/** Who the caller can put a task on: admins pick anyone active; agents themselves or an admin. */
+export async function taskRecipients(ctx: DataContext, actor: Actor): Promise<{ id: string; full_name: string; role: string }[]> {
+  const rows = await ctx.db
+    .select({ id: profiles.id, full_name: profiles.full_name, role: profiles.role })
+    .from(profiles)
+    .where(and(eq(profiles.is_active, true), isAdmin(actor) ? undefined : or(eq(profiles.role, "ADMIN"), eq(profiles.id, actor.id))))
+    .orderBy(asc(profiles.full_name));
+  const me = rows.find((r) => r.id === actor.id) ?? { id: actor.id, full_name: actor.full_name, role: actor.role };
+  return [me, ...rows.filter((r) => r.id !== actor.id)];
 }
 
 function checkText(input: { title?: string; description?: string; priority?: string; due_at?: string | null }) {
@@ -301,12 +316,14 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
   const lead = await checkLead(ctx, actor, input.lead_id);
   const tags = parseTags([...parseTags(input.tags ?? ""), ...(lead && input.autoTag !== false ? tagsFromLead(lead) : [])]);
   const kind = member.id === actor.id ? "personal" : "assigned";
+  const raised = kind === "assigned" && !isAdmin(actor);
 
   const [task] = await ctx.db
     .insert(workTasks)
     .values({
       ...fields,
       kind,
+      raised,
       assignee_id: member.id,
       created_by: actor.id,
       created_by_name: actor.full_name,
@@ -318,6 +335,7 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
     auditInsert(ctx, actor, "work_tasks", task.id, "INSERT", null, {
       title: task.title,
       kind,
+      raised,
       assignee_id: member.id,
       priority: task.priority,
       due_at: task.due_at,
@@ -332,7 +350,9 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
         author_id: actor.id,
         author_name: actor.full_name,
         kind: "system",
-        body: `${actor.full_name} assigned this to ${member.full_name} (${TASK_PRIORITY_LABELS[task.priority]}).`,
+        body: raised
+          ? `${actor.full_name} raised this to ${member.full_name} (${TASK_PRIORITY_LABELS[task.priority]}).`
+          : `${actor.full_name} assigned this to ${member.full_name} (${TASK_PRIORITY_LABELS[task.priority]}).`,
       }),
       ctx.db
         .insert(notifications)
@@ -341,7 +361,7 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
             member.id,
             task.id,
             task.lead_id,
-            `New task from ${actor.full_name}: ${task.title}`,
+            raised ? `${actor.full_name} raised a task: ${task.title}` : `New task from ${actor.full_name}: ${task.title}`,
             `${task.priority} · ${dueText(task.due_at)}`,
           ),
         ),
@@ -366,7 +386,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
   const lead = changes.lead_id === undefined ? undefined : await checkLead(ctx, actor, changes.lead_id);
   let member: Actor | null = null;
   if (changes.assignee_id && changes.assignee_id !== task.assignee_id) {
-    if (!isAdmin(actor)) throw new AccessDeniedError("Only admins can hand a task to someone else.");
+    // Admins hand a task to anyone; agents only raise their own to an admin (checkAssignee).
     member = await checkAssignee(ctx, actor, changes.assignee_id);
   }
   const values = {
@@ -376,6 +396,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
       ? {
           assignee_id: member.id,
           kind: member.id === actor.id && task.kind === "personal" ? ("personal" as const) : ("assigned" as const),
+          raised: member.id !== actor.id && member.role === "ADMIN" && (task.raised || !isAdmin(actor)),
           seen_at: null,
         }
       : {}),
@@ -395,6 +416,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
   delete (after as Record<string, unknown>).last_activity_at;
   delete (after as Record<string, unknown>).seen_at;
   delete (after as Record<string, unknown>).kind;
+  delete (after as Record<string, unknown>).raised;
 
   const notes: string[] = [];
   if (fields.priority !== task.priority) notes.push(`priority to ${TASK_PRIORITY_LABELS[fields.priority]}`);
@@ -411,7 +433,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
     if (tags.length) writes.push(ctx.db.insert(workTaskTags).values(tags.map((tag) => ({ task_id: id, tag }))));
   }
   if (member) {
-    notes.push(`handed it to ${member.full_name}`);
+    notes.push(`${values.raised && !task.raised ? "raised it" : "handed it"} to ${member.full_name}`);
     if (member.id !== actor.id) {
       writes.push(
         ctx.db
@@ -421,7 +443,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
               member.id,
               id,
               values.lead_id ?? task.lead_id,
-              `Task handed to you by ${actor.full_name}: ${fields.title}`,
+              values.raised ? `${actor.full_name} raised a task: ${fields.title}` : `Task handed to you by ${actor.full_name}: ${fields.title}`,
               `${fields.priority} · ${dueText(fields.due_at)}`,
             ),
           ),
@@ -530,13 +552,14 @@ export async function postTaskMessage(
   ctx: DataContext,
   actor: Actor,
   id: number,
-  input: { body: string; via?: "text" | "voice" },
+  input: { body: string; via?: "text" | "voice"; audio?: { key: string; ms: number } | null },
 ): Promise<TaskMessage> {
   const body = input.body.trim();
   if (!body) throw new InvalidInputError("Write a message first.");
   if (body.length > MESSAGE_MAX) throw new InvalidInputError("Keep the message under 4,000 characters.");
   const task = await findVisible(ctx, actor, id);
-  const via = input.via === "voice" ? "voice" : "text";
+  const via = input.via === "voice" || input.audio ? "voice" : "text";
+  if (input.audio && !input.audio.key.startsWith(`task-voice/${id}/`)) throw new InvalidInputError("That recording isn't for this task.");
   const now = new Date().toISOString();
 
   const [message] = await ctx.db
@@ -547,6 +570,8 @@ export async function postTaskMessage(
       author_name: actor.full_name,
       body,
       via,
+      audio_key: input.audio?.key ?? null,
+      audio_ms: input.audio ? Math.max(0, Math.round(input.audio.ms)) : null,
     })
     .returning();
 
@@ -569,7 +594,13 @@ export async function postTaskMessage(
             .insert(notifications)
             .values(
               fresh.map((u) =>
-                taskNotification(u, id, task.lead_id, `${actor.full_name} replied on: ${task.title}`, body.slice(0, 200)),
+                taskNotification(
+                  u,
+                  id,
+                  task.lead_id,
+                  `${actor.full_name} ${input.audio ? "sent a voice note" : "replied"} on: ${task.title}`,
+                  body.slice(0, 200),
+                ),
               ),
             ),
         );
@@ -654,6 +685,10 @@ export async function nudgeWorkTask(ctx: DataContext, actor: Actor, id: number, 
 export async function deleteWorkTask(ctx: DataContext, actor: Actor, id: number): Promise<void> {
   const task = await findVisible(ctx, actor, id);
   if (!canEdit(actor, task)) throw new AccessDeniedError("Only the person who gave this task (or an admin) can delete it.");
+  const recordings = await ctx.db
+    .select({ key: workTaskMessages.audio_key })
+    .from(workTaskMessages)
+    .where(and(eq(workTaskMessages.task_id, id), isNotNull(workTaskMessages.audio_key)));
   await ctx.db.batch([
     ctx.db.delete(workTasks).where(eq(workTasks.id, id)),
     auditInsert(
@@ -671,6 +706,14 @@ export async function deleteWorkTask(ctx: DataContext, actor: Actor, id: number)
       null,
     ),
   ]);
+  const keys = recordings.map((r) => r.key).filter((k): k is string => !!k);
+  if (keys.length) {
+    try {
+      await ctx.cards.delete(keys);
+    } catch (error) {
+      console.warn("Could not remove a deleted task's voice notes", error instanceof Error ? error.message : error);
+    }
+  }
 }
 
 export type PinnedTask = TaskListItem & {
@@ -700,7 +743,7 @@ export async function pinnedTasks(ctx: DataContext, actor: Actor): Promise<Pinne
   const items = await withTags(ctx, rows);
   if (!items.length) return [];
   const recent = await ctx.db.all<TaskMessage>(sql`
-    select id, task_id, author_id, author_name, kind, via, body, created_at from (
+    select id, task_id, author_id, author_name, kind, via, body, audio_key, audio_ms, created_at from (
       select m.*, row_number() over (partition by m.task_id order by m.id desc) as rn
       from ${workTaskMessages} m where m.task_id in (${sql.join(
         items.map((i) => sql`${i.id}`),
@@ -747,4 +790,166 @@ export async function leadTaskContext(ctx: DataContext, actor: Actor, leadId: nu
     renewal_date: lead.renewal_date,
     tags: tagsFromLead(lead),
   };
+}
+
+// --- Voice notes -------------------------------------------------------------
+// Recorded in the browser (MediaRecorder: WebM/Opus in Chrome and Android,
+// Ogg in Firefox, MP4/AAC in Safari), kept in the R2 bucket next to visiting
+// cards, and played back through /tasks/[id]/voice for people who see the task.
+
+/** Longest voice note: 3 minutes, which at the recorder's 32 kbps is under 1 MB. */
+export const VOICE_MAX_MS = 180_000;
+export const VOICE_MAX_BYTES = 3_000_000;
+
+const AUDIO_TYPES = { webm: "audio/webm", ogg: "audio/ogg", mp4: "audio/mp4" } as const;
+export type AudioExt = keyof typeof AUDIO_TYPES;
+
+/** The type of a recording, from its bytes (never from the browser). */
+export function sniffAudio(bytes: Uint8Array): { mime: string; ext: AudioExt } | null {
+  if (bytes.length < 12) return null;
+  if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return { mime: AUDIO_TYPES.webm, ext: "webm" };
+  if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return { mime: AUDIO_TYPES.ogg, ext: "ogg" };
+  // ISO base media: "ftyp" at offset 4.
+  if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return { mime: AUDIO_TYPES.mp4, ext: "mp4" };
+  return null;
+}
+
+/**
+ * Stores a recording for a task the caller can see and returns its key, for
+ * postTaskMessage once it is transcribed. Throws on anything not audio.
+ */
+export async function storeTaskVoice(
+  ctx: DataContext,
+  actor: Actor,
+  id: number,
+  bytes: Uint8Array,
+): Promise<{ key: string; mime: string; ext: AudioExt }> {
+  await findVisible(ctx, actor, id);
+  if (bytes.byteLength === 0) throw new InvalidInputError("The recording is empty. Try again.");
+  if (bytes.byteLength > VOICE_MAX_BYTES) throw new InvalidInputError("Keep voice notes under 3 minutes.");
+  const type = sniffAudio(bytes);
+  if (!type) throw new InvalidInputError("That recording format isn't supported. Try another browser.");
+  const key = `task-voice/${id}/${crypto.randomUUID()}.${type.ext}`;
+  await ctx.cards.put(key, bytes, { httpMetadata: { contentType: type.mime } });
+  return { key, ...type };
+}
+
+/** Removes a stored recording that never made it into the thread. */
+export async function discardTaskVoice(ctx: DataContext, key: string): Promise<void> {
+  if (!key.startsWith("task-voice/")) return;
+  try {
+    await ctx.cards.delete(key);
+  } catch {
+    // Left in storage; harmless.
+  }
+}
+
+export type TaskVoice = { body: ReadableStream; contentType: string; size: number; range: { offset: number; length: number } | null };
+
+/**
+ * A voice note's audio, for someone who can see its task, or null. With a
+ * byte range (Safari asks for one before it plays anything) only that part.
+ */
+export async function taskVoice(
+  ctx: DataContext,
+  actor: Actor,
+  taskId: number,
+  messageId: number,
+  range?: { offset: number; length?: number } | null,
+): Promise<TaskVoice | null> {
+  const [row] = await ctx.db
+    .select({ key: workTaskMessages.audio_key })
+    .from(workTaskMessages)
+    .innerJoin(workTasks, eq(workTasks.id, workTaskMessages.task_id))
+    .where(and(eq(workTaskMessages.id, messageId), eq(workTaskMessages.task_id, taskId), visibleTo(actor)))
+    .limit(1);
+  if (!row?.key) return null;
+  const ext = row.key.split(".").pop() as AudioExt;
+  const object = await ctx.cards.get(row.key, range ? { range } : undefined);
+  if (!object) return null;
+  const size = object.size;
+  const served = range ? { offset: range.offset, length: Math.min(range.length ?? size - range.offset, size - range.offset) } : null;
+  return { body: object.body, contentType: AUDIO_TYPES[ext] ?? "application/octet-stream", size, range: served };
+}
+
+// --- Templates ---------------------------------------------------------------
+
+export type TaskTemplate = typeof workTaskTemplates.$inferSelect;
+
+export type TaskTemplateInput = {
+  name: string;
+  title: string;
+  description?: string;
+  priority?: string;
+  tags?: string | readonly string[];
+  due_in_days?: number | null;
+  shared?: boolean;
+};
+
+/** The caller's own templates and the ones admins shared with the team, by name. */
+export async function listTaskTemplates(ctx: DataContext, actor: Actor): Promise<TaskTemplate[]> {
+  return ctx.db
+    .select()
+    .from(workTaskTemplates)
+    .where(or(eq(workTaskTemplates.owner_id, actor.id), eq(workTaskTemplates.shared, true)))
+    .orderBy(asc(workTaskTemplates.name), asc(workTaskTemplates.id))
+    .limit(200);
+}
+
+function canManageTemplate(actor: Actor, template: TaskTemplate): boolean {
+  return template.owner_id === actor.id || (template.shared && isAdmin(actor));
+}
+
+function checkTemplate(actor: Actor, input: TaskTemplateInput) {
+  const name = input.name.trim();
+  if (!name) throw new InvalidInputError("Name the template.");
+  if (name.length > 80) throw new InvalidInputError("Keep the template name under 80 characters.");
+  const fields = checkText({ title: input.title, description: input.description, priority: input.priority });
+  const days = input.due_in_days;
+  if (days != null && (!Number.isInteger(days) || days < 0 || days > 365)) throw new InvalidInputError("Due in days must be between 0 and 365.");
+  if (input.shared && !isAdmin(actor)) throw new AccessDeniedError("Only admins can share templates with the team.");
+  return {
+    name,
+    title: fields.title,
+    description: fields.description,
+    priority: fields.priority,
+    tags: parseTags(input.tags ?? "").join(", "),
+    due_in_days: days ?? null,
+    shared: Boolean(input.shared),
+  };
+}
+
+/** Creates a template, or (with `id`) changes one the caller owns (admins: also shared ones). */
+export async function saveTaskTemplate(
+  ctx: DataContext,
+  actor: Actor,
+  input: TaskTemplateInput & { id?: number | null },
+): Promise<TaskTemplate> {
+  const values = checkTemplate(actor, input);
+  if (input.id) {
+    const before = await ctx.db.query.workTaskTemplates.findFirst({ where: eq(workTaskTemplates.id, input.id) });
+    if (!before || !canManageTemplate(actor, before)) throw new InvalidInputError("That template no longer exists or isn't yours.");
+    const after = { ...values, updated_at: new Date().toISOString() };
+    const [[row]] = await ctx.db.batch([
+      ctx.db.update(workTaskTemplates).set(after).where(eq(workTaskTemplates.id, before.id)).returning(),
+      auditInsert(ctx, actor, "work_task_templates", before.id, "UPDATE", before, after),
+    ]);
+    return row;
+  }
+  const [row] = await ctx.db
+    .insert(workTaskTemplates)
+    .values({ ...values, owner_id: actor.id })
+    .returning();
+  await auditInsert(ctx, actor, "work_task_templates", row.id, "INSERT", null, values);
+  return row;
+}
+
+export async function deleteTaskTemplate(ctx: DataContext, actor: Actor, id: number): Promise<void> {
+  const before = await ctx.db.query.workTaskTemplates.findFirst({ where: eq(workTaskTemplates.id, id) });
+  if (!before) return;
+  if (!canManageTemplate(actor, before)) throw new AccessDeniedError("Only the template's owner (or an admin, for shared ones) can delete it.");
+  await ctx.db.batch([
+    ctx.db.delete(workTaskTemplates).where(eq(workTaskTemplates.id, id)),
+    auditInsert(ctx, actor, "work_task_templates", id, "DELETE", before, null),
+  ]);
 }

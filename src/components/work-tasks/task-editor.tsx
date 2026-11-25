@@ -13,11 +13,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import { formatDate } from "@/lib/dates";
+import { addDays, formatDate, todayInBusinessTz } from "@/lib/dates";
 import { safeAction } from "@/lib/safe-action";
 import { parseTags, TASK_PRIORITIES, TASK_PRIORITY_LABELS, type DueSuggestion, type TaskPriority } from "@/lib/work-tasks";
 
-type Member = { id: string; full_name: string };
+type Member = { id: string; full_name: string; role?: string };
+
+export type TemplateOption = {
+  id: number;
+  name: string;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  tags: string;
+  due_in_days: number | null;
+  shared: boolean;
+};
 
 export type EditableWorkTask = {
   id: number;
@@ -33,21 +44,28 @@ export type EditableWorkTask = {
 
 /**
  * New task (or edit). Admins pick who it is for: themselves makes a private
- * to-do, anyone else an assigned task with a shared thread. Linking a lead
- * suggests a due date from its renewal and tags from its product.
+ * to-do, anyone else an assigned task with a shared thread. Agents keep a
+ * private to-do or raise it to an admin. A template fills the form; linking
+ * a lead suggests a due date from its renewal and tags from its product.
  */
 export function TaskEditor({
   members,
+  admin = true,
   currentUserId,
   task,
   defaultAssignee,
+  templates,
   trigger,
 }: {
-  /** Admins: active team members to give the task to. Agents: undefined (always themselves). */
+  /** Who the task can be for (from taskRecipients): admins see everyone, agents themselves and the admins. Undefined: always the caller. */
   members?: Member[];
+  /** Whether the caller is an admin (changes the wording: give vs raise). */
+  admin?: boolean;
   currentUserId: string;
   task?: EditableWorkTask;
   defaultAssignee?: string;
+  /** Templates to start a new task from. */
+  templates?: TemplateOption[];
   trigger?: "button" | "icon";
 }) {
   const router = useRouter();
@@ -62,7 +80,18 @@ export function TaskEditor({
   } | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
+  const priorityRef = useRef<HTMLSelectElement>(null);
   const editing = Boolean(task);
+
+  function applyTemplate(id: string) {
+    const t = templates?.find((x) => String(x.id) === id);
+    if (!t) return;
+    if (titleRef.current) titleRef.current.value = t.title;
+    if (detailsRef.current) detailsRef.current.value = t.description;
+    if (priorityRef.current) priorityRef.current.value = t.priority;
+    setTags(t.tags);
+    setDue(t.due_in_days == null ? "" : addDays(todayInBusinessTz(), t.due_in_days));
+  }
 
   function onLead(lead: LeadRef | null) {
     setSuggestion(null);
@@ -112,9 +141,11 @@ export function TaskEditor({
             <div>
               <Dialog.Title className="text-lg font-medium">{editing ? "Edit task" : "New task"}</Dialog.Title>
               <Dialog.Description className="text-sm text-muted-foreground">
-                {members
-                  ? "Give it to someone for a shared thread, or keep it as your own private to-do."
-                  : "Only you see your own tasks."}
+                {!members
+                  ? "Only you see your own tasks."
+                  : admin
+                    ? "Give it to someone for a shared thread, or keep it as your own private to-do."
+                    : "Keep it as your private to-do, or raise it to an admin to get their help in a shared thread."}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
@@ -125,6 +156,20 @@ export function TaskEditor({
           </div>
 
           <form action={submit} className="space-y-4">
+            {!editing && templates?.length ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="task-template">Start from a template</Label>
+                <NativeSelect id="task-template" defaultValue="" onChange={(e) => applyTemplate(e.target.value)}>
+                  <option value="">Blank task</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                      {t.shared ? " (team)" : ""}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="task-title">Title</Label>
               <div className="flex gap-2">
@@ -157,7 +202,7 @@ export function TaskEditor({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="task-priority">Priority</Label>
-                <NativeSelect id="task-priority" name="priority" defaultValue={task?.priority ?? "P2"}>
+                <NativeSelect id="task-priority" ref={priorityRef} name="priority" defaultValue={task?.priority ?? "P2"}>
                   {TASK_PRIORITIES.map((p) => (
                     <option key={p} value={p}>
                       {TASK_PRIORITY_LABELS[p]}
@@ -167,7 +212,7 @@ export function TaskEditor({
               </div>
               {members ? (
                 <div className="space-y-1.5">
-                  <Label htmlFor="task-assignee">For</Label>
+                  <Label htmlFor="task-assignee">{admin ? "For" : "For / raise to"}</Label>
                   <NativeSelect
                     id="task-assignee"
                     name="assignee"
@@ -175,7 +220,11 @@ export function TaskEditor({
                   >
                     {members.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.id === currentUserId ? `Me (private to-do)` : m.full_name}
+                        {m.id === currentUserId
+                          ? `Me (private to-do)`
+                          : admin
+                            ? `${m.full_name}${m.role === "ADMIN" ? " (admin)" : ""}`
+                            : `Raise to ${m.full_name} (admin)`}
                       </option>
                     ))}
                   </NativeSelect>
