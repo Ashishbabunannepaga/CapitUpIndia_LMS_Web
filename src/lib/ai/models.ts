@@ -14,7 +14,7 @@ export type ModelChoice = {
   reasoningEffort: ReasoningEffort;
 };
 
-export type ModelTask = "text" | "vision" | "writing";
+export type ModelTask = "text" | "vision" | "writing" | "summary";
 
 export const MODEL_CHAINS: Record<ModelTask, readonly ModelChoice[]> = {
   /** Lead intake and spreadsheet mapping: structured JSON from text. */
@@ -32,11 +32,22 @@ export const MODEL_CHAINS: Record<ModelTask, readonly ModelChoice[]> = {
     { model: "gpt-5.6-luna", reasoningEffort: "none" },
     { model: "gpt-5.6-terra", reasoningEffort: "none" },
   ],
+  /**
+   * Task Grid "Catch me up": a short digest of a thread. GPT-6 Luna is
+   * OpenAI's cheapest current text model (half GPT-5.6 Luna's price) and
+   * plenty for a summary; GPT-5.6 Luna is the fallback. If both fail the
+   * screen shows the rule-based digest, so no pricier model is tried.
+   */
+  summary: [
+    { model: "gpt-6-luna", reasoningEffort: "none" },
+    { model: "gpt-5.6-luna", reasoningEffort: "none" },
+  ],
 };
 
 /**
  * Default prices in US dollars per million tokens, from OpenAI's pricing page
- * (developers.openai.com/api/docs/pricing, checked 10 Nov 2026). Cached input
+ * (developers.openai.com/api/docs/pricing, checked 10 Nov 2026; GPT-6 Luna
+ * added 25 Nov 2026). Cached input
  * is cheaper on OpenAI's side; the app prices every input token at the full
  * rate, so the rupee figures err slightly high.
  */
@@ -47,6 +58,7 @@ export const DEFAULT_MODEL_PRICING: readonly {
   output_usd_per_million: number;
 }[] = [
   { model_name: "gpt-5.6-luna", display_name: "GPT-5.6 Luna (OpenAI)", input_usd_per_million: 0.2, output_usd_per_million: 1.2 },
+  { model_name: "gpt-6-luna", display_name: "GPT-6 Luna (OpenAI)", input_usd_per_million: 0.1, output_usd_per_million: 0.5 },
   { model_name: "gpt-5.6-terra", display_name: "GPT-5.6 Terra (OpenAI)", input_usd_per_million: 2, output_usd_per_million: 12 },
 ];
 

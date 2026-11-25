@@ -180,7 +180,7 @@ export async function summarizeTaskAction(id: number): Promise<SummaryResult> {
       ctx,
       user: actor,
       feature: "other",
-      models: MODEL_CHAINS.writing,
+      models: MODEL_CHAINS.summary,
       system: taskSummaryPrompt(),
       maxOutputTokens: MAX_OUTPUT_TOKENS.taskSummary,
       text: `Task: ${task.title}\nStatus: ${task.status}\nAssigned to: ${task.assignee_name ?? "unknown"} by ${task.created_by_name}\n${task.description ? `Details: ${task.description.slice(0, 1000)}\n` : ""}\nThread:\n${transcript}`,
