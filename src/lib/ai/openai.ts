@@ -1,5 +1,7 @@
 import "server-only";
 
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+
 import type { ModelChoice } from "./models";
 
 // The OpenAI provider: one Chat Completions request over plain fetch (no SDK,
@@ -40,7 +42,16 @@ export class ProviderFatalError extends Error {
 }
 
 export function openAiKey(): string | undefined {
-  return process.env.OPENAI_API_KEY?.trim() || undefined;
+  const fromProcess = process.env.OPENAI_API_KEY?.trim();
+  if (fromProcess) return fromProcess;
+  // `next dev` keeps .dev.vars in the Cloudflare env only (the deployed Worker
+  // also copies it to process.env), so read the binding there too.
+  try {
+    const env = getCloudflareContext().env as { OPENAI_API_KEY?: string };
+    return env.OPENAI_API_KEY?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 type ChatCompletion = {
