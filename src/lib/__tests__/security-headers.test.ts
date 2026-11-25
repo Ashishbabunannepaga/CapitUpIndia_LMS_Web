@@ -26,6 +26,8 @@ describe("security headers", () => {
       expect(csp).toContain(directive);
     }
     expect(csp).not.toMatch(/https?:|\*/);
+    // eval is allowed only under `next dev` (React's debugging tools), never in tests or production.
+    expect(csp).not.toContain("unsafe-eval");
     expect(header("X-Frame-Options")).toBe("DENY");
   });
 

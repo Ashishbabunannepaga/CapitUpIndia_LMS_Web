@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { BellRing, CircleStop, Loader2, Radio, Send, Sparkles, Trash2, X } from "lucide-react";
 
@@ -348,6 +348,9 @@ export function SummaryButton({ taskId }: { taskId: number }) {
   );
 }
 
+const noSubscribe = () => () => {};
+const canRecord = () => typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+
 const RECORDER_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"];
 const MAX_RECORDING_MS = 180_000;
 
@@ -374,7 +377,8 @@ export function VoiceRecorder({ taskId }: { taskId: number }) {
     [],
   );
 
-  const supported = typeof window !== "undefined" && typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+  // False on the server and in the first browser render, so both agree (no hydration mismatch).
+  const supported = useSyncExternalStore(noSubscribe, canRecord, () => false);
 
   async function begin() {
     setMessage(null);

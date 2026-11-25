@@ -13,7 +13,8 @@
 
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // React's dev build uses eval() for its debugging tools; production never does.
+  process.env.NODE_ENV === "development" ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   // Visiting card previews use blob: and data: URLs.
   "img-src 'self' data: blob:",
