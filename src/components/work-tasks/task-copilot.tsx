@@ -111,6 +111,7 @@ export function TaskCopilot({ admin }: { admin: boolean }) {
                 role="tab"
                 aria-selected={mode === m}
                 onClick={() => {
+                  if (m !== mode && input.current) input.current.value = "";
                   setMode(m);
                   setError(null);
                 }}
