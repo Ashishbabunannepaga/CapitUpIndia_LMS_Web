@@ -7,6 +7,9 @@ import "server-only";
 //   WHATSAPP_BUSINESS_ID      the WhatsApp Business Account id (for reference)
 //   WHATSAPP_APP_SECRET       signs incoming webhooks (X-Hub-Signature-256)
 //   WHATSAPP_VERIFY_TOKEN     any long random text, typed again in Meta's webhook setup
+// Optional, for the older app on the same number (docs/whatsapp.md, "Clients and the old bot"):
+//   WHATSAPP_FORWARD_URL      that app's webhook address; messages from non-team numbers go there
+//   WHATSAPP_FORWARD_SECRET   that app's own app secret, to sign what is forwarded (if it checks signatures)
 // Optional vars: WHATSAPP_TEMPLATE (default "lms_task_alert"), WHATSAPP_TEMPLATE_LANG (default "en").
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -19,6 +22,8 @@ export type WhatsAppEnv = {
   WHATSAPP_VERIFY_TOKEN?: string;
   WHATSAPP_TEMPLATE?: string;
   WHATSAPP_TEMPLATE_LANG?: string;
+  WHATSAPP_FORWARD_URL?: string;
+  WHATSAPP_FORWARD_SECRET?: string;
 };
 
 export type WhatsAppConfig = { token: string; phoneNumberId: string; template: string; lang: string };
@@ -33,6 +38,11 @@ export function whatsAppStatus(env: WhatsAppEnv) {
     WHATSAPP_APP_SECRET: has(env.WHATSAPP_APP_SECRET),
     WHATSAPP_VERIFY_TOKEN: has(env.WHATSAPP_VERIFY_TOKEN),
   };
+}
+
+/** Whether clients' messages are passed on to the older app (optional; names only). */
+export function whatsAppForwardStatus(env: WhatsAppEnv) {
+  return { WHATSAPP_FORWARD_URL: !!env.WHATSAPP_FORWARD_URL?.trim(), WHATSAPP_FORWARD_SECRET: !!env.WHATSAPP_FORWARD_SECRET?.trim() };
 }
 
 export function whatsAppConfig(env: WhatsAppEnv): WhatsAppConfig | null {
@@ -69,7 +79,7 @@ async function post(cfg: WhatsAppConfig, payload: unknown): Promise<WhatsAppResu
 }
 
 /**
- * The approved template: body "{{1}}" / "{{2}}" with two quick-reply buttons,
+ * The approved template: body "Update: {{1}}" / "Details: {{2}}" (see docs/whatsapp.md) with two quick-reply buttons,
  * Done and Snooze 1h, whose payloads carry the task id back to the webhook.
  */
 export function taskAlertSender(cfg: WhatsAppConfig): WhatsAppSender {
@@ -90,17 +100,66 @@ export function taskAlertSender(cfg: WhatsAppConfig): WhatsAppSender {
     });
 }
 
-/** A plain reply, allowed within 24 hours of the person writing to us. */
+/** A plain reply, allowed within 24 hours of the person writing to us. WhatsApp caps text at 4,096 characters. */
 export function sendText(cfg: WhatsAppConfig, to: string, text: string): Promise<WhatsAppResult> {
-  return post(cfg, { messaging_product: "whatsapp", to, type: "text", text: { body: text.slice(0, 1000) } });
+  return post(cfg, { messaging_product: "whatsapp", to, type: "text", text: { body: text.slice(0, 3800) } });
+}
+
+/** Largest voice note we fetch (about 3 minutes of WhatsApp audio, with room to spare). */
+export const MEDIA_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Downloads a media file someone sent (voice note): look up its address, then fetch it with the token. */
+export async function downloadMedia(cfg: WhatsAppConfig, mediaId: string): Promise<Uint8Array> {
+  if (!/^\d{1,30}$/.test(mediaId)) throw new Error("Bad media id");
+  const auth = { authorization: `Bearer ${cfg.token}` };
+  const meta = await fetch(`${GRAPH}/${mediaId}`, { headers: auth });
+  const info = (await meta.json().catch(() => ({}))) as { url?: string; file_size?: number };
+  if (!meta.ok || !info.url) throw new Error(`Media lookup failed (${meta.status})`);
+  if ((info.file_size ?? 0) > MEDIA_MAX_BYTES) throw new Error("Media too large");
+  // The address is Meta's own CDN; never follow one pointing anywhere else.
+  const host = new URL(info.url).hostname;
+  if (!/(^|\.)(fbsbx\.com|fbcdn\.net|facebook\.com|whatsapp\.net)$/.test(host)) throw new Error("Unexpected media host");
+  const file = await fetch(info.url, { headers: auth });
+  if (!file.ok) throw new Error(`Media download failed (${file.status})`);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.byteLength > MEDIA_MAX_BYTES) throw new Error("Media too large");
+  return bytes;
+}
+
+async function hmacHex(secret: string, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+  return [...mac].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Passes a webhook delivery on to the older app on the same number, signed
+ * with that app's own secret the way Meta signs it, so it works unchanged.
+ */
+export async function forwardWebhook(env: WhatsAppEnv, rawBody: string): Promise<boolean> {
+  const url = env.WHATSAPP_FORWARD_URL?.trim();
+  const secret = env.WHATSAPP_FORWARD_SECRET?.trim();
+  if (!url || !url.startsWith("https://")) return false;
+  try {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (secret) headers["x-hub-signature-256"] = `sha256=${await hmacHex(secret, rawBody)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: rawBody,
+    });
+    if (!res.ok) console.error("WhatsApp forward failed", { status: res.status });
+    return res.ok;
+  } catch (error) {
+    console.error("WhatsApp forward failed", { message: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
 }
 
 /** Checks Meta's X-Hub-Signature-256 header against the raw body. */
 export async function validSignature(appSecret: string, rawBody: string, header: string | null): Promise<boolean> {
   if (!appSecret || !header?.startsWith("sha256=")) return false;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(appSecret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));
-  const expected = [...mac].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const expected = await hmacHex(appSecret, rawBody);
   const given = header.slice(7).toLowerCase();
   if (given.length !== expected.length) return false;
   let diff = 0;

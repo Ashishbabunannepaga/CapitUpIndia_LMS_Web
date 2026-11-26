@@ -6,10 +6,10 @@ import { PageHeader } from "@/components/app-shell/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { requireSession } from "@/lib/auth";
-import { listWhatsAppTeam, whatsAppSentToday } from "@/server/data/whatsapp";
-import { whatsAppStatus } from "@/server/whatsapp/client";
+import { CLIENT_REPLY_MAX, getWhatsAppClientReply, listWhatsAppTeam, whatsAppSentToday } from "@/server/data/whatsapp";
+import { whatsAppForwardStatus, whatsAppStatus } from "@/server/whatsapp/client";
 
-import { saveWhatsAppAction, testWhatsAppAction } from "./actions";
+import { saveClientReplyAction, saveWhatsAppAction, testWhatsAppAction } from "./actions";
 
 export const metadata: Metadata = { title: "WhatsApp" };
 
@@ -17,7 +17,14 @@ export const metadata: Metadata = { title: "WhatsApp" };
 export default async function WhatsAppPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const { ctx, actor } = await requireSession();
   const { env } = await getCloudflareContext({ async: true });
-  const [team, sent, { error, ok }] = await Promise.all([listWhatsAppTeam(ctx, actor), whatsAppSentToday(ctx, actor), searchParams]);
+  const [team, sent, clientReply, { error, ok }] = await Promise.all([
+    listWhatsAppTeam(ctx, actor),
+    whatsAppSentToday(ctx, actor),
+    getWhatsAppClientReply(ctx),
+    searchParams,
+  ]);
+  const forward = whatsAppForwardStatus(env);
+  const forwarding = forward.WHATSAPP_FORWARD_URL;
   const status = whatsAppStatus(env);
   const ready = status.WHATSAPP_TOKEN && status.WHATSAPP_PHONE_NUMBER_ID;
   const webhook = `${(env.BETTER_AUTH_URL ?? "").replace(/\/$/, "")}/api/whatsapp`;
@@ -27,7 +34,7 @@ export default async function WhatsAppPage({ searchParams }: { searchParams: Pro
       <PageHeader
         eyebrow="Admin"
         title="WhatsApp"
-        description="Task alerts on WhatsApp for the team: due soon, due now, overdue, escalations, new tasks and approvals, with Done and Snooze 1h buttons."
+        description="Task alerts on WhatsApp for the team, with Done and Snooze 1h buttons. The team can also reply into task chats, send voice notes, add tasks and ask questions from WhatsApp."
       />
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
       {ok ? <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{ok}</p> : null}
@@ -84,6 +91,42 @@ export default async function WhatsAppPage({ searchParams }: { searchParams: Pro
         <p className="text-xs text-muted-foreground">
           Only people with Alerts on get messages. Done and Snooze replies work once the webhook URL above is saved in Meta with the WHATSAPP_VERIFY_TOKEN value.
         </p>
+      </section>
+
+      <section className="surface space-y-3 p-4 sm:p-5">
+        <h2 className="text-sm font-medium">What the team can send</h2>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>Done or Snooze 1h on an alert, as a button or a word.</li>
+          <li>A swipe-reply to an alert, typed or as a voice note, goes into that task&apos;s chat.</li>
+          <li>&quot;todo: renew the Zenith policy&quot; adds their own task; &quot;Sravani: send the GMC quote by Friday&quot; gives one (same rules as the app).</li>
+          <li>Anything else is a question, like &quot;what is overdue?&quot;, answered from what that person can see. &quot;help&quot; lists all of this.</li>
+        </ul>
+      </section>
+
+      <section className="surface space-y-3 p-4 sm:p-5">
+        <h2 className="text-sm font-medium">Clients and other numbers</h2>
+        <p className="text-sm text-muted-foreground">
+          {forwarding
+            ? "Messages from numbers outside the team are passed on to your older WhatsApp app (WHATSAPP_FORWARD_URL), so it keeps answering clients."
+            : "Messages from numbers outside the team are not passed on. To keep an older app on this number answering clients, add its webhook address as the WHATSAPP_FORWARD_URL secret, and its app secret as WHATSAPP_FORWARD_SECRET if it checks signatures (see docs/whatsapp.md)."}
+        </p>
+        <form action={saveClientReplyAction} className="space-y-2">
+          <label htmlFor="client_reply" className="text-xs font-medium">
+            Auto-reply to clients {forwarding ? "(not used while forwarding is on)" : "(at most once a day per number; leave empty for none)"}
+          </label>
+          <textarea
+            id="client_reply"
+            name="client_reply"
+            defaultValue={clientReply}
+            maxLength={CLIENT_REPLY_MAX}
+            rows={3}
+            placeholder="Thanks for writing to CapitUp. Our team will call you back shortly."
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          />
+          <Button size="sm" variant="outline" type="submit">
+            Save auto-reply
+          </Button>
+        </form>
       </section>
     </div>
   );

@@ -53,6 +53,9 @@ interface CloudflareEnv {
   WHATSAPP_BUSINESS_ID?: string;
   WHATSAPP_APP_SECRET?: string;
   WHATSAPP_VERIFY_TOKEN?: string;
+  /** Optional: the older app on the same number, for client messages (docs/whatsapp.md). */
+  WHATSAPP_FORWARD_URL?: string;
+  WHATSAPP_FORWARD_SECRET?: string;
   /** Optional vars: the approved template's name and language (default lms_task_alert, en). */
   WHATSAPP_TEMPLATE?: string;
   WHATSAPP_TEMPLATE_LANG?: string;
