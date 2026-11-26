@@ -17,6 +17,7 @@ import {
   Smartphone,
   Sun,
   Users,
+  MessageCircle,
 } from "lucide-react";
 
 import type { UserRole } from "@/lib/database.types";
@@ -134,6 +135,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/task-rules",
         icon: AlarmClock,
         description: "Reminder, nudge and escalation timings per tag, and the holiday calendar.",
+      },
+      {
+        title: "WhatsApp",
+        href: "/admin/whatsapp",
+        icon: MessageCircle,
+        description: "Task alerts on WhatsApp: numbers per person, setup check and a test message.",
       },
       {
         title: "System health",

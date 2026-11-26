@@ -141,6 +141,13 @@
       "when": 1795672709740,
       "tag": "0019_task_repeat_snooze",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795685240046,
+      "tag": "0020_whatsapp_alerts",
+      "breakpoints": true
     }
   ]
 }

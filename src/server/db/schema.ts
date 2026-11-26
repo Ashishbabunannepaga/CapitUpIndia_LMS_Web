@@ -155,6 +155,10 @@ export const profiles = sqliteTable(
     is_active: bool("is_active").notNull().default(true),
     /** Set when an admin creates the account or resets its password; the user must pick their own before anything else. */
     must_change_password: bool("must_change_password").notNull().default(false),
+    /** WhatsApp number for task alerts, digits with country code (91XXXXXXXXXX); set by an admin. */
+    whatsapp_phone: text("whatsapp_phone"),
+    /** Task alerts also go to WhatsApp (needs whatsapp_phone and the WHATSAPP_* secrets). */
+    whatsapp_on: bool("whatsapp_on").notNull().default(false),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
@@ -516,10 +520,14 @@ export const notifications = sqliteTable(
     read_at: text("read_at"),
     /** When the cron pushed it to the person's browsers (or decided there was nothing to push to). */
     pushed_at: text("pushed_at"),
+    /** When the cron sent it to WhatsApp (or decided not to), and the WhatsApp message id replies point back to. */
+    whatsapp_at: text("whatsapp_at"),
+    whatsapp_msg_id: text("whatsapp_msg_id"),
   },
   (t) => [
     index("notifications_user_idx").on(t.user_id, t.read_at, t.created_at),
     index("notifications_task_idx").on(t.task_id).where(sql`${t.task_id} is not null`),
+    index("notifications_whatsapp_idx").on(t.whatsapp_msg_id).where(sql`${t.whatsapp_msg_id} is not null`),
     uniqueIndex("notifications_event_user_key").on(t.event_id, t.user_id),
     check("notifications_kind", sql`${t.kind} in ('renewal_reminder', 'other')`),
     check("notifications_title_len", sql`length(${t.title}) between 1 and 300`),

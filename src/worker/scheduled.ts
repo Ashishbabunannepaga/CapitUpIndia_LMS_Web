@@ -22,6 +22,8 @@ import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
 import { sendWebPush } from "@/server/push/web-push";
 import { alertSender, healthUrl, probeSite } from "@/server/monitoring/alerts";
+import { sendWhatsAppAlerts } from "@/server/data/whatsapp";
+import { taskAlertSender, whatsAppConfig, type WhatsAppSender } from "@/server/whatsapp/client";
 
 /** Swapped out in tests. */
 export type ScheduledDeps = {
@@ -32,6 +34,8 @@ export type ScheduledDeps = {
   push?: PushSender | null;
   /** Writes the 09:00 day plans; by default OpenAI through generate(). */
   planWriter?: PlanWriter;
+  /** WhatsApp alert sender; by default the Cloud API with the WHATSAPP_* secrets, when they are set. */
+  whatsapp?: WhatsAppSender | null;
 };
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -83,6 +87,18 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
     } catch (error) {
       console.error("Browser push failed", { message: message(error) });
       await recordAppError(ctx, { source: "job", path: "Browser push", message: message(error) }, at);
+    }
+  }
+
+  const waConfig = whatsAppConfig(env);
+  const whatsapp = deps.whatsapp !== undefined ? deps.whatsapp : waConfig ? taskAlertSender(waConfig) : null;
+  if (whatsapp) {
+    try {
+      const sent = await sendWhatsAppAlerts(ctx, whatsapp, at);
+      if (sent > 0) console.log(`Sent ${sent} WhatsApp task alert(s).`);
+    } catch (error) {
+      console.error("WhatsApp alerts failed", { message: message(error) });
+      await recordAppError(ctx, { source: "job", path: "WhatsApp alerts", message: message(error) }, at);
     }
   }
 
