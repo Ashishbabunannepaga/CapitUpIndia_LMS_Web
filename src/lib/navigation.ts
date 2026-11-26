@@ -1,5 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  AlarmClock,
+  ListChecks,
   HeartPulse,
   History,
   Activity,
@@ -15,6 +17,7 @@ import {
   Smartphone,
   Sun,
   Users,
+  MessageCircle,
 } from "lucide-react";
 
 import type { UserRole } from "@/lib/database.types";
@@ -120,6 +123,24 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/ai-usage",
         icon: IndianRupee,
         description: "AI calls, tokens and INR cost by agent and feature.",
+      },
+      {
+        title: "Playbooks",
+        href: "/admin/playbooks",
+        icon: ListChecks,
+        description: "Renewal step chains that become tasks for the lead's agent as each date comes up.",
+      },
+      {
+        title: "Task rules",
+        href: "/admin/task-rules",
+        icon: AlarmClock,
+        description: "Reminder, nudge and escalation timings per tag, and the holiday calendar.",
+      },
+      {
+        title: "WhatsApp",
+        href: "/admin/whatsapp",
+        icon: MessageCircle,
+        description: "Task alerts on WhatsApp: numbers per person, setup check and a test message.",
       },
       {
         title: "System health",

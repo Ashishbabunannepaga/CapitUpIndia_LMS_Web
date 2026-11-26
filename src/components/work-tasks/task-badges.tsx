@@ -89,3 +89,15 @@ export function UnreadDot({ count }: { count: number }) {
     </span>
   );
 }
+
+export function ApprovalBadge({ approval }: { approval: "pending" | "approved" | "rejected" | null | undefined }) {
+  if (!approval) return null;
+  const style =
+    approval === "pending"
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : approval === "approved"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-red-200 bg-red-50 text-red-700";
+  const label = approval === "pending" ? "Approval pending" : approval === "approved" ? "Approved" : "Rejected";
+  return <span className={`inline-flex items-center rounded-full border px-1.5 py-px text-[11px] font-medium ${style}`}>{label}</span>;
+}

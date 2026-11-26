@@ -3,7 +3,7 @@ import Link from "next/link";
 import { LayoutTemplate, Link2, MessageSquare, UserRound } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell/page-header";
-import { DueChip, PriorityBadge, RaisedBadge, TagChips, UnreadDot } from "@/components/work-tasks/task-badges";
+import { ApprovalBadge, DueChip, PriorityBadge, RaisedBadge, TagChips, UnreadDot } from "@/components/work-tasks/task-badges";
 import { TaskCopilot } from "@/components/work-tasks/task-copilot";
 import { TaskEditor } from "@/components/work-tasks/task-editor";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,8 @@ function TaskCard({ task, currentUserId, admin }: { task: TaskListItem; currentU
           {task.kind === "personal" ? (
             <span className="text-[11px] text-muted-foreground">Private</span>
           ) : null}
-          {task.raised ? <RaisedBadge /> : null}
+          {task.raised && !task.approval ? <RaisedBadge /> : null}
+          <ApprovalBadge approval={task.approval} />
         </div>
         <TagChips tags={task.tags} className="mt-1.5" />
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

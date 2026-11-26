@@ -146,7 +146,7 @@ export function isPolicyProduct(value: unknown): value is PolicyProduct {
 // corporate (indigo; the key is still "gmc_renewal") and retail, entries for active clients (Closed Won), meetings,
 // and everything else as tasks. One entry can carry two colours (a renewal or
 // a meeting for an active client).
-export const CALENDAR_CATEGORIES = ["gmc_renewal", "retail_renewal", "active_client", "meeting", "task"] as const;
+export const CALENDAR_CATEGORIES = ["gmc_renewal", "retail_renewal", "active_client", "meeting", "task", "grid_task"] as const;
 export type CalendarCategory = (typeof CALENDAR_CATEGORIES)[number];
 
 export const CALENDAR_CATEGORY_LABELS: Record<CalendarCategory, string> = {
@@ -155,6 +155,7 @@ export const CALENDAR_CATEGORY_LABELS: Record<CalendarCategory, string> = {
   active_client: "Active Clients",
   meeting: "Meetings",
   task: "Tasks",
+  grid_task: "Task Grid",
 };
 
 /** Tailwind classes per calendar colour: a pill for day cells, a dot for lists and the legend. */
@@ -164,6 +165,7 @@ export const CALENDAR_CATEGORY_STYLES: Record<CalendarCategory, { pill: string; 
   active_client: { pill: "bg-brand-100 text-brand-900", dot: "bg-brand-500", chip: "border-brand-300 bg-brand-600 text-white" },
   meeting: { pill: "bg-violet-100 text-violet-900", dot: "bg-violet-600", chip: "border-violet-300 bg-violet-600 text-white" },
   task: { pill: "bg-orange-100 text-orange-900", dot: "bg-orange-500", chip: "border-orange-300 bg-orange-500 text-white" },
+  grid_task: { pill: "bg-sky-100 text-sky-900", dot: "bg-sky-600", chip: "border-sky-300 bg-sky-600 text-white" },
 };
 
 /**
@@ -188,6 +190,7 @@ export const CALENDAR_PILLS: readonly CalendarPill[] = [
   "active_client",
   "meeting",
   "task",
+  "grid_task",
 ];
 export const CALENDAR_PILL_LABELS: Record<CalendarPill, string> = {
   ...CALENDAR_CATEGORY_LABELS,

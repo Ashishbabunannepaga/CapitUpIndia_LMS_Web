@@ -44,6 +44,18 @@ interface CloudflareEnv {
   VAPID_PRIVATE_KEY?: string;
   /** Optional: a mailto: or https: contact for push services; defaults to the app URL. */
   VAPID_SUBJECT?: string;
+  /**
+   * WhatsApp task alerts (src/server/whatsapp/client.ts, docs/whatsapp.md).
+   * Optional secrets: without them alerts stay in the bell and browser push.
+   */
+  WHATSAPP_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_BUSINESS_ID?: string;
+  WHATSAPP_APP_SECRET?: string;
+  WHATSAPP_VERIFY_TOKEN?: string;
+  /** Optional vars: the approved template's name and language (default lms_task_alert, en). */
+  WHATSAPP_TEMPLATE?: string;
+  WHATSAPP_TEMPLATE_LANG?: string;
   /** Optional var: the URL the monitor loads instead of <BETTER_AUTH_URL>/api/health. */
   MONITOR_URL?: string;
   /**

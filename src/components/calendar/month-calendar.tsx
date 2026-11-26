@@ -22,6 +22,8 @@ import {
   type EventKind,
 } from "@/lib/domain";
 import { cn } from "@/lib/utils";
+import { TASK_STATUS_LABELS, type TaskPriority, type TaskStatus } from "@/lib/work-tasks";
+import Link from "next/link";
 
 export type CalendarEntry = {
   id: number;
@@ -42,6 +44,8 @@ export type CalendarEntry = {
   isCompleted: boolean;
   isSystem: boolean;
   agentName?: string | null;
+  /** A Task Grid task (opens its thread); id is the task id. */
+  gridTask?: { priority: TaskPriority; status: TaskStatus; personal: boolean };
 };
 
 type Filter = "all" | CalendarCategory;
@@ -89,6 +93,8 @@ function cellLabel(category: CalendarPill, n: number, product?: string): string 
       return n === 1 ? "meeting" : "meetings";
     case "task":
       return n === 1 ? "task" : "tasks";
+    case "grid_task":
+      return n === 1 ? "grid task" : "grid tasks";
   }
 }
 
@@ -127,7 +133,7 @@ export function MonthCalendar({
   const dayEntries = (byDay.get(selected) ?? []).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   const tasks: TaskItem[] = dayEntries
-    .filter((e) => !e.isRenewal)
+    .filter((e) => !e.isRenewal && !e.gridTask)
     .map((e) => ({
       id: e.id,
       title: e.title,
@@ -144,6 +150,7 @@ export function MonthCalendar({
       overdue: e.date < today && !e.isCompleted,
     }));
   const renewals = dayEntries.filter((e) => e.isRenewal);
+  const gridTasks = dayEntries.filter((e) => e.gridTask);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -318,6 +325,36 @@ export function MonthCalendar({
           <div>
             <h3 className="text-xs font-medium text-muted-foreground">Meetings and tasks</h3>
             <TaskList tasks={tasks} emptyText="Nothing planned." editing={editing} />
+          </div>
+          <div>
+            <h3 className="text-xs font-medium text-muted-foreground">Task Grid</h3>
+            {gridTasks.length === 0 ? (
+              <p className="py-2 text-sm text-muted-foreground">No Task Grid tasks due.</p>
+            ) : (
+              <ul className="divide-y">
+                {gridTasks.map((entry) => {
+                  const t = entry.gridTask!;
+                  const done = t.status === "done";
+                  const late = !done && Date.parse(entry.timestamp) < Date.parse(`${today}T00:00:00+05:30`);
+                  return (
+                    <li key={`grid-${entry.id}`} className="flex items-start gap-2 py-2 text-sm">
+                      <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", CALENDAR_PILL_STYLES.grid_task.dot)} aria-hidden="true" />
+                      <div className="min-w-0">
+                        <Link href={`/tasks/${entry.id}`} className={cn("font-medium hover:text-primary hover:underline", done && "text-muted-foreground line-through")}>
+                          {entry.title}
+                        </Link>
+                        <p className={cn("text-xs text-muted-foreground", late && "text-destructive")}>
+                          {t.priority} · {TASK_STATUS_LABELS[t.status]} · <ClockTime timestamp={entry.timestamp} />
+                          {late ? " · overdue" : ""}
+                          {entry.leadName ? ` · ${entry.leadName}` : ""}
+                          {t.personal ? " · private" : entry.agentName ? ` · ${entry.agentName}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </div>
       </section>

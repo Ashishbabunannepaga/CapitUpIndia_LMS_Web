@@ -155,6 +155,10 @@ export const profiles = sqliteTable(
     is_active: bool("is_active").notNull().default(true),
     /** Set when an admin creates the account or resets its password; the user must pick their own before anything else. */
     must_change_password: bool("must_change_password").notNull().default(false),
+    /** WhatsApp number for task alerts, digits with country code (91XXXXXXXXXX); set by an admin. */
+    whatsapp_phone: text("whatsapp_phone"),
+    /** Task alerts also go to WhatsApp (needs whatsapp_phone and the WHATSAPP_* secrets). */
+    whatsapp_on: bool("whatsapp_on").notNull().default(false),
     created_at: createdAt(),
     updated_at: updatedAt(),
   },
@@ -516,10 +520,14 @@ export const notifications = sqliteTable(
     read_at: text("read_at"),
     /** When the cron pushed it to the person's browsers (or decided there was nothing to push to). */
     pushed_at: text("pushed_at"),
+    /** When the cron sent it to WhatsApp (or decided not to), and the WhatsApp message id replies point back to. */
+    whatsapp_at: text("whatsapp_at"),
+    whatsapp_msg_id: text("whatsapp_msg_id"),
   },
   (t) => [
     index("notifications_user_idx").on(t.user_id, t.read_at, t.created_at),
     index("notifications_task_idx").on(t.task_id).where(sql`${t.task_id} is not null`),
+    index("notifications_whatsapp_idx").on(t.whatsapp_msg_id).where(sql`${t.whatsapp_msg_id} is not null`),
     uniqueIndex("notifications_event_user_key").on(t.event_id, t.user_id),
     check("notifications_kind", sql`${t.kind} in ('renewal_reminder', 'other')`),
     check("notifications_title_len", sql`length(${t.title}) between 1 and 300`),
@@ -531,6 +539,8 @@ export const notifications = sqliteTable(
 // Work items with a conversation, apart from calendar `events`: an admin gives
 // an agent a task and both talk it through in its thread, or anyone keeps
 // their own to-do list. New tables only, so nothing touches `leads`.
+
+export const WORK_TASK_REPEATS = ["none", "daily", "weekly", "monthly"] as const;
 
 export const workTasks = sqliteTable(
   "work_tasks",
@@ -560,6 +570,16 @@ export const workTasks = sqliteTable(
     reminder_stage: integer("reminder_stage").notNull().default(0),
     /** The due_at the stage above belongs to; a new due time starts the ladder again. */
     reminder_for: text("reminder_for"),
+    /** An approval request raised to an admin: pending until they approve or reject it. */
+    approval: text("approval", { enum: ["pending", "approved", "rejected"] }),
+    approval_note: text("approval_note"),
+    /** The admin who decided (profile id; kept as text so it survives their removal). */
+    approval_by: text("approval_by"),
+    approval_at: text("approval_at"),
+    /** Repeats after it is done: the next one is created with the due date moved on. */
+    repeat: text("repeat", { enum: WORK_TASK_REPEATS }).notNull().default("none"),
+    /** The assignee paused its reminders until this time (ISO UTC). */
+    snoozed_until: text("snoozed_until"),
     completed_at: text("completed_at"),
     last_activity_at: text("last_activity_at").notNull().default(now),
     created_at: createdAt(),
@@ -656,6 +676,99 @@ export const workTaskTemplates = sqliteTable(
     check("work_task_templates_description_len", sql`length(${t.description}) <= 5000`),
     check("work_task_templates_due", sql`${t.due_in_days} is null or ${t.due_in_days} between 0 and 365`),
   ],
+);
+
+/**
+ * Admin-set reminder timings for tasks with a tag (and optionally a priority),
+ * in minutes: due soon before the due time, nudge and escalation after it.
+ * Tasks without a matching rule use REMINDER_LADDER in task-reminders.ts.
+ */
+export const taskSlaRules = sqliteTable(
+  "task_sla_rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tag: text("tag").notNull(),
+    /** Null: any priority. */
+    priority: text("priority", { enum: WORK_TASK_PRIORITIES }),
+    soon_minutes: integer("soon_minutes").notNull(),
+    nudge_minutes: integer("nudge_minutes").notNull(),
+    escalate_minutes: integer("escalate_minutes").notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [
+    // One rule per tag and priority (a null priority is checked in the data layer).
+    uniqueIndex("task_sla_rules_tag_priority").on(t.tag, t.priority),
+    check("task_sla_rules_minutes", sql`${t.soon_minutes} between 0 and 10080 and ${t.nudge_minutes} between 5 and 43200 and ${t.escalate_minutes} between 5 and 43200`),
+  ],
+);
+
+/** Days (IST) when overdue nudges and escalations pause and lateness does not count. Sundays always do. */
+export const businessHolidays = sqliteTable("business_holidays", {
+  date: text("date").primaryKey(),
+  name: text("name").notNull(),
+  created_at: createdAt(),
+});
+
+/**
+ * Renewal playbooks: a chain of steps (day offsets from the renewal date) that
+ * becomes Task Grid tasks for the lead's agent as each step's date comes up.
+ * Created switched off; an admin turns each one on (Admin > Playbooks).
+ */
+export const PLAYBOOK_SCOPES = ["any", "Corporate", "Retail"] as const;
+export const taskPlaybooks = sqliteTable(
+  "task_playbooks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    /** Which leads it runs for, by business type. */
+    applies_to: text("applies_to", { enum: PLAYBOOK_SCOPES }).notNull().default("any"),
+    active: integer("active", { mode: "boolean" }).notNull().default(false),
+    created_at: createdAt(),
+  },
+  (t) => [
+    check("task_playbooks_name_len", sql`length(trim(${t.name})) between 1 and 80`),
+    check("task_playbooks_scope", sql`${t.applies_to} in (${inList(PLAYBOOK_SCOPES)})`),
+  ],
+);
+
+export const taskPlaybookSteps = sqliteTable(
+  "task_playbook_steps",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    playbook_id: integer("playbook_id")
+      .notNull()
+      .references(() => taskPlaybooks.id, { onDelete: "cascade" }),
+    /** Due this many days from the renewal date (negative: before it). */
+    day_offset: integer("day_offset").notNull(),
+    /** {client} is replaced with the lead's client name. */
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    priority: text("priority", { enum: WORK_TASK_PRIORITIES }).notNull().default("P2"),
+    tags: text("tags").notNull().default(""),
+  },
+  (t) => [
+    index("task_playbook_steps_playbook_idx").on(t.playbook_id, t.day_offset),
+    check("task_playbook_steps_offset", sql`${t.day_offset} between -365 and 60`),
+    check("task_playbook_steps_title_len", sql`length(trim(${t.title})) between 1 and 200`),
+    check("task_playbook_steps_priority", sql`${t.priority} in (${inList(WORK_TASK_PRIORITIES)})`),
+  ],
+);
+
+/** One row per step, lead and renewal cycle: the task a playbook already created. */
+export const playbookTasks = sqliteTable(
+  "playbook_tasks",
+  {
+    step_id: integer("step_id")
+      .notNull()
+      .references(() => taskPlaybookSteps.id, { onDelete: "cascade" }),
+    lead_id: integer("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    renewal_date: text("renewal_date").notNull(),
+    task_id: integer("task_id").references(() => workTasks.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.step_id, t.lead_id, t.renewal_date] })],
 );
 
 /** How far each person has read a task's thread, for unread badges. */

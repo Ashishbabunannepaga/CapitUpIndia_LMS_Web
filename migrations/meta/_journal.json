@@ -120,6 +120,34 @@
       "when": 1795670045770,
       "tag": "0016_task_due_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1795671727305,
+      "tag": "0017_task_approvals_sla",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1795672234809,
+      "tag": "0018_renewal_playbooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1795672709740,
+      "tag": "0019_task_repeat_snooze",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795685240046,
+      "tag": "0020_whatsapp_alerts",
+      "breakpoints": true
     }
   ]
 }

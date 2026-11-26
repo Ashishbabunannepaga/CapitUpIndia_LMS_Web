@@ -15,7 +15,16 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { addDays, formatDate, todayInBusinessTz } from "@/lib/dates";
 import { safeAction } from "@/lib/safe-action";
-import { parseTags, TASK_PRIORITIES, TASK_PRIORITY_LABELS, type DueSuggestion, type TaskPriority } from "@/lib/work-tasks";
+import {
+  parseTags,
+  TASK_PRIORITIES,
+  TASK_PRIORITY_LABELS,
+  TASK_REPEAT_LABELS,
+  TASK_REPEATS,
+  type DueSuggestion,
+  type TaskPriority,
+  type TaskRepeat,
+} from "@/lib/work-tasks";
 
 type Member = { id: string; full_name: string; role?: string };
 
@@ -40,6 +49,7 @@ export type EditableWorkTask = {
   assignee_id: string;
   tags: string[];
   lead: LeadRef | null;
+  repeat: TaskRepeat;
 };
 
 /**
@@ -228,6 +238,12 @@ export function TaskEditor({
                       </option>
                     ))}
                   </NativeSelect>
+                  {!admin && !task ? (
+                    <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                      <input type="checkbox" name="approval" value="on" className="size-4 accent-primary" />
+                      Ask for approval (the admin gets Approve / Reject)
+                    </label>
+                  ) : null}
                 </div>
               ) : (
                 <input type="hidden" name="assignee" value="" />
@@ -239,6 +255,17 @@ export function TaskEditor({
               <div className="space-y-1.5">
                 <Label htmlFor="task-time">Time</Label>
                 <Input id="task-time" type="time" name="due_time" defaultValue={task?.due_time || "18:00"} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="task-repeat">Repeats</Label>
+                <NativeSelect id="task-repeat" name="repeat" defaultValue={task?.repeat ?? "none"}>
+                  {TASK_REPEATS.map((r) => (
+                    <option key={r} value={r}>
+                      {TASK_REPEAT_LABELS[r]}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <p className="text-xs text-muted-foreground">When it&apos;s done, the next one is created with the due date moved on.</p>
               </div>
             </div>
 
