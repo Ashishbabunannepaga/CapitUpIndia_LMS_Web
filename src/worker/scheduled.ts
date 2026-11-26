@@ -12,6 +12,7 @@ import {
 } from "@/server/data/monitoring";
 import { rollAutoRenewals } from "@/server/data/leads";
 import { deliverDueReminders, deliverTaskReminders } from "@/server/data/notifications";
+import { deliverTaskDueReminders } from "@/server/data/task-reminders";
 import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
 import { sendWebPush } from "@/server/push/web-push";
@@ -31,7 +32,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 /**
  * The per-minute Cron Trigger: send renewal reminders that are due (and
  * escalate ignored T-10 / T-3 ones to admins), remind people of tasks and
- * meetings, push all of it to browsers; every 15
+ * meetings, walk Task Grid tasks up their due-time ladder, push all of it to browsers; every 15
  * minutes stop LMS leads whose CapitUp app user withdrew consent; every 5
  * minutes run the health check (src/server/data/monitoring.ts); and at 09:00
  * IST send the daily monitoring report.
@@ -54,6 +55,14 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
   } catch (error) {
     console.error("Task reminder delivery failed", { message: message(error) });
     await recordAppError(ctx, { source: "job", path: "Task reminders", message: message(error) }, at);
+  }
+
+  try {
+    const nudged = await deliverTaskDueReminders(ctx, at);
+    if (nudged > 0) console.log(`Sent ${nudged} Task Grid due-time reminder(s).`);
+  } catch (error) {
+    console.error("Task Grid reminders failed", { message: message(error) });
+    await recordAppError(ctx, { source: "job", path: "Task Grid reminders", message: message(error) }, at);
   }
 
   // Whatever landed in a bell this minute (reminders, assignments) also goes
