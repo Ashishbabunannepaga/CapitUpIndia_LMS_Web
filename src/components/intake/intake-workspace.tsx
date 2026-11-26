@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Camera, ImageUp, Info, Loader2, Mic, MicOff, PenLine, ScanLine, ScanText, Sparkles, X } from "lucide-react";
 
+import type { ExtractedLead } from "@/lib/ai/lead-cleanup";
 import { extractLeadFromText, scanVisitingCard, type ExtractionResult } from "@/app/(app)/intake/actions";
 import { LeadForm } from "@/components/leads/lead-form";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,8 @@ type Props = {
   aiConfigured: boolean;
   /** Which tab opens first: AI intake (default) or the plain form. */
   initialMode?: IntakeMode;
+  /** A lead draft made on WhatsApp, opened ready to review. */
+  fromWhatsApp?: { lead: ExtractedLead; dropped: string[] };
   /** In the quick-capture window, Cancel closes it instead of going to Leads. */
   onCancel?: () => void;
 };
@@ -51,7 +54,7 @@ function ModeSwitch({ mode, onChange }: { mode: IntakeMode; onChange: (mode: Int
   );
 }
 
-type Extracted = Extract<ExtractionResult, { ok: true }> & { previewUrl?: string; from: "text" | "card" };
+type Extracted = Extract<ExtractionResult, { ok: true }> & { previewUrl?: string; from: "text" | "card" | "whatsapp" };
 
 // ---------------------------------------------------------------------------
 // Speech input (Web Speech API, where the browser has it)
@@ -179,10 +182,12 @@ function WebcamCapture({ onCapture, onClose }: { onCapture: (blob: Blob) => void
 // Workspace
 // ---------------------------------------------------------------------------
 
-export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured, initialMode = "ai", onCancel }: Props) {
+export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured, initialMode = "ai", fromWhatsApp, onCancel }: Props) {
   const [mode, setMode] = useState<IntakeMode>(initialMode);
   const [notes, setNotes] = useState("");
-  const [result, setResult] = useState<Extracted | null>(null);
+  const [result, setResult] = useState<Extracted | null>(
+    fromWhatsApp ? { ok: true, lead: fromWhatsApp.lead, dropped: fromWhatsApp.dropped, source: "ai", from: "whatsapp" } : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"text" | "card" | null>(null);
   const [, startTransition] = useTransition();
@@ -247,7 +252,7 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured, 
     ? {
         ...Object.fromEntries(Object.entries(result.lead).map(([k, v]) => [k, String(v)])),
         // A scanned card is the lead's source; notes could be anything, so the agent picks.
-        ...(result.from === "card" ? { lead_source: "OCR/Card" } : {}),
+        ...(result.from === "card" ? { lead_source: "OCR/Card" } : result.from === "whatsapp" ? { lead_source: "WhatsApp" } : {}),
       }
     : undefined;
 
@@ -420,7 +425,7 @@ export function IntakeWorkspace({ agents, currentUserId, isAdmin, aiConfigured, 
                 <p className="font-semibold">
                   {result.source === "ai" ? "Review the extracted lead" : "Basic extraction"}
                   <span className="ml-2 font-normal text-muted-foreground">
-                    {result.from === "card" ? "from the visiting card" : "from your notes"}. Nothing is saved until you press Save lead.
+                    {result.from === "card" ? "from the visiting card" : result.from === "whatsapp" ? "from WhatsApp" : "from your notes"}. Nothing is saved until you press Save lead.
                   </span>
                 </p>
                 {result.notice ? <p className="text-amber-800">{result.notice}</p> : null}
