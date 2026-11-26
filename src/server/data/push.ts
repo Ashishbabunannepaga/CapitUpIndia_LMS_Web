@@ -1,5 +1,7 @@
 import "server-only";
 
+import { notificationHref } from "@/lib/notification-href";
+
 import { and, asc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 
 import { notifications, pushSubscriptions } from "../db/schema";
@@ -105,6 +107,7 @@ export async function pushPendingNotifications(ctx: DataContext, send: PushSende
       title: notifications.title,
       body: notifications.body,
       lead_id: notifications.lead_id,
+      task_id: notifications.task_id,
     })
     .from(notifications)
     .where(and(isNull(notifications.pushed_at), gte(notifications.created_at, since)))
@@ -133,7 +136,7 @@ export async function pushPendingNotifications(ctx: DataContext, send: PushSende
         try {
           const result = await send(
             { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-            { title: n.title, body: n.body, url: n.lead_id ? `/leads/${n.lead_id}` : "/my-day", tag: `notification-${n.id}` },
+            { title: n.title, body: n.body, url: notificationHref(n), tag: `notification-${n.id}` },
           );
           if (result.gone) gone.add(sub.id);
           else if (result.ok) {

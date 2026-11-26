@@ -14,7 +14,7 @@ export type ModelChoice = {
   reasoningEffort: ReasoningEffort;
 };
 
-export type ModelTask = "text" | "vision" | "writing";
+export type ModelTask = "text" | "vision" | "writing" | "summary";
 
 export const MODEL_CHAINS: Record<ModelTask, readonly ModelChoice[]> = {
   /** Lead intake and spreadsheet mapping: structured JSON from text. */
@@ -32,11 +32,22 @@ export const MODEL_CHAINS: Record<ModelTask, readonly ModelChoice[]> = {
     { model: "gpt-5.6-luna", reasoningEffort: "none" },
     { model: "gpt-5.6-terra", reasoningEffort: "none" },
   ],
+  /**
+   * Task Grid "Catch me up": a short digest of a thread. GPT-6 Luna is
+   * OpenAI's cheapest current text model (half GPT-5.6 Luna's price) and
+   * plenty for a summary; GPT-5.6 Luna is the fallback. If both fail the
+   * screen shows the rule-based digest, so no pricier model is tried.
+   */
+  summary: [
+    { model: "gpt-6-luna", reasoningEffort: "none" },
+    { model: "gpt-5.6-luna", reasoningEffort: "none" },
+  ],
 };
 
 /**
  * Default prices in US dollars per million tokens, from OpenAI's pricing page
- * (developers.openai.com/api/docs/pricing, checked 10 Nov 2026). Cached input
+ * (developers.openai.com/api/docs/pricing, checked 10 Nov 2026; GPT-6 Luna
+ * added 25 Nov 2026). Cached input
  * is cheaper on OpenAI's side; the app prices every input token at the full
  * rate, so the rupee figures err slightly high.
  */
@@ -47,8 +58,18 @@ export const DEFAULT_MODEL_PRICING: readonly {
   output_usd_per_million: number;
 }[] = [
   { model_name: "gpt-5.6-luna", display_name: "GPT-5.6 Luna (OpenAI)", input_usd_per_million: 0.2, output_usd_per_million: 1.2 },
+  { model_name: "gpt-6-luna", display_name: "GPT-6 Luna (OpenAI)", input_usd_per_million: 0.1, output_usd_per_million: 0.5 },
+  // Billed per minute of audio: logged as one "input token" per second, so this is $0.0045 / 60 per second.
+  { model_name: "gpt-transcribe", display_name: "GPT Transcribe (OpenAI, per second of audio)", input_usd_per_million: 75, output_usd_per_million: 0 },
   { model_name: "gpt-5.6-terra", display_name: "GPT-5.6 Terra (OpenAI)", input_usd_per_million: 2, output_usd_per_million: 12 },
 ];
+
+/**
+ * Speech to text for Task Grid voice notes. gpt-transcribe ($0.0045 a minute)
+ * is OpenAI's current file transcription model; the cheaper gpt-4o-mini-transcribe
+ * shuts down on 26 Feb 2027, so it isn't used.
+ */
+export const TRANSCRIBE_MODEL = "gpt-transcribe";
 
 /** Longest the app waits for one model before trying the next one. */
 export const MODEL_TIMEOUT_MS = 25_000;
@@ -59,4 +80,7 @@ export const MAX_OUTPUT_TOKENS = {
   policy: 800,
   bulk: 6_000,
   followUp: 300,
+  taskSummary: 350,
+  copilotAnswer: 600,
+  copilotDrafts: 1_500,
 } as const;

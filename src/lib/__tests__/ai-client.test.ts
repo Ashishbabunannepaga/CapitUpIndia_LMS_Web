@@ -10,6 +10,14 @@ let usageCount = 0;
 let hourlyLimit: unknown = "5";
 
 vi.mock("server-only", () => ({}));
+
+let bindingKey: string | undefined;
+vi.mock("@opennextjs/cloudflare", () => ({
+  getCloudflareContext: () => {
+    if (bindingKey === undefined) throw new Error("no context");
+    return { env: { OPENAI_API_KEY: bindingKey } };
+  },
+}));
 // Outside a request, after() throws, so the client logs straight away.
 vi.mock("next/server", () => ({
   after: () => {
@@ -60,6 +68,7 @@ beforeEach(() => {
   inserted.length = 0;
   usageCount = 0;
   hourlyLimit = "5";
+  bindingKey = undefined;
   vi.stubEnv("OPENAI_API_KEY", "test-key");
   vi.stubGlobal("fetch", fetchMock);
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -72,6 +81,13 @@ afterEach(() => {
 });
 
 describe("generate", () => {
+  it("reads the key from the Cloudflare env when next dev leaves it out of process.env", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    bindingKey = "dev-vars-key";
+    const { isAiConfigured } = await load();
+    expect(isAiConfigured()).toBe(true);
+  });
+
   it("refuses clearly when no key is configured", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { generate, isAiConfigured, AiUnavailableError } = await load();

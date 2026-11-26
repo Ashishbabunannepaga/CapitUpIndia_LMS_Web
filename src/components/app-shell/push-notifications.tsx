@@ -7,6 +7,7 @@ import { removePushSubscription, savePushSubscription } from "@/app/(app)/notifi
 import { Button } from "@/components/ui/button";
 import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
+import { notificationHref } from "@/lib/notification-href";
 
 // Browser push notifications. The person allows them once per browser; the
 // browser then gets a push subscription (signed with our VAPID public key)
@@ -265,7 +266,7 @@ export function PushStatus({ publicKey, className }: { publicKey: string | null;
  * new bell item when this tab learns about it (the page refreshes itself
  * about once a minute). With server push, public/sw.js does this instead.
  */
-export function useLocalAlerts(items: { id: number; title: string; body: string; lead_id: number | null; read_at: string | null }[], serverPush: boolean) {
+export function useLocalAlerts(items: { id: number; title: string; body: string; lead_id: number | null; task_id?: number | null; read_at: string | null }[], serverPush: boolean) {
   const seen = useRef<number | null>(null);
   const newest = items.reduce((max, item) => Math.max(max, item.id), 0);
 
@@ -281,7 +282,7 @@ export function useLocalAlerts(items: { id: number; title: string; body: string;
       try {
         const reg = await navigator.serviceWorker?.getRegistration();
         for (const item of fresh.slice(0, 3)) {
-          const options = { body: item.body, icon: "/capitup-logo.png", tag: `notification-${item.id}`, data: { url: item.lead_id ? `/leads/${item.lead_id}` : "/my-day" } };
+          const options = { body: item.body, icon: "/capitup-logo.png", tag: `notification-${item.id}`, data: { url: notificationHref(item) } };
           if (reg) await reg.showNotification(item.title, options);
           else new Notification(item.title, options);
         }

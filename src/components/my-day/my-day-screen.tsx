@@ -46,6 +46,8 @@ import { pipelineAnalytics, type AgentPipeline } from "@/server/data/analytics";
 import type { Actor } from "@/server/data/actor";
 import type { DataContext } from "@/server/data/context";
 import { myDay, type TaskWithLead } from "@/server/data/my-day";
+import { pinnedTasks } from "@/server/data/work-tasks";
+import { PinnedTasks, type PinnedItem } from "@/components/work-tasks/pinned-tasks";
 import { cn } from "@/lib/utils";
 
 
@@ -383,7 +385,28 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
 
   // The right-hand overview uses the same scoping as everything else: an
   // agent's numbers cover their own leads, an admin's the whole team.
-  const [day, team, pipeline] = await Promise.all([myDay(ctx, profile), getTeam(), pipelineAnalytics(ctx, profile)]);
+  // Pinned tasks are the viewer's own; "view as agent" leaves them out.
+  const [day, team, pipeline, pinned] = await Promise.all([
+    myDay(ctx, profile),
+    getTeam(),
+    pipelineAnalytics(ctx, profile),
+    readOnly ? Promise.resolve([]) : pinnedTasks(ctx, profile),
+  ]);
+  const pinnedItems: PinnedItem[] = pinned.map((t) => ({
+    id: t.id,
+    title: t.title,
+    priority: t.priority,
+    status: t.status,
+    due_at: t.due_at,
+    tags: t.tags,
+    unread: t.unread,
+    role: t.role,
+    raised: t.raised,
+    created_by_name: t.created_by_name,
+    assignee_name: t.assignee_name,
+    lead_name: t.lead_name,
+    recent: t.recent,
+  }));
   const renewals = await withAgentNames(day.renewals);
   const overdueRenewals = await withAgentNames(day.overdueRenewals);
   const awaitingPolicy = await withAgentNames(day.awaitingPolicy);
@@ -456,18 +479,22 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
       {/* Hero: who, what today, how far through the checklist. */}
       <section className="hero-band mb-6 rounded-2xl px-6 py-6 text-white sm:px-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div className="min-w-0 space-y-2">
-            <p className="flex items-center gap-1.5 text-sm text-white/60">
-              {readOnly ? (
-                <>
-                  <Eye className="size-4" /> {profile.full_name}&apos;s My Day · view only
-                </>
-              ) : admin ? (
-                "My Day · team overview"
-              ) : (
-                "My Day"
-              )}
-            </p>
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-sm text-white/60">
+                {readOnly ? (
+                  <>
+                    <Eye className="size-4" /> {profile.full_name}&apos;s My Day · view only
+                  </>
+                ) : admin ? (
+                  "My Day · team overview"
+                ) : (
+                  "My Day"
+                )}
+              </p>
+              {/* Tasks an admin gave this person, pinned top right. */}
+              <PinnedTasks items={pinnedItems} currentUserId={profile.id} />
+            </div>
             <h1 className="text-[28px] leading-tight font-medium tracking-tight">{longDate}</h1>
             <p className="max-w-2xl text-sm text-white/75">
               {todaysWork === 0

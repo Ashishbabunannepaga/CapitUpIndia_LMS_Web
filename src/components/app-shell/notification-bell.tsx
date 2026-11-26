@@ -12,8 +12,9 @@ import { safeAction } from "@/lib/safe-action";
 import { cn } from "@/lib/utils";
 
 import { PushStatus, useLocalAlerts } from "./push-notifications";
+import { notificationHref } from "@/lib/notification-href";
 
-type Item = Pick<AppNotification, "id" | "kind" | "title" | "body" | "lead_id" | "created_at" | "read_at">;
+type Item = Pick<AppNotification, "id" | "kind" | "title" | "body" | "lead_id" | "task_id" | "created_at" | "read_at">;
 
 /** Renewal reminders and assignments delivered by the server, with an unread count and the device-alerts switch. */
 export function NotificationBell({
@@ -92,7 +93,7 @@ export function NotificationBell({
               {notifications.map((item) => (
                 <li key={item.id} className={cn(!item.read_at && "bg-accent/50")}>
                   <Link
-                    href={item.lead_id ? `/leads/${item.lead_id}` : "/my-day"}
+                    href={notificationHref(item)}
                     className="block px-3 py-2.5 hover:bg-accent"
                     onClick={() => {
                       setOpen(false);
