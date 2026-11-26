@@ -11,6 +11,17 @@ Parameters:
     Type: String
     Default: Ashishbabunannepaga/CapitUpIndia_LMS_Web
     Description: owner/name of the repository whose Actions may write backups.
+  GitHubOwnerId:
+    Type: String
+    Default: "121147500"
+    Description: >-
+      Numeric id of the repository owner. GitHub now puts owner and repository
+      ids in the sign-in subject (repo:owner@id/name@id:ref:...), so the trust
+      rule accepts that form as well as the plain one.
+  GitHubRepositoryId:
+    Type: String
+    Default: "1405344033"
+    Description: Numeric id of the repository (see GitHubOwnerId).
   RetentionDays:
     Type: Number
     Default: 90
@@ -93,8 +104,14 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                # Only workflow runs on main (the schedule runs there).
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:refs/heads/main
+                # Only workflow runs on main (the schedule runs there), in
+                # either subject format GitHub may send.
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${GitHubRepository}:ref:refs/heads/main
+                  - !Sub
+                    - repo:${Owner}@${GitHubOwnerId}/${Name}@${GitHubRepositoryId}:ref:refs/heads/main
+                    - Owner: !Select [0, !Split ["/", !Ref GitHubRepository]]
+                      Name: !Select [1, !Split ["/", !Ref GitHubRepository]]
       Policies:
         - PolicyName: write-d1-backups
           PolicyDocument:
