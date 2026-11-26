@@ -7,6 +7,7 @@ import { isAdmin, requireSession } from "@/lib/auth";
 import { addDays, businessDateOf, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
 import { getTeam } from "@/lib/leads";
 import { listCalendarEvents } from "@/server/data/events";
+import { calendarWorkTasks } from "@/server/data/work-tasks";
 
 export const metadata: Metadata = { title: "Calendar" };
 
@@ -16,12 +17,10 @@ export default async function CalendarPage() {
   const today = todayInBusinessTz();
 
   // Three months around today: enough to page a month back and forward.
-  const [events, team] = await Promise.all([
-    listCalendarEvents(ctx, profile, {
-      from: startOfBusinessDay(addDays(today, -45)),
-      to: startOfBusinessDay(addDays(today, 75)),
-      limit: 1000,
-    }),
+  const range = { from: startOfBusinessDay(addDays(today, -45)), to: startOfBusinessDay(addDays(today, 75)) };
+  const [events, gridTasks, team] = await Promise.all([
+    listCalendarEvents(ctx, profile, { ...range, limit: 1000 }),
+    calendarWorkTasks(ctx, profile, range),
     admin ? getTeam() : Promise.resolve([]),
   ]);
 
@@ -43,6 +42,26 @@ export default async function CalendarPage() {
     isSystem: event.is_system_generated,
     agentName: event.assigned_agent_id ? (names.get(event.assigned_agent_id) ?? null) : null,
   }));
+  // Task Grid tasks with a due time: the ones this person is on (theirs and ones they gave).
+  for (const task of gridTasks) {
+    entries.push({
+      id: task.id,
+      title: task.title,
+      date: businessDateOf(task.due_at!),
+      timestamp: task.due_at!,
+      leadId: task.lead_id,
+      leadName: task.lead_name,
+      kind: "task",
+      notes: "",
+      assigneeId: task.assignee_id,
+      isRenewal: false,
+      categories: ["grid_task"],
+      isCompleted: task.status === "done",
+      isSystem: false,
+      agentName: task.assignee_id === profile.id ? "You" : task.assignee_name,
+      gridTask: { priority: task.priority, status: task.status, personal: task.kind === "personal" },
+    });
+  }
 
   const agents = team.filter((m) => m.is_active).map(({ id, full_name }) => ({ id, full_name }));
 

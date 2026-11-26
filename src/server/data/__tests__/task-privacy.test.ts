@@ -4,7 +4,7 @@ vi.mock("server-only", () => ({}));
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createUser } from "../users";
-import { createWorkTask, getTaskThread, listTasks, postTaskMessage, updateWorkTask } from "../work-tasks";
+import { calendarWorkTasks, createWorkTask, getTaskThread, listTasks, postTaskMessage, updateWorkTask } from "../work-tasks";
 import { testWorld } from "./helpers";
 
 // A task's conversation is only for the people on it: the one who gave it and
@@ -35,5 +35,14 @@ describe("task privacy", () => {
     const others = (await listTasks(w.ctx, w.amit)).map((t) => t.id);
     expect(others).not.toContain(task.id);
     expect((await listTasks(w.ctx, w.admin)).map((t) => t.id)).toContain(task.id);
+  });
+
+  it("puts due tasks on the calendar only for the people on them", async () => {
+    const due = new Date(Date.now() + 86_400_000).toISOString();
+    const task = await createWorkTask(w.ctx, w.admin, { title: "Calendar KYC", assignee_id: w.neha.id, due_at: due });
+    const range = { from: new Date(Date.now() - 86_400_000).toISOString(), to: new Date(Date.now() + 3 * 86_400_000).toISOString() };
+    expect((await calendarWorkTasks(w.ctx, w.neha, range)).map((t) => t.id)).toContain(task.id);
+    expect((await calendarWorkTasks(w.ctx, w.admin, range)).map((t) => t.id)).toContain(task.id);
+    expect((await calendarWorkTasks(w.ctx, w.amit, range)).map((t) => t.id)).not.toContain(task.id);
   });
 });

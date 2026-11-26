@@ -1164,3 +1164,30 @@ export async function myOpenTasks(ctx: DataContext, actor: Actor, limit = 30) {
     .orderBy(asc(workTasks.due_at))
     .limit(limit);
 }
+
+/**
+ * Task Grid tasks with a due time in a range, for the Calendar: only the ones
+ * the caller may see (their own, and ones they gave), like everywhere else.
+ */
+export async function calendarWorkTasks(ctx: DataContext, actor: Actor, range: { from: string; to: string }, limit = 500) {
+  return ctx.db
+    .select({
+      id: workTasks.id,
+      title: workTasks.title,
+      priority: workTasks.priority,
+      status: workTasks.status,
+      due_at: workTasks.due_at,
+      kind: workTasks.kind,
+      lead_id: workTasks.lead_id,
+      lead_name: leads.client_name,
+      assignee_id: workTasks.assignee_id,
+      assignee_name: assignee.full_name,
+    })
+    .from(workTasks)
+    .leftJoin(leads, eq(leads.id, workTasks.lead_id))
+    .leftJoin(assignee, eq(assignee.id, workTasks.assignee_id))
+    .where(and(visibleTo(actor), isNotNull(workTasks.due_at), gte(workTasks.due_at, range.from), lt(workTasks.due_at, range.to)))
+    .orderBy(asc(workTasks.due_at))
+    .limit(limit);
+}
+
