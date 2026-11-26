@@ -12,6 +12,7 @@ import {
   clientAutoReply,
   getWhatsAppLeadDraft,
   handleWhatsAppReply,
+  looksLikeClientDetails,
   normalizeWhatsAppPhone,
   sendWhatsAppAlerts,
   setWhatsApp,
@@ -226,6 +227,15 @@ describe("WhatsApp messages from the team", () => {
     expect(await getWhatsAppLeadDraft(w.ctx, w.admin, id!, at)).toBeNull();
     expect(await getWhatsAppLeadDraft(w.ctx, w.amit, id!, new Date("2026-12-04T06:00:00Z"))).toBeNull();
     expect(await getWhatsAppLeadDraft(w.ctx, w.amit, "not-an-id", at)).toBeNull();
+  });
+
+  it("spots pasted client details but leaves questions and short notes alone", () => {
+    const pasted = "Hi, this is Anil Mehta from Kaveri Logistics. We need GPA and WC cover. Please call me on 99887 76655. Thanks";
+    expect(looksLikeClientDetails(pasted)).toBe(true);
+    expect(looksLikeClientDetails("Mail anil@kaverilogistics.example about the Kaveri Logistics GPA quote we discussed on the call today")).toBe(true);
+    expect(looksLikeClientDetails("Can you tell me which renewals are due this week for 99887 76655 and the other clients?")).toBe(false);
+    expect(looksLikeClientDetails("call 99887 76655")).toBe(false);
+    expect(looksLikeClientDetails("What is overdue for me this week, and which of my leads have not been touched in a while")).toBe(false);
   });
 
   it("says so when no client is found or reading is off", async () => {

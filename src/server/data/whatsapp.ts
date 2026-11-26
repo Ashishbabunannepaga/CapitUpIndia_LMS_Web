@@ -2,7 +2,9 @@ import "server-only";
 
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
+import type { BusinessType, PolicyProduct } from "@/lib/database.types";
 import { isIsoDate } from "@/lib/dates";
+import { calendarProductLabel } from "@/lib/domain";
 import { dueDateToIso } from "@/lib/work-tasks";
 
 import { appSettings, notifications, profiles, whatsappInbound, whatsappLeadDrafts, workTasks } from "../db/schema";
@@ -187,7 +189,7 @@ export const WHATSAPP_HELP = [
   "- Swipe to reply on an alert to post in that task's chat. Text or a voice note both work.",
   '- Start with "todo:" to add your own task, or a name to give one, like "Sravani: send the GMC quote by Friday".',
   '- Ask anything else, like "what is overdue?" or "my renewals this week".',
-  '- Forward a client\'s message, or send a photo or PDF, to get a lead draft. Or start with "lead:".',
+  '- Forward or paste a client\'s message, or send a photo or PDF, to get a lead draft. Or start with "lead:".',
   "- Send a voice note to do any of these by voice.",
 ].join("\n");
 
@@ -278,7 +280,7 @@ export async function handleWhatsAppReply(ctx: DataContext, reply: WhatsAppReply
 
   if (taskId) return postToTask(ctx, person, taskId, text, voice);
 
-  if (text && (reply.forwarded || LEAD_WORDS.test(lower))) {
+  if (text && (reply.forwarded || LEAD_WORDS.test(lower) || looksLikeClientDetails(text))) {
     const body = reply.forwarded ? text : text.replace(LEAD_WORDS, "").trim() || text;
     return leadFromSource(ctx, person, { kind: "text", text: body.slice(0, 8000) }, helpers, at);
   }
@@ -381,6 +383,15 @@ async function createFromMessage(ctx: DataContext, person: Actor, text: string, 
     .join("\n");
 }
 
+/**
+ * A pasted client message (not forwarded): long, carries a phone number or an
+ * email, and isn't a question to the copilot. Task commands are matched earlier.
+ */
+export function looksLikeClientDetails(text: string): boolean {
+  if (text.length < 80 || /\?\s*$/.test(text)) return false;
+  return /(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/.test(text) || /[\w.+-]+@[\w-]+\.[\w.]+/.test(text);
+}
+
 /** Drafts older than this can't be opened and are pruned. */
 const DRAFT_DAYS = 7;
 
@@ -409,11 +420,11 @@ async function leadFromSource(ctx: DataContext, person: Actor, source: LeadSourc
     return "I couldn't find a client in that. Forward the client's message, or send a clearer photo or PDF.";
   }
   const id = await saveWhatsAppLeadDraft(ctx, person, source.kind, reading, at);
-  const product = field("policy_product");
+  const product = calendarProductLabel(field("policy_product") as PolicyProduct, field("business_type") as BusinessType);
   const contact = [field("poc_name"), field("poc_contact_number") || field("poc_email_id")].filter(Boolean).join(", ");
   return [
     `Lead draft ready: ${field("client_name") || "client name not found"}`,
-    product && product !== "Not Specified" ? `Product: ${product}` : "",
+    product !== "Renewal" ? `Product: ${product}` : "",
     contact ? `Contact: ${contact}` : "",
     reading.dropped.length ? `Left out: ${reading.dropped.join("; ")}` : "",
     `Check and save it here (nothing is saved until you do): ${(helpers.appUrl ?? "").replace(/\/$/, "")}/leads/new?wa=${id}`,
