@@ -12,6 +12,7 @@
 // blocks other queries, so the nightly job runs it at night (India time).
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { rewriteUnistr } from "./sql-unistr.mjs";
 
 const [output, idArg] = process.argv.slice(2);
 const token = process.env.CLOUDFLARE_API_TOKEN;
@@ -60,7 +61,9 @@ const signed = result.result?.signed_url;
 if (!signed) throw new Error("D1 export finished without a download link");
 const dump = await fetch(signed);
 if (!dump.ok) throw new Error(`Downloading the export failed: HTTP ${dump.status}`);
-const sql = Buffer.from(await dump.arrayBuffer());
-if (sql.length === 0) throw new Error("The export is empty");
+const raw = Buffer.from(await dump.arrayBuffer()).toString("utf8");
+if (raw.length === 0) throw new Error("The export is empty");
+// Plain literals instead of unistr(), so older sqlite3 tools can restore it.
+const sql = Buffer.from(rewriteUnistr(raw), "utf8");
 writeFileSync(output, sql);
 console.log(`Exported D1 ${databaseId} to ${output} (${(sql.length / 1024).toFixed(0)} KB).`);
