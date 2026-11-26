@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   AlarmClock,
+  ListChecks,
   HeartPulse,
   History,
   Activity,
@@ -121,6 +122,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/ai-usage",
         icon: IndianRupee,
         description: "AI calls, tokens and INR cost by agent and feature.",
+      },
+      {
+        title: "Playbooks",
+        href: "/admin/playbooks",
+        icon: ListChecks,
+        description: "Renewal step chains that become tasks for the lead's agent as each date comes up.",
       },
       {
         title: "Task rules",

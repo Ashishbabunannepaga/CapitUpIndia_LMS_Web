@@ -172,7 +172,10 @@ export async function deliverTaskDueReminders(ctx: DataContext, at: Date = new D
       for (const row of rows) tagsByTask.set(row.task_id, [...(tagsByTask.get(row.task_id) ?? []), row.tag]);
     }
   }
-  const people = await ctx.db.select({ id: profiles.id, full_name: profiles.full_name, is_active: profiles.is_active }).from(profiles);
+  const people = await ctx.db
+    .select({ id: profiles.id, full_name: profiles.full_name, is_active: profiles.is_active, role: profiles.role })
+    .from(profiles);
+  const admins = people.filter((p) => p.is_active && p.role === "ADMIN");
   const byId = new Map(people.map((p) => [p.id, p]));
   const stamp = at.toISOString();
   let sent = 0;
@@ -217,11 +220,15 @@ export async function deliverTaskDueReminders(ctx: DataContext, at: Date = new D
       if (assigneeActive) notify(task.assignee_id, `Overdue by ${lateText(late)}: ${task.title}`, `${meta}. Update the status or post what's holding it up.`);
       line(`Automatic nudge: overdue by ${lateText(late)}.`);
     } else {
-      if (giver?.is_active && giver.id !== task.assignee_id) {
-        notify(giver.id, `Still not done: ${task.title}`, `${assignee?.full_name ?? "The assignee"} is ${lateText(late)} past the due time (${meta}).`);
+      // A task nobody gave (a renewal playbook step) escalates to the admins.
+      const told = task.created_by ? (giver?.is_active ? [giver] : []) : admins;
+      const names = task.created_by ? (giver?.full_name ?? "The person who gave it") : "The admins";
+      for (const person of told) {
+        if (person.id === task.assignee_id) continue;
+        notify(person.id, `Still not done: ${task.title}`, `${assignee?.full_name ?? "The assignee"} is ${lateText(late)} past the due time (${meta}).`);
       }
-      if (assigneeActive) notify(task.assignee_id, `Overdue by ${lateText(late)}: ${task.title}`, `${meta}. ${giver?.full_name ?? "The person who gave it"} has been told.`);
-      line(`Escalated: overdue by ${lateText(late)}, ${giver?.full_name ?? "the giver"} notified.`);
+      if (assigneeActive) notify(task.assignee_id, `Overdue by ${lateText(late)}: ${task.title}`, `${meta}. ${names} ${told.length === 1 ? "has" : "have"} been told.`);
+      line(`Escalated: overdue by ${lateText(late)}, ${task.created_by ? (giver?.full_name ?? "the giver") : "admins"} notified.`);
     }
 
     // Claim the step first so two overlapping runs never send it twice.

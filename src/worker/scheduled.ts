@@ -16,6 +16,7 @@ import { generate } from "@/lib/ai/client";
 import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
 import { dayPlanPrompt, teamRiskPrompt } from "@/lib/ai/prompts";
 import { sendDayPlans, type PlanWriter } from "@/server/data/day-plan";
+import { runPlaybooks } from "@/server/data/playbooks";
 import { deliverTaskDueReminders } from "@/server/data/task-reminders";
 import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
@@ -94,6 +95,17 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
     } catch (error) {
       console.error("Auto-renewal roll failed", { message: message(error) });
       await recordAppError(ctx, { source: "job", path: "Auto renewals", message: message(error) }, at);
+    }
+  }
+
+  // Hourly: renewal playbook steps whose date has come become tasks.
+  if (minute === 17) {
+    try {
+      const steps = await runPlaybooks(ctx, at);
+      if (steps > 0) console.log(`Created ${steps} renewal playbook task(s).`);
+    } catch (error) {
+      console.error("Renewal playbooks failed", { message: message(error) });
+      await recordAppError(ctx, { source: "job", path: "Renewal playbooks", message: message(error) }, at);
     }
   }
 

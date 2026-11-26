@@ -695,6 +695,68 @@ export const businessHolidays = sqliteTable("business_holidays", {
   created_at: createdAt(),
 });
 
+/**
+ * Renewal playbooks: a chain of steps (day offsets from the renewal date) that
+ * becomes Task Grid tasks for the lead's agent as each step's date comes up.
+ * Created switched off; an admin turns each one on (Admin > Playbooks).
+ */
+export const PLAYBOOK_SCOPES = ["any", "Corporate", "Retail"] as const;
+export const taskPlaybooks = sqliteTable(
+  "task_playbooks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    /** Which leads it runs for, by business type. */
+    applies_to: text("applies_to", { enum: PLAYBOOK_SCOPES }).notNull().default("any"),
+    active: integer("active", { mode: "boolean" }).notNull().default(false),
+    created_at: createdAt(),
+  },
+  (t) => [
+    check("task_playbooks_name_len", sql`length(trim(${t.name})) between 1 and 80`),
+    check("task_playbooks_scope", sql`${t.applies_to} in (${inList(PLAYBOOK_SCOPES)})`),
+  ],
+);
+
+export const taskPlaybookSteps = sqliteTable(
+  "task_playbook_steps",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    playbook_id: integer("playbook_id")
+      .notNull()
+      .references(() => taskPlaybooks.id, { onDelete: "cascade" }),
+    /** Due this many days from the renewal date (negative: before it). */
+    day_offset: integer("day_offset").notNull(),
+    /** {client} is replaced with the lead's client name. */
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    priority: text("priority", { enum: WORK_TASK_PRIORITIES }).notNull().default("P2"),
+    tags: text("tags").notNull().default(""),
+  },
+  (t) => [
+    index("task_playbook_steps_playbook_idx").on(t.playbook_id, t.day_offset),
+    check("task_playbook_steps_offset", sql`${t.day_offset} between -365 and 60`),
+    check("task_playbook_steps_title_len", sql`length(trim(${t.title})) between 1 and 200`),
+    check("task_playbook_steps_priority", sql`${t.priority} in (${inList(WORK_TASK_PRIORITIES)})`),
+  ],
+);
+
+/** One row per step, lead and renewal cycle: the task a playbook already created. */
+export const playbookTasks = sqliteTable(
+  "playbook_tasks",
+  {
+    step_id: integer("step_id")
+      .notNull()
+      .references(() => taskPlaybookSteps.id, { onDelete: "cascade" }),
+    lead_id: integer("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    renewal_date: text("renewal_date").notNull(),
+    task_id: integer("task_id").references(() => workTasks.id, { onDelete: "set null" }),
+    created_at: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.step_id, t.lead_id, t.renewal_date] })],
+);
+
 /** How far each person has read a task's thread, for unread badges. */
 export const workTaskReads = sqliteTable(
   "work_task_reads",
