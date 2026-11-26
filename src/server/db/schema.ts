@@ -556,6 +556,10 @@ export const workTasks = sqliteTable(
     seen_at: text("seen_at"),
     /** Last time an admin nudged the assignee about it. */
     nudged_at: text("nudged_at"),
+    /** Due-time reminder ladder: 0 none yet, 1 due soon, 2 due now, 3 overdue nudge, 4 escalated to the giver. */
+    reminder_stage: integer("reminder_stage").notNull().default(0),
+    /** The due_at the stage above belongs to; a new due time starts the ladder again. */
+    reminder_for: text("reminder_for"),
     completed_at: text("completed_at"),
     last_activity_at: text("last_activity_at").notNull().default(now),
     created_at: createdAt(),
