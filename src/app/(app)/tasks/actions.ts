@@ -8,7 +8,7 @@ import { AiRateLimitError, AiUnavailableError, generate, transcribe } from "@/li
 import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
 import { taskSummaryPrompt } from "@/lib/ai/prompts";
 import { getSession } from "@/lib/auth";
-import { formatDateTime } from "@/lib/dates";
+import { addDays, formatDateTime, todayInBusinessTz } from "@/lib/dates";
 import { dueDateToIso, suggestDueFromRenewal, threadDigest, type DueSuggestion } from "@/lib/work-tasks";
 import * as tasks from "@/server/data/work-tasks";
 
@@ -72,6 +72,7 @@ export async function createWorkTaskAction(formData: FormData): Promise<TaskActi
       tags: f.tags,
       autoTag: formData.get("auto_tag") !== "off",
       approval: formData.get("approval") === "on",
+      repeat: String(formData.get("repeat") ?? "none"),
     });
     done();
     return { ok: true, id: task.id };
@@ -95,6 +96,7 @@ export async function updateWorkTaskAction(id: number, formData: FormData): Prom
       assignee_id: f.assignee || undefined,
       lead_id: f.lead_id,
       tags: f.tags,
+      repeat: formData.has("repeat") ? String(formData.get("repeat")) : undefined,
     });
     done();
     return { ok: true };
@@ -310,4 +312,12 @@ export async function deleteTaskTemplateAction(id: number): Promise<TaskActionRe
 export async function decideApprovalAction(id: number, decision: string, note: string): Promise<TaskActionResult> {
   if (decision !== "approved" && decision !== "rejected") return { ok: false, error: "Pick approve or reject." };
   return run((s) => tasks.decideApproval(s.ctx, s.actor, Number(id), decision, String(note ?? "")));
+}
+
+/** The assignee snoozes a task's reminders ("I'm on it") for some minutes, or until 09:00 tomorrow (India); 0 wakes it. */
+export async function snoozeWorkTaskAction(id: number, minutes: number | "tomorrow"): Promise<TaskActionResult> {
+  let until: Date | null = null;
+  if (minutes === "tomorrow") until = new Date(dueDateToIso(addDays(todayInBusinessTz(), 1), "09:00"));
+  else if (Number(minutes) > 0) until = new Date(Date.now() + Math.round(Number(minutes)) * 60_000);
+  return run((s) => tasks.snoozeWorkTask(s.ctx, s.actor, Number(id), until));
 }

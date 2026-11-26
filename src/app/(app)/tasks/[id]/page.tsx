@@ -5,6 +5,8 @@ import { ArrowLeft, Eye, Link2 } from "lucide-react";
 
 import { ApprovalBadge, DueChip, PriorityBadge, RaisedBadge, TagChips, TaskStatusBadge } from "@/components/work-tasks/task-badges";
 import { ApprovalPanel } from "@/components/work-tasks/task-approval";
+import { SnoozeButtons } from "@/components/work-tasks/task-snooze";
+import { TASK_REPEAT_LABELS } from "@/lib/work-tasks";
 import { TaskEditor } from "@/components/work-tasks/task-editor";
 import { TemplateDialog } from "@/components/work-tasks/task-templates";
 import {
@@ -107,6 +109,9 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
               <StatusButtons taskId={task.id} status={task.status} />
             </section>
           ) : null}
+          {task.assignee_id === actor.id && task.status !== "done" && task.due_at ? (
+            <SnoozeButtons taskId={task.id} snoozedUntil={task.snoozed_until} />
+          ) : null}
 
           <section className="surface divide-y px-4 py-2">
             {task.kind === "assigned" ? (
@@ -133,6 +138,7 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
                 "—"
               )}
             </Row>
+            {task.repeat !== "none" ? <Row label="Repeats">{TASK_REPEAT_LABELS[task.repeat]}</Row> : null}
             <Row label="Created">{formatDateTime(task.created_at)}</Row>
             {task.completed_at ? <Row label="Done">{formatDateTime(task.completed_at)}</Row> : null}
           </section>
@@ -157,6 +163,7 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
                     assignee_id: task.assignee_id,
                     tags: task.tags,
                     lead: task.lead_id && task.lead_name ? { id: task.lead_id, client_name: task.lead_name } : null,
+                    repeat: task.repeat,
                   }}
                 />
               ) : null}

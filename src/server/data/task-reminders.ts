@@ -23,6 +23,7 @@ import type { DataContext } from "./context";
 // "due soon" and "due now" always go, since the person chose that time.
 // Personal to-dos stop at step 3. Blocked and done tasks are left alone.
 // Changing the due time starts the ladder again (reminder_for tracks it).
+// A snoozed task (snoozed_until) gets nothing until the snooze ends.
 // Admins can set other timings per tag (task_sla_rules, Admin > Task rules).
 // Sundays and business_holidays pause nudges and escalations, and a day off
 // between the due time and now does not count toward lateness.
@@ -147,6 +148,8 @@ export async function deliverTaskDueReminders(ctx: DataContext, at: Date = new D
         inArray(workTasks.status, ["todo", "in_progress"]),
         isNotNull(workTasks.due_at),
         lte(workTasks.due_at, horizon),
+        // Snoozed by the assignee ("I'm on it"): wait until the snooze ends.
+        or(isNull(workTasks.snoozed_until), lte(workTasks.snoozed_until, at.toISOString())),
         // Not finished with this due time yet.
         // (personal to-dos stop at the nudge, so they leave the queue there).
         or(

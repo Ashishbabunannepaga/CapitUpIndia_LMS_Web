@@ -1,4 +1,4 @@
-import { addDays, businessDateTimeToIso, daysBetween, todayInBusinessTz } from "@/lib/dates";
+import { addDays, businessDateOf, businessDateTimeToIso, daysBetween, todayInBusinessTz } from "@/lib/dates";
 
 // Task Grid vocabulary and the small rules every screen shares. Values match
 // the database CHECKs in src/server/db/schema.ts (work_tasks).
@@ -192,4 +192,41 @@ export function threadDigest(
   if (last) lines.push(`- Latest, ${last.author_name}: "${last.body.trim().slice(0, 160)}"`);
   lines.push(`- ${said.length} message${said.length === 1 ? "" : "s"} in the thread.`);
   return lines.join("\n");
+}
+
+export const TASK_REPEATS = ["none", "daily", "weekly", "monthly"] as const;
+export type TaskRepeat = (typeof TASK_REPEATS)[number];
+export const TASK_REPEAT_LABELS: Record<TaskRepeat, string> = {
+  none: "Doesn't repeat",
+  daily: "Every day",
+  weekly: "Every week",
+  monthly: "Every month",
+};
+
+export function isTaskRepeat(value: unknown): value is TaskRepeat {
+  return typeof value === "string" && (TASK_REPEATS as readonly string[]).includes(value);
+}
+
+/** One step on from a YYYY-MM-DD date; a month on from 31 Jan is 28/29 Feb. */
+function stepDate(date: string, repeat: Exclude<TaskRepeat, "none">): string {
+  if (repeat === "daily") return addDays(date, 1);
+  if (repeat === "weekly") return addDays(date, 7);
+  const [y, m, d] = date.split("-").map(Number);
+  const year = m === 12 ? y + 1 : y;
+  const month = m === 12 ? 1 : m + 1;
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+}
+
+/**
+ * The next due time of a repeating task: the same time of day (India), one
+ * step on, and moved on again until it is in the future, so finishing late
+ * never creates a task that is already overdue.
+ */
+export function nextRepeatDue(dueAt: string, repeat: Exclude<TaskRepeat, "none">, now: Date = new Date()): string {
+  const start = businessDateOf(dueAt);
+  let date = stepDate(start, repeat);
+  const at = (d: string) => new Date(Date.parse(dueAt) + daysBetween(start, d) * 86_400_000);
+  for (let i = 0; i < 500 && at(date) <= now; i += 1) date = stepDate(date, repeat);
+  return at(date).toISOString();
 }

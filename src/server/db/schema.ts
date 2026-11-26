@@ -532,6 +532,8 @@ export const notifications = sqliteTable(
 // an agent a task and both talk it through in its thread, or anyone keeps
 // their own to-do list. New tables only, so nothing touches `leads`.
 
+export const WORK_TASK_REPEATS = ["none", "daily", "weekly", "monthly"] as const;
+
 export const workTasks = sqliteTable(
   "work_tasks",
   {
@@ -566,6 +568,10 @@ export const workTasks = sqliteTable(
     /** The admin who decided (profile id; kept as text so it survives their removal). */
     approval_by: text("approval_by"),
     approval_at: text("approval_at"),
+    /** Repeats after it is done: the next one is created with the due date moved on. */
+    repeat: text("repeat", { enum: WORK_TASK_REPEATS }).notNull().default("none"),
+    /** The assignee paused its reminders until this time (ISO UTC). */
+    snoozed_until: text("snoozed_until"),
     completed_at: text("completed_at"),
     last_activity_at: text("last_activity_at").notNull().default(now),
     created_at: createdAt(),

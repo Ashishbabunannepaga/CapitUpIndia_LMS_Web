@@ -7,10 +7,13 @@ import type { BatchItem } from "drizzle-orm/batch";
 import { addDays, startOfBusinessDay, todayInBusinessTz } from "@/lib/dates";
 import {
   isTaskPriority,
+  isTaskRepeat,
   isTaskStatus,
+  nextRepeatDue,
   parseTags,
   tagsFromLead,
   TASK_PRIORITY_LABELS,
+  TASK_REPEAT_LABELS,
   TASK_STATUS_LABELS,
   type TaskPriority,
   type TaskStatus,
@@ -26,12 +29,14 @@ import { AccessDeniedError, InvalidInputError } from "./errors";
 //
 // Who sees what (enforced here, never in the browser):
 //   * A personal task is its owner's alone. Not even admins see it.
-//   * An assigned task is seen by its assignee, the person who gave it, and
-//     every admin. Admins give tasks to anyone; an agent keeps their own
-//     to-dos and can raise a task to an admin (`raised`), but never puts work
-//     on another agent.
-//   * The giver and admins edit an assigned task; its assignee moves its
-//     status and talks in the thread. Anyone who sees a task can write in it.
+//   * An assigned task (and its conversation) is seen only by its assignee
+//     and the person who gave it: not other agents, not other admins. A task
+//     nobody gave (a renewal playbook step) is also seen by the admins, since
+//     it escalates to them. Admins give tasks to anyone; an agent keeps their
+//     own to-dos and can raise a task to an admin (`raised`), but never puts
+//     work on another agent.
+//   * The giver edits an assigned task; its assignee moves its status and
+//     talks in the thread. Anyone who sees a task can write in it.
 
 export type WorkTask = typeof workTasks.$inferSelect;
 export type TaskMessage = typeof workTaskMessages.$inferSelect;
@@ -62,13 +67,18 @@ const assignee = alias(profiles, "assignee");
 function visibleTo(actor: Actor): SQL {
   return or(
     eq(workTasks.assignee_id, actor.id),
-    and(eq(workTasks.kind, "assigned"), isAdmin(actor) ? sql`1` : eq(workTasks.created_by, actor.id)),
+    and(
+      eq(workTasks.kind, "assigned"),
+      // Only the two people on a task see it. Admins also see tasks nobody
+      // gave (renewal playbook steps), since those escalate to them.
+      isAdmin(actor) ? or(eq(workTasks.created_by, actor.id), isNull(workTasks.created_by)) : eq(workTasks.created_by, actor.id),
+    ),
   )!;
 }
 
 function canEdit(actor: Actor, task: WorkTask): boolean {
   if (task.kind === "personal") return task.assignee_id === actor.id;
-  return isAdmin(actor) || task.created_by === actor.id;
+  return task.created_by === actor.id || (task.created_by === null && isAdmin(actor));
 }
 
 function canSetStatus(actor: Actor, task: WorkTask): boolean {
@@ -246,6 +256,8 @@ export type NewWorkTask = {
   autoTag?: boolean;
   /** An agent asks the admin to approve or reject (only when raising to an admin). */
   approval?: boolean;
+  /** none, daily, weekly or monthly; a repeating task needs a due date. */
+  repeat?: string;
 };
 
 async function checkLead(ctx: DataContext, actor: Actor, leadId: number | null | undefined) {
@@ -277,6 +289,13 @@ export async function taskRecipients(ctx: DataContext, actor: Actor): Promise<{ 
     .orderBy(asc(profiles.full_name));
   const me = rows.find((r) => r.id === actor.id) ?? { id: actor.id, full_name: actor.full_name, role: actor.role };
   return [me, ...rows.filter((r) => r.id !== actor.id)];
+}
+
+function checkRepeat(repeat: string | undefined, dueAt: string | null) {
+  const value = repeat ?? "none";
+  if (!isTaskRepeat(value)) throw new InvalidInputError("Pick how often it repeats.");
+  if (value !== "none" && !dueAt) throw new InvalidInputError("A repeating task needs a due date.");
+  return value;
 }
 
 function checkText(input: { title?: string; description?: string; priority?: string; due_at?: string | null }) {
@@ -314,6 +333,7 @@ function dueText(dueAt: string | null): string {
 /** A task for the caller (personal) or, for admins, given to someone (assigned). */
 export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewWorkTask): Promise<WorkTask> {
   const fields = checkText(input);
+  const repeat = checkRepeat(input.repeat, fields.due_at);
   const member = await checkAssignee(ctx, actor, input.assignee_id || actor.id);
   const lead = await checkLead(ctx, actor, input.lead_id);
   const tags = parseTags([...parseTags(input.tags ?? ""), ...(lead && input.autoTag !== false ? tagsFromLead(lead) : [])]);
@@ -328,6 +348,7 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
       kind,
       raised,
       approval,
+      repeat,
       assignee_id: member.id,
       created_by: actor.id,
       created_by_name: actor.full_name,
@@ -455,6 +476,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
     priority: changes.priority ?? task.priority,
     due_at: changes.due_at === undefined ? task.due_at : changes.due_at,
   });
+  const repeat = checkRepeat(changes.repeat ?? task.repeat, fields.due_at);
   const lead = changes.lead_id === undefined ? undefined : await checkLead(ctx, actor, changes.lead_id);
   let member: Actor | null = null;
   if (changes.assignee_id && changes.assignee_id !== task.assignee_id) {
@@ -463,6 +485,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
   }
   const values = {
     ...fields,
+    repeat,
     ...(lead !== undefined ? { lead_id: lead?.id ?? null } : {}),
     ...(member
       ? {
@@ -494,6 +517,7 @@ export async function updateWorkTask(ctx: DataContext, actor: Actor, id: number,
   if (fields.priority !== task.priority) notes.push(`priority to ${TASK_PRIORITY_LABELS[fields.priority]}`);
   if (fields.due_at !== task.due_at)
     notes.push(fields.due_at ? `due date to ${dueText(fields.due_at).replace(/^Due /, "")}` : "no deadline");
+  if (repeat !== task.repeat) notes.push(`repeat to ${TASK_REPEAT_LABELS[repeat].toLowerCase()}`);
 
   const writes: BatchItem<"sqlite">[] = [
     ctx.db.update(workTasks).set(values).where(eq(workTasks.id, id)),
@@ -612,6 +636,103 @@ export async function setWorkTaskStatus(
           ),
       );
     }
+  }
+  await ctx.db.batch(writes as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  if (status === "done" && task.repeat !== "none" && task.due_at) await createNextOccurrence(ctx, actor, task);
+}
+
+/**
+ * A repeating task was done: create the next one (same people, lead, tags
+ * and time of day) and take the repeat off the finished one, so reopening and
+ * finishing it again never makes a second copy.
+ */
+async function createNextOccurrence(ctx: DataContext, actor: Actor, task: WorkTask, now: Date = new Date()): Promise<void> {
+  if (task.repeat === "none" || !task.due_at) return;
+  // Claim: only the run that takes the repeat off creates the next one.
+  const claimed = await ctx.db
+    .update(workTasks)
+    .set({ repeat: "none" })
+    .where(and(eq(workTasks.id, task.id), eq(workTasks.repeat, task.repeat)))
+    .returning({ id: workTasks.id });
+  if (!claimed.length) return;
+  const due = nextRepeatDue(task.due_at, task.repeat, now);
+  const [next] = await ctx.db
+    .insert(workTasks)
+    .values({
+      kind: task.kind,
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      due_at: due,
+      repeat: task.repeat,
+      assignee_id: task.assignee_id,
+      created_by: task.created_by,
+      created_by_name: task.created_by_name,
+      raised: task.raised,
+      lead_id: task.lead_id,
+    })
+    .returning({ id: workTasks.id });
+  const tags = await ctx.db.select({ tag: workTaskTags.tag }).from(workTaskTags).where(eq(workTaskTags.task_id, task.id));
+  const label = TASK_REPEAT_LABELS[task.repeat].toLowerCase();
+  const writes: BatchItem<"sqlite">[] = [
+    ctx.db.insert(workTaskMessages).values({
+      task_id: next.id,
+      author_id: null,
+      author_name: "Repeat",
+      kind: "system",
+      body: `Repeats ${label}. Created when the previous one was done.`,
+    }),
+    ctx.db.insert(workTaskMessages).values({
+      task_id: task.id,
+      author_id: null,
+      author_name: "Repeat",
+      kind: "system",
+      body: `Next one created, ${dueText(due).toLowerCase()}.`,
+    }),
+  ];
+  if (tags.length) writes.push(ctx.db.insert(workTaskTags).values(tags.map((t) => ({ task_id: next.id, tag: t.tag }))));
+  if (task.kind === "assigned" && task.assignee_id !== actor.id) {
+    writes.push(ctx.db.insert(notifications).values(taskNotification(task.assignee_id, next.id, task.lead_id, `Repeating task: ${task.title}`, `${task.priority} · ${dueText(due)}`)));
+  }
+  await ctx.db.batch(writes as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+}
+
+export const SNOOZE_MAX_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * The assignee pauses a task's reminders, nudges and escalation until a time
+ * ("I'm on it"). Passing null wakes it again. For an assigned task the giver
+ * sees a line in the thread.
+ */
+export async function snoozeWorkTask(ctx: DataContext, actor: Actor, id: number, until: Date | null, now: Date = new Date()): Promise<void> {
+  const task = await findVisible(ctx, actor, id);
+  if (task.assignee_id !== actor.id) throw new AccessDeniedError("Only the person the task is for can snooze it.");
+  if (task.status === "done") throw new InvalidInputError("This task is already done.");
+  if (until) {
+    const ms = until.getTime() - now.getTime();
+    if (!Number.isFinite(ms) || ms <= 0) throw new InvalidInputError("Pick a time in the future.");
+    if (ms > SNOOZE_MAX_MS) throw new InvalidInputError("Snooze for a week at most.");
+  }
+  const stamp = now.toISOString();
+  const writes: BatchItem<"sqlite">[] = [
+    ctx.db
+      .update(workTasks)
+      .set({ snoozed_until: until ? until.toISOString() : null, last_activity_at: stamp })
+      .where(eq(workTasks.id, id)),
+  ];
+  if (task.kind === "assigned") {
+    const when = until
+      ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }).format(until)
+      : null;
+    writes.push(
+      ctx.db.insert(workTaskMessages).values({
+        task_id: id,
+        author_id: actor.id,
+        author_name: actor.full_name,
+        kind: "system",
+        body: when ? `${actor.full_name} is on it. Reminders paused until ${when}.` : `${actor.full_name} turned reminders back on.`,
+      }),
+    );
   }
   await ctx.db.batch(writes as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
 }
