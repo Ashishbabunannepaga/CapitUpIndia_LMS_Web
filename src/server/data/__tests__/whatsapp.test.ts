@@ -10,6 +10,7 @@ import { validSignature } from "../../whatsapp/client";
 import {
   claimWhatsAppInbound,
   clientAutoReply,
+  getWhatsAppLeadDraft,
   handleWhatsAppReply,
   normalizeWhatsAppPhone,
   sendWhatsAppAlerts,
@@ -130,7 +131,7 @@ describe("WhatsApp messages from the team", () => {
     const { task, wamid } = await alerted("Call Zenith about the claim");
     const ogg = new Uint8Array(4000);
     ogg.set([0x4f, 0x67, 0x67, 0x53]);
-    const helpers: WhatsAppHelpers = { fetchAudio: async () => ogg, transcribe: async () => "Spoke to them, claim form sent" };
+    const helpers: WhatsAppHelpers = { fetchMedia: async () => ogg, transcribe: async () => "Spoke to them, claim form sent" };
     expect(await handleWhatsAppReply(w.ctx, { from: AMIT, audioId: "123", contextId: wamid }, helpers)).toMatch(/Added to the chat/);
     const [m] = await w.ctx.db
       .select()
@@ -194,5 +195,44 @@ describe("WhatsApp messages from the team", () => {
     expect(await clientAutoReply(w.ctx, "919111111111", at)).toBe("Thanks, we will call you back.");
     expect(await clientAutoReply(w.ctx, "919111111111", at)).toBeNull();
     expect(await clientAutoReply(w.ctx, "919111111111", new Date("2026-11-27T05:00:00Z"))).toBe("Thanks, we will call you back.");
+  });
+
+  it("turns a forwarded message, a photo or a PDF into a lead draft only its maker can open", async () => {
+    const seen: string[] = [];
+    const helpers: WhatsAppHelpers = {
+      appUrl: "https://lms.example/",
+      fetchMedia: async () => new Uint8Array([1, 2, 3]),
+      readLead: async (_person, source) => {
+        seen.push(source.kind === "text" ? `text:${source.text}` : source.kind);
+        return { lead: { client_name: "Zenith Foods", poc_name: "Ravi", poc_contact_number: "9876500000", policy_product: "GMC" }, dropped: [] };
+      },
+    };
+    const at = new Date("2026-11-26T06:00:00Z");
+    const forwarded = await handleWhatsAppReply(w.ctx, { from: AMIT, text: "Need GMC quote for 80 staff. Ravi 9876500000", forwarded: true }, helpers, at);
+    expect(forwarded).toMatch(/Lead draft ready: Zenith Foods/);
+    const id = /\/leads\/new\?wa=([0-9a-f-]{36})/.exec(forwarded ?? "")?.[1];
+    expect(id).toBeTruthy();
+    expect(forwarded).toContain("https://lms.example/leads/new?wa=");
+
+    // "lead:" works without forwarding; photos and PDFs go through the same reader.
+    expect(await handleWhatsAppReply(w.ctx, { from: AMIT, text: "lead: Zenith Foods, Ravi 9876500000" }, helpers, at)).toMatch(/Lead draft ready/);
+    expect(await handleWhatsAppReply(w.ctx, { from: AMIT, media: { id: "55", kind: "image" } }, helpers, at)).toMatch(/Lead draft ready/);
+    expect(await handleWhatsAppReply(w.ctx, { from: AMIT, media: { id: "56", kind: "pdf" } }, helpers, at)).toMatch(/Lead draft ready/);
+    expect(seen).toEqual(["text:Need GMC quote for 80 staff. Ravi 9876500000", "text:Zenith Foods, Ravi 9876500000", "image", "pdf"]);
+
+    const draft = await getWhatsAppLeadDraft(w.ctx, w.amit, id!, at);
+    expect(draft?.lead).toMatchObject({ client_name: "Zenith Foods" });
+    // Not for anyone else, admins included, and gone after a week.
+    expect(await getWhatsAppLeadDraft(w.ctx, w.admin, id!, at)).toBeNull();
+    expect(await getWhatsAppLeadDraft(w.ctx, w.amit, id!, new Date("2026-12-04T06:00:00Z"))).toBeNull();
+    expect(await getWhatsAppLeadDraft(w.ctx, w.amit, "not-an-id", at)).toBeNull();
+  });
+
+  it("says so when no client is found or reading is off", async () => {
+    const empty: WhatsAppHelpers = { readLead: async () => ({ lead: { client_name: "" }, dropped: [] }) };
+    expect(await handleWhatsAppReply(w.ctx, { from: AMIT, text: "ok see you", forwarded: true }, empty)).toMatch(/couldn't find a client/);
+    expect(await handleWhatsAppReply(w.ctx, { from: AMIT, media: { id: "57", kind: "image" } }, {})).toMatch(/isn't switched on/);
+    const failing: WhatsAppHelpers = { fetchMedia: async () => new Uint8Array([1]), readLead: async () => { throw new Error("AI is busy."); } };
+    expect(await handleWhatsAppReply(w.ctx, { from: AMIT, media: { id: "58", kind: "pdf" } }, failing)).toBe("AI is busy.");
   });
 });

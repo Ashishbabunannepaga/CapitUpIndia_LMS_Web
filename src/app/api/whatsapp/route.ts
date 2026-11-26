@@ -13,6 +13,7 @@ import {
   type WhatsAppReply,
 } from "@/server/data/whatsapp";
 import { copilotAnswer, copilotDrafts } from "@/server/task-copilot";
+import { readLeadFromWhatsApp } from "@/server/whatsapp/lead-reader";
 import { downloadMedia, forwardWebhook, sendText, validSignature, whatsAppConfig, type WhatsAppConfig } from "@/server/whatsapp/client";
 
 // Meta's WhatsApp webhook. GET is the one-time check when the URL is saved in
@@ -42,15 +43,19 @@ type Incoming = {
   button?: { payload?: string; text?: string };
   interactive?: { button_reply?: { id?: string; title?: string } };
   audio?: { id?: string };
-  context?: { id?: string };
+  image?: { id?: string };
+  document?: { id?: string; mime_type?: string };
+  context?: { id?: string; forwarded?: boolean; frequently_forwarded?: boolean };
 };
 
 function aiMessage(error: unknown, fallback: string): Error {
   return new Error(error instanceof AiRateLimitError || error instanceof AiUnavailableError ? error.message : fallback);
 }
 
-function helpersFor(ctx: DataContext, cfg: WhatsAppConfig): WhatsAppHelpers {
+function helpersFor(ctx: DataContext, cfg: WhatsAppConfig, appUrl: string | undefined): WhatsAppHelpers {
   return {
+    appUrl,
+    readLead: (person, source) => readLeadFromWhatsApp(ctx, person, source),
     ask: async (person, question, facts) => {
       try {
         return await copilotAnswer(ctx, person, question, facts);
@@ -65,7 +70,7 @@ function helpersFor(ctx: DataContext, cfg: WhatsAppConfig): WhatsAppHelpers {
         throw aiMessage(error, 'I couldn\'t read a task in that. Try "Sravani: send the GMC quote by Friday".');
       }
     },
-    fetchAudio: (mediaId) => downloadMedia(cfg, mediaId),
+    fetchMedia: (mediaId) => downloadMedia(cfg, mediaId),
     transcribe: async (person, audio) => {
       try {
         const { text } = await transcribe({
@@ -124,12 +129,19 @@ export async function POST(request: Request) {
           text: m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title,
           contextId: m.context?.id,
           audioId: m.type === "audio" ? m.audio?.id : undefined,
+          media:
+            m.type === "image" && m.image?.id
+              ? { id: m.image.id, kind: "image" }
+              : m.type === "document" && m.document?.id && m.document.mime_type === "application/pdf"
+                ? { id: m.document.id, kind: "pdf" }
+                : undefined,
+          forwarded: Boolean(m.context?.forwarded || m.context?.frequently_forwarded),
         };
-        if (!reply.payload && !reply.text && !reply.audioId) {
-          if (cfg) await sendText(cfg, m.from, "I can read text and voice notes. Photos and files aren't supported here yet.");
+        if (!reply.payload && !reply.text && !reply.audioId && !reply.media) {
+          if (cfg) await sendText(cfg, m.from, "I can read text, voice notes, photos and PDFs. Other files aren't supported here yet.");
           continue;
         }
-        const answer = await handleWhatsAppReply(ctx, reply, cfg ? helpersFor(ctx, cfg) : {});
+        const answer = await handleWhatsAppReply(ctx, reply, cfg ? helpersFor(ctx, cfg, env.BETTER_AUTH_URL?.trim()) : {});
         if (answer && cfg) await sendText(cfg, m.from, answer);
       } catch (error) {
         console.error("WhatsApp message failed", { message: error instanceof Error ? error.message : String(error) });

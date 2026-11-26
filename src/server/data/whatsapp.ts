@@ -5,7 +5,7 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "driz
 import { isIsoDate } from "@/lib/dates";
 import { dueDateToIso } from "@/lib/work-tasks";
 
-import { appSettings, notifications, profiles, whatsappInbound, workTasks } from "../db/schema";
+import { appSettings, notifications, profiles, whatsappInbound, whatsappLeadDrafts, workTasks } from "../db/schema";
 import type { WhatsAppSender } from "../whatsapp/client";
 import { assertAdmin, type Actor } from "./actor";
 import { auditInsert } from "./audit";
@@ -152,7 +152,16 @@ export type WhatsAppReply = {
   contextId?: string;
   /** A voice note's media id. */
   audioId?: string;
+  /** A photo or PDF someone sent: turned into a lead draft. */
+  media?: { id: string; kind: "image" | "pdf" };
+  /** WhatsApp marks forwarded messages; a forwarded text becomes a lead draft. */
+  forwarded?: boolean;
 };
+
+/** What the AI reads a lead from. */
+export type LeadSource = { kind: "text"; text: string } | { kind: "image" | "pdf"; bytes: Uint8Array };
+/** A lead the AI read, already cleaned (ExtractedLead fields). */
+export type LeadReading = { lead: Record<string, unknown>; dropped: string[] };
 
 /** A task the copilot drafted from a message. */
 export type WhatsAppTaskDraft = { title: string; description: string; assignee_id: string; priority: string; due_date: string; tags: string[] };
@@ -165,8 +174,11 @@ export type WhatsAppTaskDraft = { title: string; description: string; assignee_i
 export type WhatsAppHelpers = {
   ask?: (person: Actor, question: string, facts: string) => Promise<string>;
   drafts?: (person: Actor, request: string) => Promise<WhatsAppTaskDraft[]>;
-  fetchAudio?: (mediaId: string) => Promise<Uint8Array>;
+  fetchMedia?: (mediaId: string) => Promise<Uint8Array>;
   transcribe?: (person: Actor, audio: { bytes: Uint8Array; mime: string; ext: string; ms: number }) => Promise<string>;
+  readLead?: (person: Actor, source: LeadSource) => Promise<LeadReading>;
+  /** The LMS address, for links in replies. */
+  appUrl?: string;
 };
 
 export const WHATSAPP_HELP = [
@@ -175,12 +187,14 @@ export const WHATSAPP_HELP = [
   "- Swipe to reply on an alert to post in that task's chat. Text or a voice note both work.",
   '- Start with "todo:" to add your own task, or a name to give one, like "Sravani: send the GMC quote by Friday".',
   '- Ask anything else, like "what is overdue?" or "my renewals this week".',
+  '- Forward a client\'s message, or send a photo or PDF, to get a lead draft. Or start with "lead:".',
   "- Send a voice note to do any of these by voice.",
 ].join("\n");
 
 const DONE_WORDS = /^(done|completed?|finished)\b/;
 const SNOOZE_WORDS = /^(snooze|later|on it)\b/;
 const CREATE_WORDS = /^(todo|to-do|to do|task|new task|remind me|assign)\b/;
+const LEAD_WORDS = /^(lead|new lead|add lead)\b\s*[:,-]?\s*/;
 const HELP_WORDS = /^(help|hi|hii+|hello|hey|menu|start|\?)\W*$/;
 /** Roughly how long a WhatsApp voice note is (Opus at about 16 kbit/s); only used for AI usage logs. */
 const VOICE_BYTES_PER_SECOND = 2_000;
@@ -229,13 +243,15 @@ export async function handleWhatsAppReply(ctx: DataContext, reply: WhatsAppReply
     : undefined;
   const taskId = notice?.task_id ?? null;
 
+  if (reply.media) return leadFromMedia(ctx, person, reply.media, helpers, at);
+
   let text = (reply.text ?? reply.payload ?? "").trim();
   let voice: { bytes: Uint8Array; mime: string; ext: AudioExt; ms: number } | null = null;
   if (reply.audioId) {
-    if (!helpers.fetchAudio || !helpers.transcribe) return "Voice notes aren't switched on yet. Type your message instead.";
+    if (!helpers.fetchMedia || !helpers.transcribe) return "Voice notes aren't switched on yet. Type your message instead.";
     let bytes: Uint8Array;
     try {
-      bytes = await helpers.fetchAudio(reply.audioId);
+      bytes = await helpers.fetchMedia(reply.audioId);
     } catch {
       return "I couldn't download that voice note. Try again, or type it.";
     }
@@ -261,6 +277,11 @@ export async function handleWhatsAppReply(ctx: DataContext, reply: WhatsAppReply
   }
 
   if (taskId) return postToTask(ctx, person, taskId, text, voice);
+
+  if (text && (reply.forwarded || LEAD_WORDS.test(lower))) {
+    const body = reply.forwarded ? text : text.replace(LEAD_WORDS, "").trim() || text;
+    return leadFromSource(ctx, person, { kind: "text", text: body.slice(0, 8000) }, helpers, at);
+  }
 
   if (!text) return WHATSAPP_HELP;
   if (await wantsNewTask(ctx, person, text)) return createFromMessage(ctx, person, text, helpers);
@@ -358,6 +379,71 @@ async function createFromMessage(ctx: DataContext, person: Actor, text: string, 
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** Drafts older than this can't be opened and are pruned. */
+const DRAFT_DAYS = 7;
+
+async function leadFromMedia(ctx: DataContext, person: Actor, media: { id: string; kind: "image" | "pdf" }, helpers: WhatsAppHelpers, at: Date): Promise<string> {
+  if (!helpers.fetchMedia || !helpers.readLead) return "Reading photos and PDFs isn't switched on yet. Use AI Intake in the LMS.";
+  let bytes: Uint8Array;
+  try {
+    bytes = await helpers.fetchMedia(media.id);
+  } catch {
+    return "I couldn't download that file. Keep it under 5 MB and try again.";
+  }
+  return leadFromSource(ctx, person, { kind: media.kind, bytes }, helpers, at);
+}
+
+async function leadFromSource(ctx: DataContext, person: Actor, source: LeadSource, helpers: WhatsAppHelpers, at: Date): Promise<string> {
+  if (!helpers.readLead) return "Lead drafts from WhatsApp aren't switched on yet. Use AI Intake in the LMS.";
+  let reading: LeadReading;
+  try {
+    reading = await helpers.readLead(person, source);
+  } catch (error) {
+    return error instanceof Error && error.message ? error.message : "I couldn't read a lead in that. Try AI Intake in the LMS.";
+  }
+  const lead = reading.lead;
+  const field = (k: string) => String(lead[k] ?? "").trim();
+  if (!field("client_name") && !field("poc_name") && !field("poc_contact_number") && !field("poc_email_id")) {
+    return "I couldn't find a client in that. Forward the client's message, or send a clearer photo or PDF.";
+  }
+  const id = await saveWhatsAppLeadDraft(ctx, person, source.kind, reading, at);
+  const product = field("policy_product");
+  const contact = [field("poc_name"), field("poc_contact_number") || field("poc_email_id")].filter(Boolean).join(", ");
+  return [
+    `Lead draft ready: ${field("client_name") || "client name not found"}`,
+    product && product !== "Not Specified" ? `Product: ${product}` : "",
+    contact ? `Contact: ${contact}` : "",
+    reading.dropped.length ? `Left out: ${reading.dropped.join("; ")}` : "",
+    `Check and save it here (nothing is saved until you do): ${(helpers.appUrl ?? "").replace(/\/$/, "")}/leads/new?wa=${id}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Keeps a lead draft for this person and prunes their old ones. Returns its id. */
+export async function saveWhatsAppLeadDraft(ctx: DataContext, person: Actor, kind: string, reading: LeadReading, at: Date = new Date()): Promise<string> {
+  const id = crypto.randomUUID();
+  const cutoff = new Date(at.getTime() - DRAFT_DAYS * 24 * 60 * 60_000).toISOString();
+  await ctx.db.batch([
+    ctx.db.delete(whatsappLeadDrafts).where(and(eq(whatsappLeadDrafts.user_id, person.id), lt(whatsappLeadDrafts.created_at, cutoff))),
+    ctx.db.insert(whatsappLeadDrafts).values({ id, user_id: person.id, lead: reading.lead, dropped: reading.dropped, kind, created_at: at.toISOString() }),
+  ]);
+  return id;
+}
+
+/** A lead draft from WhatsApp, only for the person who made it and only for a week. */
+export async function getWhatsAppLeadDraft(
+  ctx: DataContext,
+  actor: Actor,
+  id: string,
+  at: Date = new Date(),
+): Promise<{ lead: Record<string, unknown>; dropped: string[]; kind: string } | null> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) return null;
+  const row = await ctx.db.query.whatsappLeadDrafts.findFirst({ where: and(eq(whatsappLeadDrafts.id, id), eq(whatsappLeadDrafts.user_id, actor.id)) });
+  if (!row || row.created_at < new Date(at.getTime() - DRAFT_DAYS * 24 * 60 * 60_000).toISOString()) return null;
+  return { lead: (row.lead ?? {}) as Record<string, unknown>, dropped: Array.isArray(row.dropped) ? (row.dropped as string[]) : [], kind: row.kind };
 }
 
 export const CLIENT_REPLY_SETTING = "whatsapp_client_reply";

@@ -973,3 +973,26 @@ export const whatsappInbound = sqliteTable(
   },
   (t) => [index("whatsapp_inbound_created_idx").on(t.created_at)],
 );
+
+/**
+ * A lead the AI read from something a team member sent on WhatsApp (a
+ * forwarded message, a photo or a PDF). Nothing is a lead until that person
+ * opens /leads/new?wa=<id>, checks the fields and saves. Old drafts are pruned.
+ */
+export const whatsappLeadDrafts = sqliteTable(
+  "whatsapp_lead_drafts",
+  {
+    id: text("id").primaryKey(),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    /** The cleaned ExtractedLead fields, as JSON. */
+    lead: text("lead", { mode: "json" }).notNull(),
+    /** Values the clean-up rules removed, shown to the person. */
+    dropped: text("dropped", { mode: "json" }).notNull(),
+    /** text, image or pdf. */
+    kind: text("kind").notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [index("whatsapp_lead_drafts_user_idx").on(t.user_id, t.created_at)],
+);

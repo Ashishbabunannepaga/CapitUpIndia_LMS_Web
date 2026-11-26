@@ -75,10 +75,11 @@ acts as that person, under the same rules as the app.
 - **Done** or **Snooze** (a button, a word or a voice note) on an alert closes or pauses that task.
 - A swipe-reply to an alert goes into that task's chat. A voice note is kept with its transcript.
 - `todo: ...` or `remind me ...` adds their own task. A teammate's name first (`Sravani: send the GMC quote by Friday`) gives one. Agents can only raise tasks to admins, as in the app.
+- A **forwarded** client message, a **photo** (visiting card, client details) or a **PDF** (quote request, old policy), or text starting `lead:`, becomes a lead draft. The reply has a link to Add lead with every field filled in; nothing is saved until they press Save lead. Drafts open only for the person who made them, for 7 days (table `whatsapp_lead_drafts`). Files must be under 5 MB.
 - Anything else is a question for the Task Grid copilot ("what is overdue?", "my renewals this week"). It answers from their own tasks, renewals and leads only.
 - `help` lists all of this.
 
-The AI parts (answers, new tasks, voice transcripts) use `OPENAI_API_KEY` and
+The AI parts (answers, new tasks, voice transcripts, lead drafts) use `OPENAI_API_KEY` and
 show in Admin > AI usage. Each delivery is handled once, even when Meta
 retries it (table `whatsapp_inbound`).
 
