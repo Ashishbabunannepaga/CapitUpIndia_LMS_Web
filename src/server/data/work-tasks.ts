@@ -1025,3 +1025,21 @@ export async function deleteTaskTemplate(ctx: DataContext, actor: Actor, id: num
     auditInsert(ctx, actor, "work_task_templates", id, "DELETE", before, null),
   ]);
 }
+
+/** The caller's open tasks for "Do this next" (theirs to do, plus approvals waiting on them). */
+export async function myOpenTasks(ctx: DataContext, actor: Actor, limit = 30) {
+  return ctx.db
+    .select({
+      id: workTasks.id,
+      title: workTasks.title,
+      priority: workTasks.priority,
+      due_at: workTasks.due_at,
+      approval: workTasks.approval,
+      lead_name: leads.client_name,
+    })
+    .from(workTasks)
+    .leftJoin(leads, eq(leads.id, workTasks.lead_id))
+    .where(and(eq(workTasks.assignee_id, actor.id), inArray(workTasks.status, ["todo", "in_progress"])))
+    .orderBy(asc(workTasks.due_at))
+    .limit(limit);
+}

@@ -46,8 +46,10 @@ import { pipelineAnalytics, type AgentPipeline } from "@/server/data/analytics";
 import type { Actor } from "@/server/data/actor";
 import type { DataContext } from "@/server/data/context";
 import { myDay, type TaskWithLead } from "@/server/data/my-day";
-import { pinnedTasks } from "@/server/data/work-tasks";
+import { myOpenTasks, pinnedTasks } from "@/server/data/work-tasks";
 import { PinnedTasks, type PinnedItem } from "@/components/work-tasks/pinned-tasks";
+import { NextActions } from "@/components/my-day/next-actions";
+import { rankNextActions } from "@/lib/next-actions";
 import { cn } from "@/lib/utils";
 
 
@@ -386,12 +388,23 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
   // The right-hand overview uses the same scoping as everything else: an
   // agent's numbers cover their own leads, an admin's the whole team.
   // Pinned tasks are the viewer's own; "view as agent" leaves them out.
-  const [day, team, pipeline, pinned] = await Promise.all([
+  const [day, team, pipeline, pinned, ownTasks] = await Promise.all([
     myDay(ctx, profile),
     getTeam(),
     pipelineAnalytics(ctx, profile),
     readOnly ? Promise.resolve([]) : pinnedTasks(ctx, profile),
+    myOpenTasks(ctx, profile),
   ]);
+  // Admins' renewal lists cover the whole team, so their list is their own tasks and approvals.
+  const nextActions = rankNextActions({
+    today,
+    now: new Date(),
+    agentName: profile.full_name,
+    tasks: ownTasks,
+    renewals: admin ? [] : day.renewals,
+    overdueRenewals: admin ? [] : day.overdueRenewals,
+    awaitingPolicy: admin ? [] : day.awaitingPolicy,
+  });
   const pinnedItems: PinnedItem[] = pinned.map((t) => ({
     id: t.id,
     title: t.title,
@@ -545,6 +558,8 @@ export async function MyDayScreen({ ctx, profile, readOnly = false }: { ctx: Dat
           </div>
         </div>
       </section>
+
+      <NextActions items={nextActions} />
 
       <div className="stagger mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
         <StatCard
