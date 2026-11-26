@@ -71,6 +71,7 @@ export async function createWorkTaskAction(formData: FormData): Promise<TaskActi
       lead_id: f.lead_id,
       tags: f.tags,
       autoTag: formData.get("auto_tag") !== "off",
+      approval: formData.get("approval") === "on",
     });
     done();
     return { ok: true, id: task.id };
@@ -303,4 +304,10 @@ export async function saveTaskTemplateAction(id: number | null, formData: FormDa
 
 export async function deleteTaskTemplateAction(id: number): Promise<TaskActionResult> {
   return run((s) => tasks.deleteTaskTemplate(s.ctx, s.actor, Number(id)));
+}
+
+/** An admin approves or rejects an approval request (a reason is required to reject). */
+export async function decideApprovalAction(id: number, decision: string, note: string): Promise<TaskActionResult> {
+  if (decision !== "approved" && decision !== "rejected") return { ok: false, error: "Pick approve or reject." };
+  return run((s) => tasks.decideApproval(s.ctx, s.actor, Number(id), decision, String(note ?? "")));
 }

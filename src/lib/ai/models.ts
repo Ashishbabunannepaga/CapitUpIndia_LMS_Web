@@ -83,4 +83,5 @@ export const MAX_OUTPUT_TOKENS = {
   taskSummary: 350,
   copilotAnswer: 600,
   copilotDrafts: 1_500,
+  dayPlan: 500,
 } as const;

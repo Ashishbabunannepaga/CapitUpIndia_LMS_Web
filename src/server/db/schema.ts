@@ -560,6 +560,12 @@ export const workTasks = sqliteTable(
     reminder_stage: integer("reminder_stage").notNull().default(0),
     /** The due_at the stage above belongs to; a new due time starts the ladder again. */
     reminder_for: text("reminder_for"),
+    /** An approval request raised to an admin: pending until they approve or reject it. */
+    approval: text("approval", { enum: ["pending", "approved", "rejected"] }),
+    approval_note: text("approval_note"),
+    /** The admin who decided (profile id; kept as text so it survives their removal). */
+    approval_by: text("approval_by"),
+    approval_at: text("approval_at"),
     completed_at: text("completed_at"),
     last_activity_at: text("last_activity_at").notNull().default(now),
     created_at: createdAt(),
@@ -657,6 +663,37 @@ export const workTaskTemplates = sqliteTable(
     check("work_task_templates_due", sql`${t.due_in_days} is null or ${t.due_in_days} between 0 and 365`),
   ],
 );
+
+/**
+ * Admin-set reminder timings for tasks with a tag (and optionally a priority),
+ * in minutes: due soon before the due time, nudge and escalation after it.
+ * Tasks without a matching rule use REMINDER_LADDER in task-reminders.ts.
+ */
+export const taskSlaRules = sqliteTable(
+  "task_sla_rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tag: text("tag").notNull(),
+    /** Null: any priority. */
+    priority: text("priority", { enum: WORK_TASK_PRIORITIES }),
+    soon_minutes: integer("soon_minutes").notNull(),
+    nudge_minutes: integer("nudge_minutes").notNull(),
+    escalate_minutes: integer("escalate_minutes").notNull(),
+    created_at: createdAt(),
+  },
+  (t) => [
+    // One rule per tag and priority (a null priority is checked in the data layer).
+    uniqueIndex("task_sla_rules_tag_priority").on(t.tag, t.priority),
+    check("task_sla_rules_minutes", sql`${t.soon_minutes} between 0 and 10080 and ${t.nudge_minutes} between 5 and 43200 and ${t.escalate_minutes} between 5 and 43200`),
+  ],
+);
+
+/** Days (IST) when overdue nudges and escalations pause and lateness does not count. Sundays always do. */
+export const businessHolidays = sqliteTable("business_holidays", {
+  date: text("date").primaryKey(),
+  name: text("name").notNull(),
+  created_at: createdAt(),
+});
 
 /** How far each person has read a task's thread, for unread badges. */
 export const workTaskReads = sqliteTable(

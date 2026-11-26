@@ -244,6 +244,8 @@ export type NewWorkTask = {
   tags?: string | readonly string[];
   /** Add the linked lead's product, line and renewal tags (default true). */
   autoTag?: boolean;
+  /** An agent asks the admin to approve or reject (only when raising to an admin). */
+  approval?: boolean;
 };
 
 async function checkLead(ctx: DataContext, actor: Actor, leadId: number | null | undefined) {
@@ -317,6 +319,7 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
   const tags = parseTags([...parseTags(input.tags ?? ""), ...(lead && input.autoTag !== false ? tagsFromLead(lead) : [])]);
   const kind = member.id === actor.id ? "personal" : "assigned";
   const raised = kind === "assigned" && !isAdmin(actor);
+  const approval = raised && input.approval ? ("pending" as const) : null;
 
   const [task] = await ctx.db
     .insert(workTasks)
@@ -324,6 +327,7 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
       ...fields,
       kind,
       raised,
+      approval,
       assignee_id: member.id,
       created_by: actor.id,
       created_by_name: actor.full_name,
@@ -350,7 +354,9 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
         author_id: actor.id,
         author_name: actor.full_name,
         kind: "system",
-        body: raised
+        body: approval
+          ? `${actor.full_name} asked ${member.full_name} for approval (${TASK_PRIORITY_LABELS[task.priority]}).`
+          : raised
           ? `${actor.full_name} raised this to ${member.full_name} (${TASK_PRIORITY_LABELS[task.priority]}).`
           : `${actor.full_name} assigned this to ${member.full_name} (${TASK_PRIORITY_LABELS[task.priority]}).`,
       }),
@@ -361,14 +367,80 @@ export async function createWorkTask(ctx: DataContext, actor: Actor, input: NewW
             member.id,
             task.id,
             task.lead_id,
-            raised ? `${actor.full_name} raised a task: ${task.title}` : `New task from ${actor.full_name}: ${task.title}`,
-            `${task.priority} · ${dueText(task.due_at)}`,
+            approval
+              ? `Approval needed from you: ${task.title}`
+              : raised
+                ? `${actor.full_name} raised a task: ${task.title}`
+                : `New task from ${actor.full_name}: ${task.title}`,
+            approval ? `Asked by ${actor.full_name} · ${task.priority} · ${dueText(task.due_at)}` : `${task.priority} · ${dueText(task.due_at)}`,
           ),
         ),
     );
   }
   await ctx.db.batch(writes as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
   return task;
+}
+
+/**
+ * An admin approves or rejects a pending approval request. The task closes,
+ * the decision (and the reason, required for a rejection) goes in the thread
+ * and the audit log, and the person who asked is told.
+ */
+export async function decideApproval(
+  ctx: DataContext,
+  actor: Actor,
+  id: number,
+  decision: "approved" | "rejected",
+  note = "",
+): Promise<WorkTask> {
+  if (!isAdmin(actor)) throw new AccessDeniedError("Only an admin can approve or reject requests.");
+  const task = await findVisible(ctx, actor, id);
+  if (task.approval !== "pending") throw new InvalidInputError("This request has already been decided.");
+  const reason = note.trim().slice(0, 1000);
+  if (decision === "rejected" && !reason) throw new InvalidInputError("Give a reason for rejecting it.");
+  const at = new Date().toISOString();
+  const [updated] = await ctx.db
+    .update(workTasks)
+    .set({
+      approval: decision,
+      approval_note: reason || null,
+      approval_by: actor.id,
+      approval_at: at,
+      status: "done",
+      completed_at: at,
+      last_activity_at: at,
+    })
+    .where(and(eq(workTasks.id, id), eq(workTasks.approval, "pending")))
+    .returning();
+  if (!updated) throw new InvalidInputError("This request has already been decided.");
+  const verb = decision === "approved" ? "approved" : "rejected";
+  const writes: BatchItem<"sqlite">[] = [
+    auditInsert(ctx, actor, "work_tasks", id, "UPDATE", { approval: "pending", status: task.status }, { approval: decision, approval_note: reason || null, status: "done" }),
+    ctx.db.insert(workTaskMessages).values({
+      task_id: id,
+      author_id: actor.id,
+      author_name: actor.full_name,
+      kind: "system",
+      body: `${actor.full_name} ${verb} this${reason ? `: ${reason}` : "."}`.slice(0, 4000),
+    }),
+  ];
+  if (task.created_by && task.created_by !== actor.id) {
+    writes.push(
+      ctx.db
+        .insert(notifications)
+        .values(
+          taskNotification(
+            task.created_by,
+            id,
+            task.lead_id,
+            `${decision === "approved" ? "Approved" : "Rejected"} by ${actor.full_name}: ${task.title}`,
+            reason || (decision === "approved" ? "Go ahead." : "See the task for details."),
+          ),
+        ),
+    );
+  }
+  await ctx.db.batch(writes as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  return updated;
 }
 
 export type WorkTaskChanges = Partial<Omit<NewWorkTask, "autoTag">>;

@@ -20,8 +20,8 @@ afterAll(async () => {
 });
 
 // 06:30 UTC = 12:00 IST (working hours); 18:30 UTC = 00:00 IST (night).
-const NOON = new Date("2030-03-04T06:30:00.000Z");
-const NIGHT = new Date("2030-03-04T18:30:00.000Z");
+const NOON = new Date("2030-03-06T06:30:00.000Z");
+const NIGHT = new Date("2030-03-06T18:30:00.000Z");
 const shift = (at: Date, minutes: number) => new Date(at.getTime() + minutes * 60_000);
 
 async function taskDue(actorKey: "admin" | "amit", assignee: string, priority: "P1" | "P2" | "P3", dueAt: Date, title: string) {

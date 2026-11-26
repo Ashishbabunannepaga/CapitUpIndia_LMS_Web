@@ -12,6 +12,10 @@ import {
 } from "@/server/data/monitoring";
 import { rollAutoRenewals } from "@/server/data/leads";
 import { deliverDueReminders, deliverTaskReminders } from "@/server/data/notifications";
+import { generate } from "@/lib/ai/client";
+import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
+import { dayPlanPrompt, teamRiskPrompt } from "@/lib/ai/prompts";
+import { sendDayPlans, type PlanWriter } from "@/server/data/day-plan";
 import { deliverTaskDueReminders } from "@/server/data/task-reminders";
 import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
@@ -25,6 +29,8 @@ export type ScheduledDeps = {
   sleep?: (ms: number) => Promise<void>;
   /** Browser push sender; by default Web Push with the VAPID secrets, when they are set. */
   push?: PushSender | null;
+  /** Writes the 09:00 day plans; by default OpenAI through generate(). */
+  planWriter?: PlanWriter;
 };
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -35,7 +41,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  * meetings, walk Task Grid tasks up their due-time ladder, push all of it to browsers; every 15
  * minutes stop LMS leads whose CapitUp app user withdrew consent; every 5
  * minutes run the health check (src/server/data/monitoring.ts); and at 09:00
- * IST send the daily monitoring report.
+ * IST send everyone their day plan and the daily monitoring report.
  */
 export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: ScheduledDeps = {}): Promise<void> {
   const ctx = createDataContext(env.DB, env, env.CARDS);
@@ -111,6 +117,33 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
 
   // 03:30 UTC is 09:00 in India.
   if (at.getUTCHours() === 3 && minute === 30) {
+    try {
+      const writer: PlanWriter =
+        deps.planWriter ??
+        (async (person, kind, facts, admin) => {
+          const today = todayInBusinessTz(at);
+          const { value } = await generate({
+            ctx,
+            user: person,
+            feature: "other",
+            models: MODEL_CHAINS.summary,
+            system: kind === "plan" ? dayPlanPrompt(today, admin) : teamRiskPrompt(today),
+            maxOutputTokens: MAX_OUTPUT_TOKENS.dayPlan,
+            text: facts,
+            parse: (out) => {
+              const clean = out.trim();
+              if (!clean) throw new Error("Empty plan");
+              return clean;
+            },
+          });
+          return value;
+        });
+      const plans = await sendDayPlans(ctx, at, writer);
+      if (plans > 0) console.log(`Sent ${plans} morning plan(s) and team report(s).`);
+    } catch (error) {
+      console.error("Morning plans failed", { message: message(error) });
+      await recordAppError(ctx, { source: "job", path: "Morning plans", message: message(error) }, at);
+    }
     try {
       await sendDailySummary(ctx, send, at);
     } catch (error) {

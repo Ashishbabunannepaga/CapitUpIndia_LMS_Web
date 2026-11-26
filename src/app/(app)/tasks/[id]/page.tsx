@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Eye, Link2 } from "lucide-react";
 
-import { DueChip, PriorityBadge, RaisedBadge, TagChips, TaskStatusBadge } from "@/components/work-tasks/task-badges";
+import { ApprovalBadge, DueChip, PriorityBadge, RaisedBadge, TagChips, TaskStatusBadge } from "@/components/work-tasks/task-badges";
+import { ApprovalPanel } from "@/components/work-tasks/task-approval";
 import { TaskEditor } from "@/components/work-tasks/task-editor";
 import { TemplateDialog } from "@/components/work-tasks/task-templates";
 import {
@@ -61,7 +62,8 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
               <TaskStatusBadge status={task.status} />
               <DueChip dueAt={task.due_at} done={task.status === "done"} />
               {task.kind === "personal" ? <span className="text-xs text-muted-foreground">Private to-do: only you see it</span> : null}
-              {task.raised ? <RaisedBadge /> : null}
+              {task.raised && !task.approval ? <RaisedBadge /> : null}
+              <ApprovalBadge approval={task.approval} />
             </div>
             <h1 className="text-2xl leading-tight font-medium tracking-tight">{task.title}</h1>
             {task.description ? <p className="text-sm whitespace-pre-wrap text-muted-foreground">{task.description}</p> : null}
@@ -90,6 +92,15 @@ export default async function TaskPage({ params }: PageProps<"/tasks/[id]">) {
         </div>
 
         <aside className="space-y-4">
+          {task.approval === "pending" && actor.role === "ADMIN" ? (
+            <ApprovalPanel taskId={task.id} askedBy={task.created_by_name || "The agent"} />
+          ) : null}
+          {task.approval && task.approval !== "pending" && task.approval_note ? (
+            <section className="surface p-4 text-sm">
+              <h2 className="mb-1 font-medium">{task.approval === "approved" ? "Approved" : "Rejected"}</h2>
+              <p className="whitespace-pre-wrap text-muted-foreground">{task.approval_note}</p>
+            </section>
+          ) : null}
           {can.status ? (
             <section className="surface p-4">
               <h2 className="mb-2 text-sm font-medium">Status</h2>

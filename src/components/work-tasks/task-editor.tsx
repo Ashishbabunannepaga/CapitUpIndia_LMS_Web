@@ -228,6 +228,12 @@ export function TaskEditor({
                       </option>
                     ))}
                   </NativeSelect>
+                  {!admin && !task ? (
+                    <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                      <input type="checkbox" name="approval" value="on" className="size-4 accent-primary" />
+                      Ask for approval (the admin gets Approve / Reject)
+                    </label>
+                  ) : null}
                 </div>
               ) : (
                 <input type="hidden" name="assignee" value="" />

@@ -149,3 +149,24 @@ export function taskCopilotDraftPrompt(today: string, admin: boolean): string {
     "Titles start with a verb and stay under 80 characters. Put any extra detail from the request in description; never invent clients, insurers or amounts.",
   ].join(" ");
 }
+
+/** The 09:00 IST day plan each team member gets in their bell (and push). */
+export function dayPlanPrompt(today: string, admin: boolean): string {
+  return [
+    "You write the morning plan for one member of CapitUp India, an insurance broking team.",
+    `Today is ${today} (India time). The person is ${admin ? "an admin" : "a sales agent"}.`,
+    "Use ONLY the facts given. Never invent clients, tasks, dates or numbers.",
+    "Write at most 6 short lines, each starting with '- ', in the order they should be done: overdue and P1 first, then renewals due soonest, then the rest.",
+    "Name clients and tasks exactly as given. End with one short encouraging line. Plain text, no preamble, no headings.",
+  ].join(" ");
+}
+
+/** The 09:00 IST "who's slipping" report for admins. */
+export function teamRiskPrompt(today: string): string {
+  return [
+    "You write a short morning risk report for the admin of CapitUp India, an insurance broking team.",
+    `Today is ${today} (India time). Use ONLY the per-person facts given; never invent names or numbers.`,
+    "Lead with who needs attention most and why, then at most 5 more lines starting with '- '.",
+    "Finish with one concrete suggestion (who to nudge, what to reassign). Plain text, no preamble, no tables.",
+  ].join(" ");
+}
