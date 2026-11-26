@@ -24,7 +24,9 @@ Each run:
      (set `CreateOidcProvider` to `false` if it already exists);
    - the role `capitup-lms-d1-backup`, which only GitHub Actions runs on `main`
      of this repository can use, and which can only add files under `d1/`.
-     No AWS keys are stored anywhere.
+     No AWS keys are stored anywhere. GitHub's sign-in subject now carries
+     numeric ids (`repo:owner@id/name@id:ref:...`); the stack's
+     `GitHubOwnerId` and `GitHubRepositoryId` parameters cover that form.
 2. **Cloudflare API token** (My Profile > API Tokens > Create token > Custom):
    Account > D1 > Edit, Account > Workers Scripts > Edit (the same token deploys,
    see docs/deploy.md). Copy it once.
