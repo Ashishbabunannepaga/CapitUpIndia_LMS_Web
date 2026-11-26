@@ -959,3 +959,17 @@ export const appErrors = sqliteTable(
     check("app_errors_message_len", sql`length(${t.message}) <= 1000`),
   ],
 );
+
+/**
+ * WhatsApp webhook messages already handled (Meta's wamid), so a retried
+ * delivery is never acted on twice; also "once a day" markers for the client
+ * auto-reply. Rows older than a few days are pruned.
+ */
+export const whatsappInbound = sqliteTable(
+  "whatsapp_inbound",
+  {
+    id: text("id").primaryKey(),
+    created_at: createdAt(),
+  },
+  (t) => [index("whatsapp_inbound_created_idx").on(t.created_at)],
+);

@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { friendlyError } from "@/lib/action-errors";
 import { getSession } from "@/lib/auth";
 import { InvalidInputError } from "@/server/data/errors";
-import { sendWhatsAppTest, setWhatsApp } from "@/server/data/whatsapp";
+import { sendWhatsAppTest, setWhatsApp, setWhatsAppClientReply } from "@/server/data/whatsapp";
 import { taskAlertSender, whatsAppConfig } from "@/server/whatsapp/client";
 
 const PAGE = "/admin/whatsapp";
@@ -38,4 +38,9 @@ export async function testWhatsAppAction(formData: FormData): Promise<void> {
     if (!cfg) throw new InvalidInputError("WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID aren't set on the Worker yet.");
     await sendWhatsAppTest(s.ctx, s.actor, String(formData.get("user_id") ?? ""), taskAlertSender(cfg));
   }, "Test sent. Check that phone.");
+}
+
+export async function saveClientReplyAction(formData: FormData): Promise<void> {
+  const text = String(formData.get("client_reply") ?? "");
+  await run((s) => setWhatsAppClientReply(s.ctx, s.actor, text), text.trim() ? "Auto-reply saved." : "Auto-reply turned off.");
 }

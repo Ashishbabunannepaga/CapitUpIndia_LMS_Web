@@ -148,6 +148,13 @@
       "when": 1795685240046,
       "tag": "0020_whatsapp_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1795687894642,
+      "tag": "0021_whatsapp_inbound",
+      "breakpoints": true
     }
   ]
 }
