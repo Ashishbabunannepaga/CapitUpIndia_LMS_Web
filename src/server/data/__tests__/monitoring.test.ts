@@ -4,7 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import { alertSender, configuredChannels, healthUrl, probeSite } from "../../monitoring/alerts";
 import { recordFailedRequest } from "../../../worker/errors";
-import { runScheduled } from "../../../worker/scheduled";
+import { message as jobErrorText, runScheduled } from "../../../worker/scheduled";
 import { AccessDeniedError } from "../errors";
 import {
   BROWSER_ERROR_ALERT,
@@ -293,5 +293,16 @@ describe("alert channels", () => {
     expect(await probeSite("https://a/api/health", ok)).toMatchObject({ ok: true, status: 200 });
     expect(await probeSite("https://a/api/health", bad)).toMatchObject({ ok: false, status: 503, error: "HTTP 503" });
     expect(await probeSite("https://a/api/health", dead)).toMatchObject({ ok: false, status: 0, error: "could not connect" });
+  });
+});
+
+describe("job error text", () => {
+  it("puts a failed query's real reason first and cuts the SQL short", () => {
+    const failed = new Error(`Failed query: select ${"x".repeat(900)}`, { cause: new Error("D1_ERROR: Network connection lost.") });
+    const text = jobErrorText(failed);
+    expect(text.startsWith("D1_ERROR: Network connection lost. (Failed query: select")).toBe(true);
+    expect(text.length).toBeLessThan(200);
+    expect(jobErrorText(new Error("plain"))).toBe("plain");
+    expect(jobErrorText("str")).toBe("str");
   });
 });
