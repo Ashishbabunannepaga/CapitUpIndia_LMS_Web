@@ -133,7 +133,7 @@ test("admins export the won leads by policy start date", async ({ page }) => {
   await expect(page).toHaveURL(/outcome=won.*start_from=/);
   await expect(page.getByRole("link", { name: "Rollover Fire Pvt Ltd" }).first()).toBeVisible();
   await page.screenshot({ path: "test-results/closed-won/5-export-filters.png" });
-  const href = await page.getByRole("link", { name: "Export" }).getAttribute("href");
+  const href = await page.getByRole("link", { name: "Export", exact: true }).getAttribute("href");
   expect(href).toContain("outcome=won");
   const file = await page.request.get(href!);
   expect(file.status()).toBe(200);
