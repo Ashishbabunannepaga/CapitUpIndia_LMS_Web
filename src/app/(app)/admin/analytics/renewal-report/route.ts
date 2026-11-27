@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth";
 import { renewalReportXlsx } from "@/lib/reports/renewal-report";
 import { renewalPipeline } from "@/server/data/analytics";
+import { recordExport } from "@/server/data/data-safety";
 import { AccessDeniedError } from "@/server/data/errors";
 
 // "Download renewal report" on Analytics: leads renewing in the next 30/60/90
@@ -12,6 +13,7 @@ export async function GET() {
   if (!session) return new Response("Sign in again.", { status: 401, headers });
   try {
     const { today, rows } = await renewalPipeline(session.ctx, session.actor);
+    await recordExport(session.ctx, session.actor, { report: "renewal_report", rows: rows.length });
     return new Response(renewalReportXlsx(today, rows) as Uint8Array<ArrayBuffer>, {
       headers: {
         ...headers,

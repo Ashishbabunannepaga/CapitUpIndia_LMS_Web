@@ -226,5 +226,6 @@ export async function deleteTask(ctx: DataContext, actor: Actor, id: number): Pr
   if (event.is_system_generated && !isAdmin(actor)) {
     throw new AccessDeniedError("Renewal reminders follow the lead's renewal date.");
   }
-  await ctx.db.delete(events).where(eq(events.id, id));
+  const summary = { title: event.title, lead_id: event.lead_id, kind: event.kind, event_timestamp: event.event_timestamp };
+  await ctx.db.batch([ctx.db.delete(events).where(eq(events.id, id)), auditInsert(ctx, actor, "events", id, "DELETE", summary, null)]);
 }

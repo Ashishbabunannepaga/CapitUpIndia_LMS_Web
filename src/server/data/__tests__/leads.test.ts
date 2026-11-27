@@ -334,7 +334,7 @@ describe("duplicates", () => {
     const similar = await findSimilarLeads(w.ctx, w.neha, "Renee Systems India Pvt Ltd");
     expect(similar[0]).toMatchObject({ client_name: "Renee Systems", assigned_agent_name: "Amit Agent" });
     expect(Object.keys(similar[0]).sort()).toEqual(
-      ["assigned_agent_id", "assigned_agent_name", "client_name", "is_exact", "lead_id", "policy_product", "similarity"].sort(),
+      ["assigned_agent_id", "assigned_agent_name", "client_name", "is_exact", "lead_id", "matched_on", "policy_product", "similarity"].sort(),
     );
     expect(await findSimilarLeads(w.ctx, w.neha, "Zephyr Logistics")).toEqual([]);
     expect(await findSimilarLeads(w.ctx, w.neha, "   ")).toEqual([]);

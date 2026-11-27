@@ -229,7 +229,7 @@ export function DeleteLeadButton({ leadId, clientName, redirectTo }: { leadId: n
       className="text-destructive hover:bg-red-50 hover:text-destructive"
       disabled={pending}
       onClick={() => {
-        if (!window.confirm(`Delete ${clientName}? Its notes and reminders are deleted too. This can't be undone.`)) return;
+        if (!window.confirm(`Delete ${clientName}? It moves to the bin with its notes and reminders, and an admin can restore it from Admin > Deleted & exports for 90 days.`)) return;
         startTransition(async () => {
           const result = await safeAction(() => deleteLead(leadId));
           if (!result.ok) window.alert(result.error);

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { friendlyError } from "@/lib/action-errors";
 import { getSession, type Session } from "@/lib/auth";
 import { setStaleDays } from "@/server/data/stale";
-import { createUser, deactivateUser, offboardingSummary, resetPassword, setActive, setRole, type Handover } from "@/server/data/users";
+import { createUser, deactivateUser, offboardingSummary, resetPassword, resetTwoFactor, setActive, setRole, type Handover } from "@/server/data/users";
 
 export type TeamResult = { ok: true; message?: string } | { ok: false; error: string };
 
@@ -46,6 +46,14 @@ export async function resetMemberPassword(userId: string, formData: FormData): P
   return run(
     ({ ctx, actor }) => resetPassword(ctx, actor, userId, formData.get("password") ?? ""),
     "Password changed. They have been signed out everywhere and will choose their own at next sign-in.",
+  );
+}
+
+/** Switches someone's two-step sign-in off after a lost phone (audit R11). */
+export async function resetMemberTwoFactor(userId: string): Promise<TeamResult> {
+  return run(
+    ({ ctx, actor }) => resetTwoFactor(ctx, actor, userId),
+    "Two-step sign-in reset. They have been signed out; an admin sets it up again at next sign-in.",
   );
 }
 

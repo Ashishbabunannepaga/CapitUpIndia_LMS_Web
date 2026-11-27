@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { createLead } from "@/server/data/leads";
 
-import { actor, clientAddress, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
+import { actor, clientAddress, passTwoFactor, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
 
 // The agent and admin feature batch in a real browser: one Add lead page,
 // the floating "+", the lead's History tab and tags, bulk reassign, the audit
@@ -16,6 +16,7 @@ async function signIn(page: Page, user: UserKey) {
   await page.getByLabel("Work email").fill(USERS[user].email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await passTwoFactor(page);
   await expect(page).not.toHaveURL(/\/login/);
 }
 

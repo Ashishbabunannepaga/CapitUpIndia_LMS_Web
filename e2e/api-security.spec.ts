@@ -6,6 +6,7 @@ import { deactivateUser, setActive } from "@/server/data/users";
 
 import {
   actor,
+  adminTotpCode,
   BASE_URL,
   clientAddress,
   execute,
@@ -39,13 +40,24 @@ async function signInApi(request: APIRequestContext, email: string, password: st
 
 /** A session cookie for a user, as a browser would hold it. */
 async function sessionCookie(request: APIRequestContext, user: UserKey): Promise<string> {
-  const response = await signInApi(request, USERS[user].email, PASSWORD);
+  const ip = clientAddress();
+  const response = await signInApi(request, USERS[user].email, PASSWORD, ip);
   expect(response.status()).toBe(200);
-  return response
-    .headersArray()
-    .filter((h) => h.name.toLowerCase() === "set-cookie")
-    .map((h) => h.value.split(";")[0])
-    .join("; ");
+  const cookies = (r: typeof response) =>
+    r
+      .headersArray()
+      .filter((h) => h.name.toLowerCase() === "set-cookie")
+      .map((h) => h.value.split(";")[0])
+      .join("; ");
+  if (!(await response.json()).twoFactorRedirect) return cookies(response);
+  // Admins: the second step, with the authenticator code (audit R11).
+  const verified = await request.post("/api/auth/two-factor/verify-totp", {
+    headers: { origin: BASE_URL, "cf-connecting-ip": ip, cookie: cookies(response) },
+    data: { code: await adminTotpCode() },
+    maxRedirects: 0,
+  });
+  expect(verified.status()).toBe(200);
+  return cookies(verified);
 }
 
 test.beforeAll(async () => {

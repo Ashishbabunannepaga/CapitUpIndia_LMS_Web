@@ -1,10 +1,11 @@
 import "server-only";
 
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, like } from "drizzle-orm";
 import { z } from "zod";
 
-import { authAccount, profiles } from "../db/schema";
+import { authAccount, authTwoFactor, authUser, authVerification, profiles } from "../db/schema";
 import { assertAdmin, type Actor } from "./actor";
+import { auditInsert } from "./audit";
 import type { DataContext } from "./context";
 import { countBook, handOverBook } from "./leads";
 import { AccessDeniedError, InvalidInputError, isTriggerError } from "./errors";
@@ -256,4 +257,47 @@ async function findMember(ctx: DataContext, userId: string): Promise<TeamMember>
   const member = await ctx.db.query.profiles.findFirst({ where: eq(profiles.id, userId) });
   if (!member) throw new InvalidInputError("That team member does not exist.");
   return member;
+}
+
+// --- Two-step sign-in (audit R11) --------------------------------------------
+//
+// Admins must sign in with a password and a code from an authenticator app.
+// Agents may switch it on for themselves. An admin who loses their phone uses
+// a backup code, or another admin resets it on Team.
+
+/** Whether this person must have two-step sign-in before using the app. */
+export function twoFactorRequired(actor: Pick<Actor, "role">): boolean {
+  return actor.role === "ADMIN";
+}
+
+/** Whether two-step sign-in is switched on for this user. */
+export async function hasTwoFactor(ctx: DataContext, userId: string): Promise<boolean> {
+  const row = await ctx.db.query.authUser.findFirst({ columns: { twoFactorEnabled: true }, where: eq(authUser.id, userId) });
+  return Boolean(row?.twoFactorEnabled);
+}
+
+/** Ids of the team members who have two-step sign-in on. Admins only. */
+export async function listTwoFactorUsers(ctx: DataContext, actor: Actor): Promise<Set<string>> {
+  assertAdmin(actor);
+  const rows = await ctx.db.select({ id: authUser.id }).from(authUser).where(eq(authUser.twoFactorEnabled, true));
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * Switches another person's two-step sign-in off (lost phone) and signs them
+ * out everywhere. An admin will be asked to set it up again at next sign-in.
+ * Admins only, and not on their own account.
+ */
+export async function resetTwoFactor(ctx: DataContext, actor: Actor, userId: string): Promise<void> {
+  assertAdmin(actor);
+  if (actor.id === userId) throw new AccessDeniedError("Ask another admin to reset your two-step sign-in.");
+  await findMember(ctx, userId);
+  await ctx.db.batch([
+    ctx.db.update(authUser).set({ twoFactorEnabled: false, updatedAt: new Date() }).where(eq(authUser.id, userId)),
+    ctx.db.delete(authTwoFactor).where(eq(authTwoFactor.userId, userId)),
+    // Remembered devices stop skipping the code.
+    ctx.db.delete(authVerification).where(and(eq(authVerification.value, userId), like(authVerification.identifier, "trust-device-%"))),
+    auditInsert(ctx, actor, "user", userId, "UPDATE", { two_factor_enabled: true }, { two_factor_enabled: false, reason: "two-step sign-in reset" }),
+  ]);
+  await (await ctx.auth.$context).internalAdapter.deleteUserSessions(userId);
 }

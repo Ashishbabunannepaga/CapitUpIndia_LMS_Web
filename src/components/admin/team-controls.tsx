@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { KeyRound, Loader2, UserPlus } from "lucide-react";
+import { KeyRound, Loader2, ShieldOff, UserPlus } from "lucide-react";
 
 import {
   addTeamMember,
@@ -11,6 +11,7 @@ import {
   disableMember,
   memberBook,
   resetMemberPassword,
+  resetMemberTwoFactor,
   type TeamResult,
 } from "@/app/(app)/admin/team/actions";
 import { Button } from "@/components/ui/button";
@@ -79,16 +80,20 @@ export function AddMemberForm() {
 export function MemberControls({
   member,
   isSelf,
+  twoFactor = false,
   takers = [],
 }: {
   member: { id: string; full_name: string; role: "ADMIN" | "AGENT"; is_active: boolean };
   isSelf: boolean;
+  /** Two-step sign-in is on for them (audit R11). */
+  twoFactor?: boolean;
   /** Active people who can take over this person's leads and tasks. */
   takers?: { id: string; full_name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<TeamResult | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [confirm2fa, setConfirm2fa] = useState(false);
   // Disabling asks where their leads and open tasks go first.
   const [handover, setHandover] = useState<{ leads: number; tasks: number } | null>(null);
   const [taker, setTaker] = useState("");
@@ -142,6 +147,22 @@ export function MemberControls({
           <KeyRound />
           Reset password
         </Button>
+        {twoFactor && !isSelf ? (
+          <Button
+            size="sm"
+            variant={confirm2fa ? "destructive" : "ghost"}
+            disabled={pending}
+            title="For a lost phone: switches their two-step sign-in off and signs them out"
+            onClick={() => {
+              if (!confirm2fa) return setConfirm2fa(true);
+              setConfirm2fa(false);
+              act(() => resetMemberTwoFactor(member.id));
+            }}
+          >
+            <ShieldOff />
+            {confirm2fa ? "Confirm reset" : "Reset 2-step"}
+          </Button>
+        ) : null}
         {pending ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
       </div>
       {handover ? (

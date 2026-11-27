@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Eye, KeyRound, ShieldAlert, Snowflake, UserPlus } from "lucide-react";
+import { Eye, KeyRound, ShieldAlert, ShieldCheck, Snowflake, UserPlus } from "lucide-react";
 
 import { AddMemberForm, MemberControls, StaleDaysForm } from "@/components/admin/team-controls";
 import { StatCard } from "@/components/analytics/charts";
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { pipelineAnalytics } from "@/server/data/analytics";
 import { recentSignInFailures } from "@/server/data/sign-in-failures";
 import { getStaleDays } from "@/server/data/stale";
-import { listTeam } from "@/server/data/users";
+import { listTeam, listTwoFactorUsers } from "@/server/data/users";
 
 export const metadata: Metadata = { title: "Team" };
 
@@ -37,11 +37,12 @@ const joinedFormat = new Intl.DateTimeFormat("en-IN", {
 export default async function TeamPage() {
   const { ctx, actor } = await requireSession();
   // Active people first, then by name.
-  const [team, pipeline, failures, staleDays] = await Promise.all([
+  const [team, pipeline, failures, staleDays, twoFactor] = await Promise.all([
     listTeam(ctx, actor),
     pipelineAnalytics(ctx, actor),
     recentSignInFailures(ctx, actor, 25),
     getStaleDays(ctx),
+    listTwoFactorUsers(ctx, actor),
   ]);
   const members = team.sort((a, b) => Number(b.is_active) - Number(a.is_active));
   const owned = new Map(pipeline.agents.map((a) => [a.agent_id, a]));
@@ -152,6 +153,19 @@ export default async function TeamPage() {
                           Disabled
                         </span>
                       )}
+                      {member.is_active ? (
+                        twoFactor.has(member.id) ? (
+                          <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" title="Signs in with a password and an authenticator code">
+                            <ShieldCheck className="size-3.5 text-success" aria-hidden="true" />
+                            2-step on
+                          </span>
+                        ) : member.role === "ADMIN" ? (
+                          <span className="mt-1 flex items-center gap-1 text-xs text-gold-800" title="Will be asked to set up two-step sign-in at next sign-in">
+                            <ShieldAlert className="size-3.5" aria-hidden="true" />
+                            2-step setup due
+                          </span>
+                        ) : null
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {owned.get(member.id)?.total ?? 0}
@@ -168,6 +182,7 @@ export default async function TeamPage() {
                           key={`${member.role}-${member.is_active}`}
                           member={member}
                           isSelf={member.id === actor.id}
+                          twoFactor={twoFactor.has(member.id)}
                           takers={team.filter((m) => m.is_active && m.id !== member.id).map((m) => ({ id: m.id, full_name: m.full_name }))}
                         />
                         {member.role === "AGENT" ? (

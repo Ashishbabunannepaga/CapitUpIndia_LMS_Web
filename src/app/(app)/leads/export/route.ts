@@ -3,6 +3,7 @@ import { todayInBusinessTz } from "@/lib/dates";
 import { parseLeadFilters } from "@/lib/lead-filters";
 import { selectedLeadsXlsx } from "@/lib/reports/renewal-report";
 import { AccessDeniedError, InvalidInputError } from "@/server/data/errors";
+import { recordExport } from "@/server/data/data-safety";
 import { leadsForExport, leadsForFilteredExport } from "@/server/data/leads";
 
 // Leads as an Excel sheet, admins only (the data functions check):
@@ -24,8 +25,10 @@ export async function GET(request: Request) {
         .filter((v) => /^\d{1,12}$/.test(v))
         .map(Number);
       leads = await leadsForExport(session.ctx, session.actor, ids);
+      await recordExport(session.ctx, session.actor, { report: "leads_selected", rows: leads.length });
     } else {
       ({ leads, truncated } = await leadsForFilteredExport(session.ctx, session.actor, parseLeadFilters(Object.fromEntries(params))));
+      await recordExport(session.ctx, session.actor, { report: "leads_filtered", rows: leads.length, filters: Object.fromEntries(params) });
     }
     return new Response(selectedLeadsXlsx(leads) as Uint8Array<ArrayBuffer>, {
       headers: {

@@ -82,6 +82,8 @@ export const authUser = sqliteTable("user", {
   image: text("image"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  // Better Auth two-factor plugin (audit R11): set once an authenticator app is confirmed.
+  twoFactorEnabled: bool("two_factor_enabled").default(false),
 });
 
 export const authSession = sqliteTable(
@@ -131,6 +133,24 @@ export const authVerification = sqliteTable("verification", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
 });
+
+// Authenticator-app secrets and backup codes (Better Auth two-factor plugin),
+// both encrypted with BETTER_AUTH_SECRET. One row per user.
+export const authTwoFactor = sqliteTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUser.id, { onDelete: "cascade" }),
+    verified: bool("verified").default(true),
+    failedVerificationCount: integer("failed_verification_count").default(0),
+    lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+  },
+  (t) => [index("two_factor_user_idx").on(t.userId), index("two_factor_secret_idx").on(t.secret)],
+);
 
 // Sign-in attempts per IP and endpoint (Better Auth rate limiting). Stored in
 // D1 so every Worker instance sees the same counts.
@@ -905,6 +925,26 @@ export const auditLogs = sqliteTable(
     index("audit_logs_record_idx").on(t.table_name, t.record_id, t.created_at),
     index("audit_logs_created_idx").on(t.created_at),
   ],
+);
+
+/**
+ * Leads an admin deleted, kept for restoring (src/server/data/deleted-leads.ts):
+ * the lead row and everything that hung off it (notes, calendar entries,
+ * tags, transactions, contact log, read marks, linked Task Grid tasks), as
+ * JSON taken in the same batch as the delete. Restoring puts them back with
+ * their original ids. Not a foreign key to `leads`: the lead is gone.
+ */
+export const deletedLeads = sqliteTable(
+  "deleted_leads",
+  {
+    lead_id: integer("lead_id").primaryKey(),
+    client_name: text("client_name").notNull(),
+    assigned_agent_id: text("assigned_agent_id"),
+    deleted_by: text("deleted_by").references(() => profiles.id, { onDelete: "set null" }),
+    deleted_at: text("deleted_at").notNull(),
+    snapshot: text("snapshot", { mode: "json" }).notNull(),
+  },
+  (t) => [index("deleted_leads_deleted_idx").on(t.deleted_at)],
 );
 
 /**

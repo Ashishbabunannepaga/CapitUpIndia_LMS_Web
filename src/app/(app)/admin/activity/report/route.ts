@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth";
 import { todayInBusinessTz } from "@/lib/dates";
 import { monthlyReportXlsx } from "@/lib/reports/monthly-report";
 import { monthlyReport } from "@/server/data/activity";
+import { recordExport } from "@/server/data/data-safety";
 import { AccessDeniedError, InvalidInputError } from "@/server/data/errors";
 
 // The monthly report download (Team activity page). Route handlers are not
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
   try {
     const report = await monthlyReport(session.ctx, session.actor, month);
     const body = monthlyReportXlsx(report);
+    await recordExport(session.ctx, session.actor, { report: "monthly_report", rows: report.leads.length, filters: { month: report.month } });
     return new Response(body as Uint8Array<ArrayBuffer>, {
       headers: {
         ...headers,

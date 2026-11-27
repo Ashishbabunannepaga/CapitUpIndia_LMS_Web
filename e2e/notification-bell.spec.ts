@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { createLead } from "@/server/data/leads";
 
-import { actor, clientAddress, execute, openLocalDb, PASSWORD, retrying, USERS, type LocalDb } from "./fixtures";
+import { actor, clientAddress, passTwoFactor, execute, openLocalDb, PASSWORD, retrying, USERS, type LocalDb } from "./fixtures";
 
 // The renewal reminders panel opens from the bell in the sidebar. It is wider
 // than the sidebar, so it must float over the page instead of being cut off
@@ -41,6 +41,7 @@ async function signIn(page: Page) {
   await page.getByLabel("Work email").fill(USERS.amit.email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await passTwoFactor(page);
   await expect(page).not.toHaveURL(/\/login/);
 }
 
