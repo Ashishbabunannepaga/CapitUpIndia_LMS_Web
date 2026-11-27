@@ -82,6 +82,8 @@ export const authUser = sqliteTable("user", {
   image: text("image"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  // Better Auth two-factor plugin (audit R11): set once an authenticator app is confirmed.
+  twoFactorEnabled: bool("two_factor_enabled").default(false),
 });
 
 export const authSession = sqliteTable(
@@ -131,6 +133,24 @@ export const authVerification = sqliteTable("verification", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
 });
+
+// Authenticator-app secrets and backup codes (Better Auth two-factor plugin),
+// both encrypted with BETTER_AUTH_SECRET. One row per user.
+export const authTwoFactor = sqliteTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUser.id, { onDelete: "cascade" }),
+    verified: bool("verified").default(true),
+    failedVerificationCount: integer("failed_verification_count").default(0),
+    lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+  },
+  (t) => [index("two_factor_user_idx").on(t.userId), index("two_factor_secret_idx").on(t.secret)],
+);
 
 // Sign-in attempts per IP and endpoint (Better Auth rate limiting). Stored in
 // D1 so every Worker instance sees the same counts.

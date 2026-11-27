@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { createWorkTask } from "@/server/data/work-tasks";
 
-import { actor, clientAddress, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
+import { actor, clientAddress, passTwoFactor, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
 
 // Task Grid: an admin's task is pinned in the agent's My Day header; the
 // agent asks a question from there, and the admin sees it in the thread.
@@ -42,6 +42,7 @@ async function signIn(page: Page, user: UserKey) {
   await page.getByLabel("Work email").fill(USERS[user].email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await passTwoFactor(page);
   await expect(page).not.toHaveURL(/\/login/);
 }
 

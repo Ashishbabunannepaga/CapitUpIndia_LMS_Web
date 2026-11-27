@@ -169,6 +169,13 @@
       "when": 1795762787528,
       "tag": "0023_deleted_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1795763366784,
+      "tag": "0024_two_factor",
+      "breakpoints": true
     }
   ]
 }

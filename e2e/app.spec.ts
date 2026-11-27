@@ -1,8 +1,24 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { createLead } from "@/server/data/leads";
+import { createOTP } from "@better-auth/utils/otp";
 
-import { actor, clientAddress, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
+import { createLead } from "@/server/data/leads";
+import { createUser } from "@/server/data/users";
+
+import {
+  actor,
+  clientAddress,
+  execute,
+  openLocalDb,
+  passTwoFactor,
+  PASSWORD,
+  queryFirst,
+  retrying,
+  totpSecretFromUri,
+  USERS,
+  type LocalDb,
+  type UserKey,
+} from "./fixtures";
 
 // The real app in a real browser: sign-in, creating a lead, the duplicate
 // warning, notes, status changes and what each role can open.
@@ -15,6 +31,7 @@ async function signIn(page: Page, user: UserKey, password = PASSWORD) {
   await page.getByLabel("Work email").fill(USERS[user].email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
+  if (password === PASSWORD) await passTwoFactor(page);
   if (password === PASSWORD) await expect(page).not.toHaveURL(/\/login/);
 }
 
@@ -266,6 +283,46 @@ test("the admin adds a person who can then sign in, and disabling them shuts the
   await ravi.goto("/leads");
   await expect(ravi).toHaveURL(/\/login/);
   await ravi.close();
+});
+
+test("a new admin must set up two-step sign-in, and then each sign-in asks for a code", async ({ page }) => {
+  const admin = await actor(db, "admin");
+  await execute(db, "delete from user where email = 'zara@e2e.test'");
+  await createUser(db.ctx, admin, { email: "zara@e2e.test", fullName: "Zara E2E", password: PASSWORD, role: "ADMIN" });
+  await execute(db, "update profiles set must_change_password = 0 where email = 'zara@e2e.test'");
+
+  const login = async () => {
+    await page.setExtraHTTPHeaders({ "cf-connecting-ip": clientAddress() });
+    await page.goto("/login");
+    await page.getByLabel("Work email").fill("zara@e2e.test");
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+  };
+  await login();
+  // Nothing else opens until it is set up.
+  await expect(page).toHaveURL(/\/two-factor/);
+  await page.goto("/leads");
+  await expect(page).toHaveURL(/\/two-factor/);
+  expect((await page.request.get("/api/changes")).status()).toBe(401);
+
+  await page.getByLabel("Your password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("img", { name: "QR code for your authenticator app" })).toBeVisible();
+  const link = await page.getByRole("link", { name: "open it in the app" }).getAttribute("href");
+  const secret = totpSecretFromUri(link!);
+  await page.getByLabel("6-digit code").fill(await createOTP(secret).totp());
+  await page.getByRole("button", { name: "Turn on two-step sign-in" }).click();
+  await expect(page).toHaveURL(/\/my-day/);
+
+  await page.context().clearCookies();
+  await login();
+  await expect(page).toHaveURL(/\/login\/two-factor/);
+  await page.getByLabel("6-digit code").fill("000000");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByRole("alert")).toContainText("That code is wrong");
+  await page.getByLabel("6-digit code").fill(await createOTP(secret).totp());
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page).toHaveURL(/\/my-day/);
 });
 
 test("an admin cannot demote or disable themselves from the team page", async ({ page }) => {

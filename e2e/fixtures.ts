@@ -1,3 +1,8 @@
+import { readFileSync } from "node:fs";
+
+import { base32 } from "@better-auth/utils/base32";
+import { createOTP } from "@better-auth/utils/otp";
+import type { Page } from "@playwright/test";
 import { getPlatformProxy } from "wrangler";
 
 import { createDataContext, type DataContext } from "@/server/data/context";
@@ -77,4 +82,27 @@ export function queryFirst<T = Record<string, unknown>>(db: LocalDb, sql: string
 
 export function execute(db: LocalDb, sql: string, ...binds: unknown[]) {
   return retrying(() => db.d1.prepare(sql).bind(...binds).run());
+}
+
+// Admins must use two-step sign-in (audit R11). Global setup switches it on
+// for the e2e admin and keeps the authenticator secret here.
+export const ADMIN_TOTP_FILE = ".wrangler/e2e-admin-totp";
+
+/** The base32 key from an otpauth:// link, as the raw secret the code is made from. */
+export function totpSecretFromUri(uri: string): string {
+  return new TextDecoder().decode(base32.decode(new URL(uri).searchParams.get("secret")!));
+}
+
+/** The current authenticator code for the e2e admin. */
+export function adminTotpCode(): Promise<string> {
+  return createOTP(readFileSync(ADMIN_TOTP_FILE, "utf8").trim()).totp();
+}
+
+/** After the password step: enters the admin's code when the app asks for one. */
+export async function passTwoFactor(page: Page): Promise<void> {
+  await page.waitForLoadState("domcontentloaded");
+  if (!new URL(page.url()).pathname.startsWith("/login/two-factor")) return;
+  await page.getByLabel("6-digit code").fill(await adminTotpCode());
+  await page.getByRole("button", { name: "Verify" }).click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"));
 }

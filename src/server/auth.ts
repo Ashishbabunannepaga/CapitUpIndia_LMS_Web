@@ -4,6 +4,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { twoFactor } from "better-auth/plugins/two-factor";
 import { drizzle } from "drizzle-orm/d1";
 
 import * as schema from "./db/schema";
@@ -57,6 +58,7 @@ function buildAuth(d1: D1Database, env: AuthEnv) {
         account: schema.authAccount,
         verification: schema.authVerification,
         rateLimit: schema.authRateLimit,
+        twoFactor: schema.authTwoFactor,
       },
     }),
     emailAndPassword: {
@@ -92,8 +94,18 @@ function buildAuth(d1: D1Database, env: AuthEnv) {
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
     },
     telemetry: { enabled: false },
-    // Must stay last: writes auth cookies from server actions.
-    plugins: [nextCookies()],
+    plugins: [
+      // Two-step sign-in with an authenticator app (audit R11). Required for
+      // admins (src/lib/auth.ts); a remembered device skips the code for 30 days.
+      twoFactor({
+        issuer: "CapitUp LMS",
+        twoFactorCookieMaxAge: 10 * 60,
+        trustDeviceMaxAge: 30 * 24 * 60 * 60,
+        backupCodeOptions: { amount: 10, length: 10 },
+      }),
+      // Must stay last: writes auth cookies from server actions.
+      nextCookies(),
+    ],
   });
 }
 

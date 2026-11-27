@@ -3,7 +3,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { addDays, todayInBusinessTz } from "@/lib/dates";
 import { createLead } from "@/server/data/leads";
 
-import { actor, clientAddress, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
+import { actor, clientAddress, passTwoFactor, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
 
 // Ash (2026-11-17): agents edit the "Lead notes" field in place, repeated
 // "[AI Import Update]" lines show once, and a won lead with last year's date
@@ -17,6 +17,7 @@ async function signIn(page: Page, user: UserKey) {
   await page.getByLabel("Work email").fill(USERS[user].email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await passTwoFactor(page);
   await expect(page).not.toHaveURL(/\/login/);
 }
 

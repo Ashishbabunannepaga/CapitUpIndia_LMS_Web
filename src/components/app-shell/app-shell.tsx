@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { LogOut, Menu, X } from "lucide-react";
+import { LogOut, Menu, ShieldCheck, X } from "lucide-react";
 
 import { BrandLockup, BrandMark } from "@/components/brand/brand";
 
@@ -50,6 +51,17 @@ function UserPanel({
         <p className="mt-0.5 text-xs text-sidebar-foreground/60">{user.role === "ADMIN" ? "Admin" : "Agent"}</p>
       </div>
       <NotificationBell notifications={notifications} unread={unreadNotifications} pushPublicKey={pushPublicKey} />
+      <Button
+        asChild
+        variant="ghost"
+        size="icon"
+        title="Two-step sign-in"
+        className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      >
+        <Link href="/two-factor" aria-label="Two-step sign-in">
+          <ShieldCheck />
+        </Link>
+      </Button>
       <form action="/auth/signout" method="post">
         <Button
           type="submit"

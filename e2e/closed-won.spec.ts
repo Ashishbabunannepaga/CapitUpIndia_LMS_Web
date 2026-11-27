@@ -3,7 +3,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { addDays, addYears, todayInBusinessTz } from "@/lib/dates";
 import { addLeadNote, createLead } from "@/server/data/leads";
 
-import { actor, clientAddress, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
+import { actor, clientAddress, passTwoFactor, execute, openLocalDb, PASSWORD, queryFirst, retrying, USERS, type LocalDb, type UserKey } from "./fixtures";
 
 // In a real browser: an agent closes a lead by uploading its policy (checked,
 // then Closed Won with a client code and next year's renewal date), notes can
@@ -19,6 +19,7 @@ async function signIn(page: Page, user: UserKey) {
   await page.getByLabel("Work email").fill(USERS[user].email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await passTwoFactor(page);
   await expect(page).not.toHaveURL(/\/login/);
 }
 
