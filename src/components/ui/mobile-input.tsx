@@ -16,7 +16,8 @@ function MobileInput({ defaultValue, onInput, ...props }: Omit<React.ComponentPr
       type="tel"
       inputMode="numeric"
       autoComplete="tel-national"
-      maxLength={MOBILE_DIGITS}
+      // No maxLength: the browser would cut a pasted "+91 98765 43210" short
+      // before the prefix is dropped. onInput keeps it to 10 digits instead.
       pattern={`[0-9]{${MOBILE_DIGITS}}`}
       title={`Enter a ${MOBILE_DIGITS}-digit mobile number`}
       placeholder="9876543210"
