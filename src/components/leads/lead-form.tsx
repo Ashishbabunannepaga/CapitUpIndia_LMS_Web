@@ -161,7 +161,11 @@ function DuplicatePanel({
         <AlertTriangle className="mt-0.5 size-4 shrink-0" />
         <div>
           <p className="font-semibold">
-            {exact ? "This company is already in the CRM." : "A similar company is already in the CRM."}
+            {exact
+              ? "This company is already in the CRM."
+              : matches.every((m) => m.matched_on !== "name")
+                ? "This contact is already on another lead."
+                : "A similar company is already in the CRM."}
           </p>
           <p className="text-red-800/80 dark:text-red-100/80">
             Check before reaching out so two agents don&apos;t pursue the same account. If it&apos;s the same company,
@@ -176,7 +180,13 @@ function DuplicatePanel({
               <p className="font-medium">
                 {match.client_name}
                 <span className="ml-2 text-xs font-normal text-red-800/70 dark:text-red-100/70">
-                  {match.is_exact ? "Same company" : `${Math.round(match.similarity * 100)}% similar`}
+                  {match.matched_on === "phone"
+                    ? "Same phone number"
+                    : match.matched_on === "email"
+                      ? "Same email"
+                      : match.is_exact
+                        ? "Same company"
+                        : `${Math.round(match.similarity * 100)}% similar`}
                 </span>
               </p>
               <p className="text-xs text-red-800/80 dark:text-red-100/80">Handled by {match.assigned_agent_name}</p>

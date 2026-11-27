@@ -90,6 +90,14 @@ function parseLeadForm(formData: FormData) {
   return { ok: true as const, values: parsed.data, raw };
 }
 
+/** The POC phone numbers and emails a duplicate check also matches on. */
+function contactsOf(v: { poc_contact_number: string; poc2_contact_number: string; poc_email_id: string; poc2_email_id: string }) {
+  return {
+    phones: [v.poc_contact_number, v.poc2_contact_number].filter((p) => p.trim() !== ""),
+    emails: [v.poc_email_id, v.poc2_email_id].filter((e) => e.trim() !== ""),
+  };
+}
+
 /** Fuzzy duplicate lookup while the user types a company name. */
 export async function checkDuplicates(clientName: string, excludeId?: number): Promise<SimilarLead[]> {
   const session = await getSession();
@@ -121,7 +129,7 @@ export async function createLead(_prev: LeadFormState, formData: FormData): Prom
   }
 
   // Never create a competing company record without an explicit decision.
-  const similar = await findSimilarLeads(ctx, actor, values.client_name);
+  const similar = await findSimilarLeads(ctx, actor, values.client_name, contactsOf(values));
   if (similar.length > 0 && !values.confirm_duplicate) {
     return { duplicates: similar, values: raw };
   }
@@ -175,8 +183,18 @@ export async function updateLead(leadId: number, _prev: LeadFormState, formData:
     const current = await leadData.getLead(ctx, actor, leadId);
     if (!current) return { error: "That lead no longer exists or isn't yours.", values: raw };
 
-    if (current.client_name.trim().toLowerCase() !== values.client_name.toLowerCase()) {
-      const similar = await findSimilarLeads(ctx, actor, values.client_name, { excludeId: leadId });
+    // Checked again when the name changes, or when a phone or email is new on this lead.
+    const known = new Set([current.poc_contact_number, current.poc2_contact_number, current.poc_email_id, current.poc2_email_id].map((v) => v.trim().toLowerCase()));
+    const contacts = contactsOf(values);
+    const newContacts = {
+      phones: contacts.phones.filter((p) => !known.has(p.trim().toLowerCase())),
+      emails: contacts.emails.filter((e) => !known.has(e.trim().toLowerCase())),
+    };
+    const renamed = current.client_name.trim().toLowerCase() !== values.client_name.toLowerCase();
+    if (renamed || newContacts.phones.length > 0 || newContacts.emails.length > 0) {
+      const similar = renamed
+        ? await findSimilarLeads(ctx, actor, values.client_name, { excludeId: leadId, ...newContacts })
+        : await findSimilarLeads(ctx, actor, "", { excludeId: leadId, ...newContacts });
       if (similar.length > 0 && !values.confirm_duplicate) {
         return { duplicates: similar, values: raw };
       }
