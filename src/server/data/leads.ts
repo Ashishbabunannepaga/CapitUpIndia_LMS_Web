@@ -43,11 +43,11 @@ import {
   notifications,
   profiles,
   renewalMilestoneOffsets,
-  visitingCardPreviews,
 } from "../db/schema";
 import { isAdmin, assertAdmin, type Actor } from "./actor";
 import { auditInsert, changed } from "./audit";
 import type { DataContext } from "./context";
+import { deleteLeadToBin } from "./data-safety";
 import { duplicateState } from "./duplicates";
 import { AccessDeniedError, ConflictError, InvalidInputError, isTriggerError } from "./errors";
 import { DONE_MILESTONE_PREFIX, clientWithProduct, milestoneEvents, renewalEventTitle, renewalMode } from "./milestones";
@@ -1318,16 +1318,10 @@ export async function resolveDuplicate(ctx: DataContext, actor: Actor, id: numbe
   });
 }
 
-/** Deletes a lead with its notes and events. Admins only. */
+/** Deletes a lead with its notes and events, keeping a restorable copy in the bin. Admins only. */
 export async function deleteLead(ctx: DataContext, actor: Actor, id: number): Promise<void> {
-  assertAdmin(actor);
-  const before = await findVisible(ctx, actor, id);
-  await ctx.db.batch([
-    ctx.db.delete(leads).where(eq(leads.id, id)),
-    // The compressed card copy goes with the lead (the R2 photo is kept, as before).
-    ctx.db.delete(visitingCardPreviews).where(eq(visitingCardPreviews.path, before.visiting_card_path ?? "")),
-    auditInsert(ctx, actor, "leads", id, "DELETE", before, null),
-  ]);
+  // Into the bin (Admin > Deleted & exports), restorable for BIN_DAYS.
+  await deleteLeadToBin(ctx, actor, id);
 }
 
 export type ContactResult = "poc1" | "poc2" | "notes" | "existing";

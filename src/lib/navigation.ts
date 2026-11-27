@@ -4,6 +4,7 @@ import {
   ListChecks,
   HeartPulse,
   History,
+  ArchiveRestore,
   Activity,
   BarChart3,
   CalendarClock,
@@ -111,6 +112,12 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/admin/audit",
         icon: History,
         description: "Every change to every lead: who, which field, old and new value, when.",
+      },
+      {
+        title: "Deleted & exports",
+        href: "/admin/deleted",
+        icon: ArchiveRestore,
+        description: "Restore deleted leads for 90 days, and see every Excel download of client data.",
       },
       {
         title: "Analytics",

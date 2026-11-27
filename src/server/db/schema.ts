@@ -908,6 +908,26 @@ export const auditLogs = sqliteTable(
 );
 
 /**
+ * Leads an admin deleted, kept for restoring (src/server/data/deleted-leads.ts):
+ * the lead row and everything that hung off it (notes, calendar entries,
+ * tags, transactions, contact log, read marks, linked Task Grid tasks), as
+ * JSON taken in the same batch as the delete. Restoring puts them back with
+ * their original ids. Not a foreign key to `leads`: the lead is gone.
+ */
+export const deletedLeads = sqliteTable(
+  "deleted_leads",
+  {
+    lead_id: integer("lead_id").primaryKey(),
+    client_name: text("client_name").notNull(),
+    assigned_agent_id: text("assigned_agent_id"),
+    deleted_by: text("deleted_by").references(() => profiles.id, { onDelete: "set null" }),
+    deleted_at: text("deleted_at").notNull(),
+    snapshot: text("snapshot", { mode: "json" }).notNull(),
+  },
+  (t) => [index("deleted_leads_deleted_idx").on(t.deleted_at)],
+);
+
+/**
  * One row: the unix second of the last change to anything a screen shows.
  * SQLite triggers (migrations/0003) bump it, at most once a second, so open
  * tabs can ask "did anything change?" by reading one row instead of

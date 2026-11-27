@@ -18,6 +18,7 @@ import { dayPlanPrompt, teamRiskPrompt } from "@/lib/ai/prompts";
 import { sendDayPlans, type PlanWriter } from "@/server/data/day-plan";
 import { runPlaybooks } from "@/server/data/playbooks";
 import { winBackLostLeads } from "@/server/data/win-back";
+import { purgeDeletedLeads } from "@/server/data/data-safety";
 import { deliverTaskDueReminders } from "@/server/data/task-reminders";
 import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
@@ -134,6 +135,17 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
     } catch (error) {
       console.error("Renewal playbooks failed", { message: message(error) });
       await recordAppError(ctx, { source: "job", path: "Renewal playbooks", message: message(error) }, at);
+    }
+  }
+
+  // Daily at 03:40 UTC: leads deleted more than 90 days ago leave the bin.
+  if (at.getUTCHours() === 3 && minute === 40) {
+    try {
+      const purged = await purgeDeletedLeads(ctx, at);
+      if (purged > 0) console.log(`Emptied ${purged} lead(s) from the bin.`);
+    } catch (error) {
+      console.error("Bin purge failed", { message: message(error) });
+      await recordAppError(ctx, { source: "job", path: "Deleted leads bin", message: message(error) }, at);
     }
   }
 
