@@ -127,11 +127,11 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
     }
   }
 
-  // Hourly: renewal playbook steps whose date has come become tasks.
+  // Hourly: renewal playbook steps whose date has come become reminders (bell + WhatsApp).
   if (minute === 17) {
     try {
       const steps = await runPlaybooks(ctx, at);
-      if (steps > 0) console.log(`Created ${steps} renewal playbook task(s).`);
+      if (steps > 0) console.log(`Sent ${steps} renewal playbook reminder(s).`);
     } catch (error) {
       console.error("Renewal playbooks failed", { message: message(error) });
       await recordAppError(ctx, { source: "job", path: "Renewal playbooks", message: message(error) }, at);

@@ -52,7 +52,12 @@ export function whatsAppConfig(env: WhatsAppEnv): WhatsAppConfig | null {
   return { token, phoneNumberId, template: env.WHATSAPP_TEMPLATE?.trim() || "lms_task_alert", lang: env.WHATSAPP_TEMPLATE_LANG?.trim() || "en" };
 }
 
-export type WhatsAppAlert = { to: string; title: string; body: string; taskId: number };
+/**
+ * One alert. The Done and Snooze 1h buttons carry `done:<taskId>` and
+ * `snooze:<taskId>`, unless `buttons` gives other payloads (a renewal
+ * reminder, which has no task behind it, uses `seen:<id>` and `later:<id>`).
+ */
+export type WhatsAppAlert = { to: string; title: string; body: string; taskId: number; buttons?: [string, string] };
 export type WhatsAppResult = { ok: true; id: string } | { ok: false; error: string };
 /** Sends one alert; the cron uses sendTaskAlert, tests pass a fake. */
 export type WhatsAppSender = (alert: WhatsAppAlert) => Promise<WhatsAppResult>;
@@ -83,8 +88,9 @@ async function post(cfg: WhatsAppConfig, payload: unknown): Promise<WhatsAppResu
  * Done and Snooze 1h, whose payloads carry the task id back to the webhook.
  */
 export function taskAlertSender(cfg: WhatsAppConfig): WhatsAppSender {
-  return (alert) =>
-    post(cfg, {
+  return (alert) => {
+    const [done, snooze] = alert.buttons ?? [`done:${alert.taskId}`, `snooze:${alert.taskId}`];
+    return post(cfg, {
       messaging_product: "whatsapp",
       to: alert.to,
       type: "template",
@@ -93,11 +99,12 @@ export function taskAlertSender(cfg: WhatsAppConfig): WhatsAppSender {
         language: { code: cfg.lang },
         components: [
           { type: "body", parameters: [{ type: "text", text: param(alert.title, 300) }, { type: "text", text: param(alert.body, 600) }] },
-          { type: "button", sub_type: "quick_reply", index: "0", parameters: [{ type: "payload", payload: `done:${alert.taskId}` }] },
-          { type: "button", sub_type: "quick_reply", index: "1", parameters: [{ type: "payload", payload: `snooze:${alert.taskId}` }] },
+          { type: "button", sub_type: "quick_reply", index: "0", parameters: [{ type: "payload", payload: done }] },
+          { type: "button", sub_type: "quick_reply", index: "1", parameters: [{ type: "payload", payload: snooze }] },
         ],
       },
     });
+  };
 }
 
 /** A plain reply, allowed within 24 hours of the person writing to us. WhatsApp caps text at 4,096 characters. */

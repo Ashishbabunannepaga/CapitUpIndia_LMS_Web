@@ -1,9 +1,8 @@
 import "server-only";
 
 import { and, asc, eq, gte, inArray, isNotNull, lte, notInArray } from "drizzle-orm";
-import type { BatchItem } from "drizzle-orm/batch";
 
-import { addDays, businessDateTimeToIso, todayInBusinessTz } from "@/lib/dates";
+import { addDays, todayInBusinessTz } from "@/lib/dates";
 import { isTaskPriority, parseTags, type TaskPriority } from "@/lib/work-tasks";
 
 import {
@@ -14,9 +13,6 @@ import {
   profiles,
   taskPlaybooks,
   taskPlaybookSteps,
-  workTaskMessages,
-  workTasks,
-  workTaskTags,
 } from "../db/schema";
 import { assertAdmin, type Actor } from "./actor";
 import { auditInsert } from "./audit";
@@ -24,19 +20,22 @@ import type { DataContext } from "./context";
 import { InvalidInputError } from "./errors";
 
 // Renewal playbooks (Admin > Playbooks). Each active playbook is a chain of
-// steps, each due some days from a lead's renewal date. Hourly, a step
-// becomes a Task Grid task for the lead's agent OPEN_DAYS before it is due,
-// linked to the lead and tagged, so it gets the usual reminders, nudges and
-// escalation. Each step is created once per renewal cycle (playbook_tasks);
-// when the renewal rolls to next year the chain starts again. Closed Lost and
-// Auto Renewed leads, unassigned leads and inactive agents are skipped. A step
-// already more than LATE_DAYS overdue when first seen (a lead added late) is
-// skipped rather than dumped on the agent.
+// steps, each due some days from a lead's renewal date. Hourly, a step becomes
+// a reminder for the lead's agent OPEN_DAYS before it is due: a bell item
+// linked to the lead, which the per-minute WhatsApp cron also sends to the
+// agent's WhatsApp (when it is on for them). Reminders are not Task Grid
+// tasks: the Task Grid is for work people give each other. Each step is sent
+// once per renewal cycle (playbook_tasks); when the renewal rolls to next year
+// the chain starts again. Closed Lost and Auto Renewed leads, unassigned leads
+// and inactive agents are skipped. A step already more than LATE_DAYS overdue
+// when first seen (a lead added late) is skipped rather than sent late.
 
 export const OPEN_DAYS = 3;
 const LATE_DAYS = 3;
 const SKIP_STATUSES = ["Closed Lost", "Auto Renewed"] as const;
 const PER_RUN = 150;
+/** Bell title prefix; the WhatsApp cron sends these even though no task is behind them. */
+export const PLAYBOOK_ALERT_PREFIX = "Renewal step:";
 
 export type PlaybookStep = { id: number; day_offset: number; title: string; description: string; priority: TaskPriority; tags: string };
 export type Playbook = { id: number; name: string; applies_to: (typeof PLAYBOOK_SCOPES)[number]; active: boolean; steps: PlaybookStep[] };
@@ -123,7 +122,7 @@ export async function deletePlaybookStep(ctx: DataContext, actor: Actor, stepId:
 
 const fill = (text: string, client: string) => text.replaceAll("{client}", client);
 
-/** Creates every playbook step whose open date has come. Returns how many tasks were created. */
+/** Sends every playbook step whose open date has come. Returns how many reminders went out. */
 export async function runPlaybooks(ctx: DataContext, at: Date = new Date(), limit = PER_RUN): Promise<number> {
   const books = (await loadPlaybooks(ctx, true)).filter((b) => b.steps.length > 0);
   if (!books.length) return 0;
@@ -174,7 +173,7 @@ export async function runPlaybooks(ctx: DataContext, at: Date = new Date(), limi
         const key = `${step.id}:${lead.id}:${renewal}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        // Claim first, so two overlapping runs never create the same step twice.
+        // Claim first, so two overlapping runs never send the same step twice.
         const claim = await ctx.db
           .insert(playbookTasks)
           .values({ step_id: step.id, lead_id: lead.id, renewal_date: renewal })
@@ -183,44 +182,15 @@ export async function runPlaybooks(ctx: DataContext, at: Date = new Date(), limi
         if (!claim.length) continue;
 
         const title = fill(step.title, lead.client_name).slice(0, 200);
-        const tags = parseTags([...step.tags.split(","), "playbook"]);
-        const [task] = await ctx.db
-          .insert(workTasks)
-          .values({
-            kind: "assigned",
-            title,
-            description: fill(step.description, lead.client_name),
-            priority: step.priority,
-            due_at: businessDateTimeToIso(due, "18:00"),
-            assignee_id: lead.agent_id!,
-            created_by: null,
-            created_by_name: book.name,
-            lead_id: lead.id,
-          })
-          .returning({ id: workTasks.id });
-        const writes: BatchItem<"sqlite">[] = [
-          ctx.db
-            .update(playbookTasks)
-            .set({ task_id: task.id })
-            .where(and(eq(playbookTasks.step_id, step.id), eq(playbookTasks.lead_id, lead.id), eq(playbookTasks.renewal_date, renewal))),
-          ctx.db.insert(workTaskMessages).values({
-            task_id: task.id,
-            author_id: null,
-            author_name: "Playbook",
-            kind: "system",
-            body: `Created by the "${book.name}" playbook for the ${renewal} renewal.`,
-          }),
-          ctx.db.insert(notifications).values({
-            user_id: lead.agent_id!,
-            kind: "other",
-            title: `Renewal step: ${title}`.slice(0, 300),
-            body: `${step.priority} · due ${due} · ${book.name}`,
-            task_id: task.id,
-            lead_id: lead.id,
-          }),
-        ];
-        if (tags.length) writes.push(ctx.db.insert(workTaskTags).values(tags.map((tag) => ({ task_id: task.id, tag }))));
-        await ctx.db.batch(writes as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+        const details = fill(step.description, lead.client_name).replace(/\s+/g, " ").trim();
+        await ctx.db.insert(notifications).values({
+          user_id: lead.agent_id!,
+          kind: "other",
+          title: `${PLAYBOOK_ALERT_PREFIX} ${title}`.slice(0, 300),
+          body: [`Due ${due}`, details, `${book.name} playbook, renewal ${renewal}`].filter(Boolean).join(" · ").slice(0, 600),
+          lead_id: lead.id,
+          created_at: at.toISOString(),
+        });
         created += 1;
       }
     }

@@ -26,11 +26,11 @@ export default async function PlaybooksPage({ searchParams }: { searchParams: Pr
       <PageHeader
         eyebrow="Admin"
         title="Renewal playbooks"
-        description={`Steps that turn into tasks for the lead's agent ${OPEN_DAYS} days before each is due, for every renewal, with the usual reminders and escalation.`}
+        description={`Renewal reminders for the lead's agent, sent ${OPEN_DAYS} days before each step is due, for every renewal. They go to the agent's WhatsApp (when it is on for them) and bell, not the Task Grid.`}
       />
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
       <p className="text-xs text-muted-foreground">
-        Switching a playbook on creates tasks for renewals already inside its window (steps more than 3 days overdue are skipped). Closed Lost
+        Switching a playbook on sends reminders for renewals already inside its window (steps more than 3 days overdue are skipped). Closed Lost
         and Auto Renewed leads are left out. Use {"{client}"} in a title for the client&apos;s name.
       </p>
 
@@ -69,8 +69,7 @@ export default async function PlaybooksPage({ searchParams }: { searchParams: Pr
                     <span className="font-medium">{step.title}</span>
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {when(step.day_offset)} · {step.priority}
-                    {step.tags ? ` · ${step.tags.split(",").join(", ")}` : ""}
+                    {when(step.day_offset)}
                     {step.description ? ` · ${step.description}` : ""}
                   </p>
                 </div>
@@ -91,21 +90,9 @@ export default async function PlaybooksPage({ searchParams }: { searchParams: Pr
               <Label htmlFor={`offset-${book.id}`}>Days from renewal</Label>
               <Input id={`offset-${book.id}`} name="day_offset" type="number" min={-365} max={60} defaultValue={-20} required />
             </div>
-            <div className="space-y-1.5 sm:col-span-3">
+            <div className="space-y-1.5 sm:col-span-5">
               <Label htmlFor={`title-${book.id}`}>Step</Label>
               <Input id={`title-${book.id}`} name="title" placeholder="Call {client} about the renewal" required maxLength={200} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`priority-${book.id}`}>Priority</Label>
-              <NativeSelect id={`priority-${book.id}`} name="priority" defaultValue="P2">
-                <option value="P1">P1</option>
-                <option value="P2">P2</option>
-                <option value="P3">P3</option>
-              </NativeSelect>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`tags-${book.id}`}>Tags</Label>
-              <Input id={`tags-${book.id}`} name="tags" placeholder="renewal" maxLength={200} />
             </div>
             <div className="space-y-1.5 sm:col-span-5">
               <Label htmlFor={`desc-${book.id}`}>Details (optional)</Label>
