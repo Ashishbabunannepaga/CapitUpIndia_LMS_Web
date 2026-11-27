@@ -17,6 +17,7 @@ import { MAX_OUTPUT_TOKENS, MODEL_CHAINS } from "@/lib/ai/models";
 import { dayPlanPrompt, teamRiskPrompt } from "@/lib/ai/prompts";
 import { sendDayPlans, type PlanWriter } from "@/server/data/day-plan";
 import { runPlaybooks } from "@/server/data/playbooks";
+import { winBackLostLeads } from "@/server/data/win-back";
 import { deliverTaskDueReminders } from "@/server/data/task-reminders";
 import { pushPendingNotifications, type PushSender } from "@/server/data/push";
 import { vapidKeysFrom } from "@/server/push/config";
@@ -133,6 +134,17 @@ export async function runScheduled(env: CloudflareEnv, at = new Date(), deps: Sc
     } catch (error) {
       console.error("Renewal playbooks failed", { message: message(error) });
       await recordAppError(ctx, { source: "job", path: "Renewal playbooks", message: message(error) }, at);
+    }
+  }
+
+  // Hourly: lost clients whose next renewal is near open again as Prospects.
+  if (minute === 27) {
+    try {
+      const reopened = await winBackLostLeads(ctx, at);
+      if (reopened > 0) console.log(`Reopened ${reopened} lost lead(s) for win-back.`);
+    } catch (error) {
+      console.error("Win-back failed", { message: message(error) });
+      await recordAppError(ctx, { source: "job", path: "Win-back", message: message(error) }, at);
     }
   }
 
