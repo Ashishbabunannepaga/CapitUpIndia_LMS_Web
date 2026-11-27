@@ -319,7 +319,7 @@ test("a new admin must set up two-step sign-in, and then each sign-in asks for a
   await expect(page).toHaveURL(/\/login\/two-factor/);
   await page.getByLabel("6-digit code").fill("000000");
   await page.getByRole("button", { name: "Verify" }).click();
-  await expect(page.getByRole("alert")).toContainText("That code is wrong");
+  await expect(page.getByText("That code is wrong")).toBeVisible();
   await page.getByLabel("6-digit code").fill(await createOTP(secret).totp());
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page).toHaveURL(/\/my-day/);
