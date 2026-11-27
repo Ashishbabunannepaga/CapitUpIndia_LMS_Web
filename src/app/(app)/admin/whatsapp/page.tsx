@@ -4,7 +4,7 @@ import { CheckCircle2, CircleAlert } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { MobileInput } from "@/components/ui/mobile-input";
 import { requireSession } from "@/lib/auth";
 import { CLIENT_REPLY_MAX, getWhatsAppClientReply, listWhatsAppTeam, whatsAppSentToday } from "@/server/data/whatsapp";
 import { whatsAppForwardStatus, whatsAppStatus } from "@/server/whatsapp/client";
@@ -69,7 +69,7 @@ export default async function WhatsAppPage({ searchParams }: { searchParams: Pro
                 </span>
                 <form action={saveWhatsAppAction} className="flex flex-wrap items-center gap-2">
                   <input type="hidden" name="user_id" value={m.id} />
-                  <Input name="phone" defaultValue={m.whatsapp_phone ?? ""} placeholder="98765 43210" className="h-8 w-40" aria-label={`${m.full_name}'s WhatsApp number`} />
+                  <MobileInput name="phone" defaultValue={m.whatsapp_phone} className="h-8 w-40" aria-label={`${m.full_name}'s WhatsApp number`} />
                   <label className="flex items-center gap-1.5 text-xs">
                     <input type="checkbox" name="on" defaultChecked={m.whatsapp_on} className="size-4 accent-primary" /> Alerts on
                   </label>

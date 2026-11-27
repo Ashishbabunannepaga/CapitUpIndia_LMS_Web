@@ -5,6 +5,7 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } f
 import type { BusinessType, PolicyProduct } from "@/lib/database.types";
 import { isIsoDate } from "@/lib/dates";
 import { calendarProductLabel } from "@/lib/domain";
+import { toMobileDigits } from "@/lib/mobile";
 import { dueDateToIso } from "@/lib/work-tasks";
 
 import { appSettings, notifications, profiles, whatsappInbound, whatsappLeadDrafts, workTasks } from "../db/schema";
@@ -49,13 +50,11 @@ const SNOOZE_MS = 60 * 60_000;
 /** Bell notifications that also go to WhatsApp (by their title). */
 const ALERT_PREFIXES = ["Due soon:", "Due now:", "Overdue by", "Still not done:", "New task from", "Approval needed", "Renewal step:", "Repeating task:"];
 
-/** Digits with country code. A 10-digit Indian mobile gets 91 in front. */
+/** A 10-digit Indian mobile (+91, 91 or 0 in front is fine), stored with 91 in front for WhatsApp. */
 export function normalizeWhatsAppPhone(input: string): string {
-  const digits = input.replace(/\D/g, "").replace(/^00/, "");
+  const digits = toMobileDigits(input.replace(/^\s*00/, "+"));
   if (/^[6-9]\d{9}$/.test(digits)) return `91${digits}`;
-  if (/^0[6-9]\d{9}$/.test(digits)) return `91${digits.slice(1)}`;
-  if (/^[1-9]\d{10,14}$/.test(digits)) return digits;
-  throw new InvalidInputError("Enter a mobile number, like 98765 43210 or +91 98765 43210.");
+  throw new InvalidInputError("Enter a 10-digit mobile number, like 9876543210.");
 }
 
 export type WhatsAppMember = { id: string; full_name: string; role: string; is_active: boolean; whatsapp_phone: string | null; whatsapp_on: boolean };

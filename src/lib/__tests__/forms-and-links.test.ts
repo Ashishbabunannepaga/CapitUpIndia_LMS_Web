@@ -54,6 +54,8 @@ describe("leadFormSchema", () => {
     ["a bad email", { client_name: "Acme", poc_email_id: "priya@" }],
     ["letters in a phone", { client_name: "Acme", poc_contact_number: "98450abc" }],
     ["a phone over 32 characters", { client_name: "Acme", poc_contact_number: "9".repeat(33) }],
+    ["a phone short of 10 digits", { client_name: "Acme", poc_contact_number: "98450 1234" }],
+    ["two phone numbers in one field", { client_name: "Acme", poc_contact_number: "98450 12345, 080 4123 4567" }],
     ["an unknown status", { client_name: "Acme", status: "Won" }],
     ["an unknown lead type", { client_name: "Acme", type: "Transfer" }],
     ["an unknown product", { client_name: "Acme", policy_product: "Pet" }],
@@ -68,10 +70,12 @@ describe("leadFormSchema", () => {
       client_name: "Acme",
       renewal_date: "2028-02-29",
       assigned_agent_id: "00000000-0000-0000-0000-000000000001",
-      poc_contact_number: "+91 98450-12345, 080/4123",
+      poc_contact_number: "+91 98450-12345",
       confirm_duplicate: "on",
     });
     expect(result.renewal_date).toBe("2028-02-29");
+    expect(result.poc_contact_number).toBe("9845012345");
+    expect(leadFormSchema.parse({ client_name: "Acme", poc_contact_number: "098450 12345" }).poc_contact_number).toBe("9845012345");
     expect(result.assigned_agent_id).toBe("00000000-0000-0000-0000-000000000001");
     expect(result.confirm_duplicate).toBe(true);
     expect(leadFormSchema.parse({ client_name: "Acme", assigned_agent_id: "unassigned" }).assigned_agent_id).toBeNull();

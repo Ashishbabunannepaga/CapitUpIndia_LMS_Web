@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DictateButton } from "@/components/ui/dictate";
 import { Input } from "@/components/ui/input";
+import { MobileInput } from "@/components/ui/mobile-input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -172,7 +173,7 @@ export function AddContactForm({ leadId }: { leadId: number }) {
         </div>
         <div className="space-y-1">
           <Label htmlFor="contact-phone">Phone</Label>
-          <Input id="contact-phone" name="phone" type="tel" maxLength={32} />
+          <MobileInput id="contact-phone" name="phone" />
         </div>
         <div className="space-y-1">
           <Label htmlFor="contact-email">Email</Label>
