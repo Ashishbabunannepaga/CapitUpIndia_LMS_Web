@@ -100,7 +100,8 @@ export function adminTotpCode(): Promise<string> {
 
 /** After the password step: enters the admin's code when the app asks for one. */
 export async function passTwoFactor(page: Page): Promise<void> {
-  await page.waitForLoadState("domcontentloaded");
+  // The sign-in form posts and then navigates: wait until it has left /login.
+  await page.waitForURL((url) => url.pathname !== "/login");
   if (!new URL(page.url()).pathname.startsWith("/login/two-factor")) return;
   await page.getByLabel("6-digit code").fill(await adminTotpCode());
   await page.getByRole("button", { name: "Verify" }).click();
