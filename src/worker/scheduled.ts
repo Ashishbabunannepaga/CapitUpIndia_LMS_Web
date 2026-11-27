@@ -38,7 +38,18 @@ export type ScheduledDeps = {
   whatsapp?: WhatsAppSender | null;
 };
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/**
+ * What went wrong, for logs and System health. A failed database call says
+ * "Failed query: <the SQL>" and keeps the real reason in `cause`, so the
+ * reason goes first and the SQL is cut short.
+ */
+export function message(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause instanceof Error ? error.cause.message : error.cause ? String(error.cause) : "";
+  if (!cause) return error.message;
+  const text = error.message.startsWith("Failed query:") ? `${error.message.slice(0, 120)}...` : error.message;
+  return `${cause} (${text})`;
+}
 
 /**
  * The per-minute Cron Trigger: send renewal reminders that are due (and
