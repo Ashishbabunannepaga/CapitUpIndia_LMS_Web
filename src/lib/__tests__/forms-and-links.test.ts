@@ -54,6 +54,8 @@ describe("leadFormSchema", () => {
     ["a bad email", { client_name: "Acme", poc_email_id: "priya@" }],
     ["letters in a phone", { client_name: "Acme", poc_contact_number: "98450abc" }],
     ["a phone over 32 characters", { client_name: "Acme", poc_contact_number: "9".repeat(33) }],
+    ["a phone short of 10 digits", { client_name: "Acme", poc_contact_number: "98450 1234" }],
+    ["two phone numbers in one field", { client_name: "Acme", poc_contact_number: "98450 12345, 080 4123 4567" }],
     ["an unknown status", { client_name: "Acme", status: "Won" }],
     ["an unknown lead type", { client_name: "Acme", type: "Transfer" }],
     ["an unknown product", { client_name: "Acme", policy_product: "Pet" }],
@@ -68,10 +70,12 @@ describe("leadFormSchema", () => {
       client_name: "Acme",
       renewal_date: "2028-02-29",
       assigned_agent_id: "00000000-0000-0000-0000-000000000001",
-      poc_contact_number: "+91 98450-12345, 080/4123",
+      poc_contact_number: "+91 98450-12345",
       confirm_duplicate: "on",
     });
     expect(result.renewal_date).toBe("2028-02-29");
+    expect(result.poc_contact_number).toBe("9845012345");
+    expect(leadFormSchema.parse({ client_name: "Acme", poc_contact_number: "098450 12345" }).poc_contact_number).toBe("9845012345");
     expect(result.assigned_agent_id).toBe("00000000-0000-0000-0000-000000000001");
     expect(result.confirm_duplicate).toBe(true);
     expect(leadFormSchema.parse({ client_name: "Acme", assigned_agent_id: "unassigned" }).assigned_agent_id).toBeNull();
@@ -197,7 +201,7 @@ describe("searchTerms", () => {
 
   it("also searches the bare digits of a phone number", () => {
     expect(searchTerms("98450 12345")).toEqual(["98450 12345", "9845012345"]);
-    expect(searchTerms("+91-98450-12345")).toEqual(["+91-98450-12345", "919845012345"]);
+    expect(searchTerms("+91-98450-12345")).toEqual(["+91-98450-12345", "919845012345", "9845012345"]);
     expect(searchTerms("9845012345")).toEqual(["9845012345"]);
     expect(searchTerms("2 wheeler")).toEqual(["2 wheeler"]);
   });
@@ -266,4 +270,36 @@ describe("safeNextPath", () => {
       expect(safeNextPath(next)).toBe("/my-day");
     },
   );
+});
+
+describe("rupee amounts and phone searches as people type them", () => {
+  it("reads ₹, Rs., INR, commas and /- in amounts", async () => {
+    const { parseInr } = await import("@/lib/money");
+    expect(parseInr("1,25,000")).toBe(125000);
+    expect(parseInr("₹ 1,25,000")).toBe(125000);
+    expect(parseInr("Rs. 1,25,000/-")).toBe(125000);
+    expect(parseInr("INR 125000.50")).toBe(125000.5);
+    expect(parseInr("1.2 lakh")).toBeNull();
+    expect(parseInr("")).toBeNull();
+    expect(leadFormSchema.parse({ client_name: "Acme", premium_inr: "Rs. 1,25,000/-" }).premium_inr).toBe(125000);
+  });
+
+  it("finds a saved 10-digit number from +91 or 0 searches", async () => {
+    const { searchTerms } = await import("@/lib/lead-filters");
+    expect(searchTerms("+91 98450 12345")).toContain("9845012345");
+    expect(searchTerms("098450 12345")).toContain("9845012345");
+    expect(searchTerms("Kaveri")).toEqual(["Kaveri"]);
+  });
+});
+
+describe("mobile numbers", () => {
+  it("drops +91 / 0 from mobiles but never turns a landline into one", async () => {
+    const { isMobile, toMobileDigits } = await import("@/lib/mobile");
+    expect(toMobileDigits("+91 98765 43210")).toBe("9876543210");
+    expect(toMobileDigits("098765 43210")).toBe("9876543210");
+    expect(toMobileDigits("040 2311 0640")).toBe("04023110640");
+    expect(isMobile(toMobileDigits("040 2311 0640"))).toBe(false);
+    expect(isMobile("4023110640")).toBe(false);
+    expect(leadFormSchema.safeParse({ client_name: "Acme", poc_contact_number: "040 2311 0640" }).success).toBe(false);
+  });
 });

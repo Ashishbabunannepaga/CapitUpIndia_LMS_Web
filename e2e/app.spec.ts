@@ -151,9 +151,15 @@ test("the form explains invalid input instead of saving it", async ({ page }) =>
   await page.goto("/leads/new?mode=manual");
   await page.getByLabel("Client or company name").fill("UI Bad Input Co");
   await page.locator("#lead_source").selectOption("Referral");
-  await page.locator("#poc_contact_number").fill("call me maybe");
+  // The phone field only takes digits and stops at 10; a short number can't be submitted.
+  const phone = page.locator("#poc_contact_number");
+  await phone.fill("call me 98450 1234567");
+  await expect(phone).toHaveValue("9845012345");
+  await phone.fill("98450 12");
+  await expect(phone).toHaveValue("9845012");
   await page.getByRole("button", { name: "Save lead" }).click();
-  await expect(page.getByText("Use digits, spaces, + or - only.")).toBeVisible();
+  expect(await phone.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(false);
+  await expect(page).toHaveURL(/\/leads\/new/);
   expect(await leadRow("UI Bad Input Co")).toBeNull();
 });
 

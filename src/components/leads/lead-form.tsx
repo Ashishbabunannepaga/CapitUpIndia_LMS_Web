@@ -14,6 +14,7 @@ import {
 } from "@/app/(app)/leads/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MobileInput } from "@/components/ui/mobile-input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -597,11 +598,9 @@ export function LeadForm({ mode, lead, agents = [], currentUserId, isAdmin, pref
                 />
               </Field>
               <Field label="Phone" name={`${prefix}_contact_number`} error={errors[`${prefix}_contact_number`]}>
-                <Input
+                <MobileInput
                   id={`${prefix}_contact_number`}
                   name={`${prefix}_contact_number`}
-                  type="tel"
-                  maxLength={32}
                   defaultValue={values[`${prefix}_contact_number`]}
                   aria-invalid={Boolean(errors[`${prefix}_contact_number`])}
                 />

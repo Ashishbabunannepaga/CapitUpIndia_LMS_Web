@@ -4,6 +4,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 
 import { isIsoDate, todayInBusinessTz } from "@/lib/dates";
+import { parseInr } from "@/lib/money";
 import { AWAITING_POLICY_STATUS, isActiveClientStatus, isOneTimeProduct } from "@/lib/domain";
 import { policyYear } from "@/lib/codes";
 import { checkPolicy, cleanPolicyReading, hasDifferences, type PolicyCheck, type PolicyReading, type PolicyValues } from "@/lib/policy-check";
@@ -57,7 +58,7 @@ export function cleanPolicyValues(input: Partial<Record<keyof PolicyValues, unkn
   };
   const amount = (v: unknown, label: string) => {
     if (v === undefined || v === null || v === "") return null;
-    const n = typeof v === "number" ? v : Number(String(v).replace(/[,\s₹]/g, ""));
+    const n = typeof v === "number" ? v : (parseInr(String(v)) ?? Number.NaN);
     if (!Number.isFinite(n) || n < 0 || n > 1e12) throw new InvalidInputError(`Enter the ${label} as a number.`);
     return Math.round(n * 100) / 100;
   };

@@ -24,11 +24,13 @@ import { createWorkTask } from "../work-tasks";
 import { testWorld } from "./helpers";
 
 describe("normalizeWhatsAppPhone", () => {
-  it("adds 91 to Indian mobiles and keeps full numbers", () => {
+  it("takes 10-digit Indian mobiles (with or without +91 / 0) and stores them with 91", () => {
     expect(normalizeWhatsAppPhone("98765 43210")).toBe("919876543210");
     expect(normalizeWhatsAppPhone("+91 98765-43210")).toBe("919876543210");
     expect(normalizeWhatsAppPhone("098765 43210")).toBe("919876543210");
     expect(() => normalizeWhatsAppPhone("12345")).toThrow();
+    expect(() => normalizeWhatsAppPhone("98765 432101")).toThrow(); // 11 digits
+    expect(() => normalizeWhatsAppPhone("+1 415 555 0100")).toThrow();
   });
 });
 

@@ -12,6 +12,8 @@ import {
   POLICY_PRODUCTS,
   needsRenewalDate,
 } from "@/lib/domain";
+import { isMobile, MOBILE_DIGITS, toMobileDigits } from "@/lib/mobile";
+import { cleanInr } from "@/lib/money";
 
 // Validation for the lead form. The database re-checks lengths, email shape,
 // ownership and duplicate state, so this is about clear messages.
@@ -29,8 +31,8 @@ const email = z
 const phone = z
   .string()
   .trim()
-  .max(32, "Keep phone numbers under 32 characters.")
-  .refine((v) => v === "" || /^[0-9+()\-\s,/]+$/.test(v), "Use digits, spaces, + or - only.")
+  .transform(toMobileDigits)
+  .refine((v) => v === "" || isMobile(v), `Enter a ${MOBILE_DIGITS}-digit mobile number.`)
   .default("");
 
 export const leadFormSchema = z
@@ -64,7 +66,7 @@ export const leadFormSchema = z
     premium_inr: z
       .string()
       .trim()
-      .transform((v) => v.replace(/[₹,\s]/g, ""))
+      .transform(cleanInr)
       .refine((v) => v === "" || (/^\d+(\.\d{1,2})?$/.test(v) && Number(v) <= 1e11), "Enter the premium in rupees, for example 125000.")
       .default(""),
     insurer_name: text(200),

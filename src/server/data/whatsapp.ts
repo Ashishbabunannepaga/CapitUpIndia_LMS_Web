@@ -1,10 +1,11 @@
 import "server-only";
 
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 
 import type { BusinessType, PolicyProduct } from "@/lib/database.types";
 import { isIsoDate } from "@/lib/dates";
 import { calendarProductLabel } from "@/lib/domain";
+import { toMobileDigits } from "@/lib/mobile";
 import { dueDateToIso } from "@/lib/work-tasks";
 
 import { appSettings, notifications, profiles, whatsappInbound, whatsappLeadDrafts, workTasks } from "../db/schema";
@@ -14,6 +15,7 @@ import { auditInsert } from "./audit";
 import type { DataContext } from "./context";
 import { planFacts } from "./day-plan";
 import { InvalidInputError } from "./errors";
+import { PLAYBOOK_ALERT_PREFIX } from "./playbooks";
 import {
   type AudioExt,
   createWorkTask,
@@ -42,16 +44,17 @@ import {
 export const WHATSAPP_BATCH = 30;
 /** Older alerts are not worth a message any more; they stay in the bell. */
 const WINDOW_MS = 60 * 60_000;
+/** Marks a renewal reminder the person snoozed from WhatsApp; whatsapp_at is then when to send it again. */
+const SNOOZED = "snoozed";
+const SNOOZE_MS = 60 * 60_000;
 /** Bell notifications that also go to WhatsApp (by their title). */
 const ALERT_PREFIXES = ["Due soon:", "Due now:", "Overdue by", "Still not done:", "New task from", "Approval needed", "Renewal step:", "Repeating task:"];
 
-/** Digits with country code. A 10-digit Indian mobile gets 91 in front. */
+/** A 10-digit Indian mobile (+91, 91 or 0 in front is fine), stored with 91 in front for WhatsApp. */
 export function normalizeWhatsAppPhone(input: string): string {
-  const digits = input.replace(/\D/g, "").replace(/^00/, "");
+  const digits = toMobileDigits(input.replace(/^\s*00/, "+"));
   if (/^[6-9]\d{9}$/.test(digits)) return `91${digits}`;
-  if (/^0[6-9]\d{9}$/.test(digits)) return `91${digits.slice(1)}`;
-  if (/^[1-9]\d{10,14}$/.test(digits)) return digits;
-  throw new InvalidInputError("Enter a mobile number, like 98765 43210 or +91 98765 43210.");
+  throw new InvalidInputError("Enter a 10-digit mobile number, like 9876543210.");
 }
 
 export type WhatsAppMember = { id: string; full_name: string; role: string; is_active: boolean; whatsapp_phone: string | null; whatsapp_on: boolean };
@@ -103,15 +106,28 @@ export async function setWhatsApp(ctx: DataContext, actor: Actor, userId: string
  */
 export async function sendWhatsAppAlerts(ctx: DataContext, send: WhatsAppSender, at: Date = new Date()): Promise<number> {
   const since = new Date(at.getTime() - WINDOW_MS).toISOString();
+  const stamp = at.toISOString();
   const pending = await ctx.db
-    .select({ id: notifications.id, title: notifications.title, body: notifications.body, task_id: notifications.task_id, phone: profiles.whatsapp_phone })
+    .select({
+      id: notifications.id,
+      title: notifications.title,
+      body: notifications.body,
+      task_id: notifications.task_id,
+      lead_id: notifications.lead_id,
+      phone: profiles.whatsapp_phone,
+    })
     .from(notifications)
     .innerJoin(profiles, eq(profiles.id, notifications.user_id))
     .where(
       and(
-        isNull(notifications.whatsapp_at),
-        isNotNull(notifications.task_id),
-        gte(notifications.created_at, since),
+        or(
+          // New: sent once, within the hour.
+          and(isNull(notifications.whatsapp_at), gte(notifications.created_at, since)),
+          // Snoozed from WhatsApp: sent again once the hour is up.
+          and(eq(notifications.whatsapp_msg_id, SNOOZED), lte(notifications.whatsapp_at, stamp)),
+        ),
+        // Task alerts, and renewal playbook reminders (no task behind them, only the lead).
+        or(isNotNull(notifications.task_id), and(isNotNull(notifications.lead_id), sql`${notifications.title} like ${`${PLAYBOOK_ALERT_PREFIX}%`}`)),
         eq(profiles.whatsapp_on, true),
         eq(profiles.is_active, true),
         isNotNull(profiles.whatsapp_phone),
@@ -122,18 +138,32 @@ export async function sendWhatsAppAlerts(ctx: DataContext, send: WhatsAppSender,
     .limit(WHATSAPP_BATCH);
   if (pending.length === 0) return 0;
 
-  const stamp = at.toISOString();
   const claimed = await ctx.db
     .update(notifications)
-    .set({ whatsapp_at: stamp })
-    .where(and(inArray(notifications.id, pending.map((n) => n.id)), isNull(notifications.whatsapp_at)))
+    .set({ whatsapp_at: stamp, whatsapp_msg_id: null })
+    .where(
+      and(
+        inArray(
+          notifications.id,
+          pending.map((n) => n.id),
+        ),
+        or(isNull(notifications.whatsapp_at), and(eq(notifications.whatsapp_msg_id, SNOOZED), lte(notifications.whatsapp_at, stamp))),
+      ),
+    )
     .returning({ id: notifications.id });
   const mine = new Set(claimed.map((c) => c.id));
 
   let sent = 0;
   for (const n of pending) {
     if (!mine.has(n.id)) continue;
-    const result = await send({ to: n.phone!, title: n.title, body: n.body, taskId: n.task_id! });
+    const reminder = n.task_id === null;
+    const result = await send({
+      to: n.phone!,
+      title: n.title,
+      body: n.body,
+      taskId: n.task_id ?? 0,
+      ...(reminder ? { buttons: [`seen:${n.id}`, `later:${n.id}`] as [string, string] } : {}),
+    });
     if (result.ok) {
       sent += 1;
       await ctx.db.update(notifications).set({ whatsapp_msg_id: result.id }).where(eq(notifications.id, n.id));
@@ -142,6 +172,28 @@ export async function sendWhatsAppAlerts(ctx: DataContext, send: WhatsAppSender,
     }
   }
   return sent;
+}
+
+/**
+ * Done or Snooze 1h on a renewal reminder (no task behind it): Done marks the
+ * bell item read; Snooze sends it again in an hour.
+ */
+async function actOnReminder(ctx: DataContext, person: Actor, action: "seen" | "later", id: number, at: Date, appUrl?: string): Promise<string> {
+  const notice = await ctx.db.query.notifications.findFirst({ where: and(eq(notifications.id, id), eq(notifications.user_id, person.id)) });
+  if (!notice) return "I couldn't find that reminder. Open the LMS to check the lead.";
+  const link = notice.lead_id && appUrl ? ` Lead: ${appUrl.replace(/\/$/, "")}/leads/${notice.lead_id}` : "";
+  if (action === "seen") {
+    await ctx.db
+      .update(notifications)
+      .set({ read_at: at.toISOString() })
+      .where(and(eq(notifications.id, id), isNull(notifications.read_at)));
+    return `Noted.${link}`;
+  }
+  await ctx.db
+    .update(notifications)
+    .set({ whatsapp_at: new Date(at.getTime() + SNOOZE_MS).toISOString(), whatsapp_msg_id: SNOOZED })
+    .where(and(eq(notifications.id, id), or(isNull(notifications.whatsapp_msg_id), ne(notifications.whatsapp_msg_id, SNOOZED))));
+  return `Snoozed. I'll send this reminder again in 1 hour.${link}`;
 }
 
 export type WhatsAppReply = {
@@ -233,6 +285,9 @@ export async function handleWhatsAppReply(ctx: DataContext, reply: WhatsAppReply
   const person = await whatsAppTeamMember(ctx, reply.from);
   if (!person) return null;
 
+  const reminder = /^(seen|later):(\d{1,12})$/.exec(reply.payload ?? "");
+  if (reminder) return actOnReminder(ctx, person, reminder[1] as "seen" | "later", Number(reminder[2]), at, helpers.appUrl);
+
   const button = /^(done|snooze):(\d{1,12})$/.exec(reply.payload ?? "");
   if (button) {
     const taskId = Number(button[2]);
@@ -274,6 +329,7 @@ export async function handleWhatsAppReply(ctx: DataContext, reply: WhatsAppReply
 
   const command = DONE_WORDS.test(lower) ? "done" : SNOOZE_WORDS.test(lower) ? "snooze" : null;
   if (command && lower.split(/\s+/).length <= 4) {
+    if (notice && !taskId) return actOnReminder(ctx, person, command === "done" ? "seen" : "later", notice.id, at, helpers.appUrl);
     if (!taskId) return "Swipe to reply on the task alert itself, so I know which task you mean.";
     return act(ctx, person, command, taskId, at);
   }

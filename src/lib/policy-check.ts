@@ -1,4 +1,5 @@
 import { normalizeCompanyName } from "@/lib/company-name";
+import { parseInr } from "@/lib/money";
 import { daysBetween, formatDate, isIsoDate } from "@/lib/dates";
 import { POLICY_PRODUCTS, UNSPECIFIED_PRODUCT, isOneTimeProduct } from "@/lib/domain";
 
@@ -56,11 +57,7 @@ export const RENEWAL_GAP_DAYS = 30;
 
 function money(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
-  if (typeof value !== "string") return null;
-  const digits = value.replace(/[,\s₹]|rs\.?|inr/gi, "");
-  if (!/^\d+(\.\d+)?$/.test(digits)) return null;
-  const n = Number(digits);
-  return Number.isFinite(n) ? n : null;
+  return typeof value === "string" ? parseInr(value) : null;
 }
 
 function str(value: unknown, max: number): string {

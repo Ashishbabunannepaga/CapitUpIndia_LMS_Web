@@ -1,6 +1,7 @@
 import type { BusinessType, LeadStatus, LeadTag, LeadType, PolicyProduct } from "@/lib/database.types";
 import { isIsoDate } from "@/lib/dates";
 import { BUSINESS_TYPES, isLeadStatus, isLeadTag, isPolicyProduct, LEAD_TYPES } from "@/lib/domain";
+import { toMobileDigits } from "@/lib/mobile";
 
 // Leads screen filters live in the URL so views are shareable and the server
 // renders the filtered list. Unknown values are ignored.
@@ -129,12 +130,16 @@ export function leadsHref(filters: Partial<LeadFilters>): string {
 /**
  * Search terms for the leads list, safe to put inside a PostgREST or()
  * filter: characters with meaning there are stripped. A phone-like query
- * also yields its bare digits, so "98450 12345" finds "9845012345".
+ * also yields its bare digits, so "98450 12345" finds "9845012345", and
+ * without a +91 / 0 prefix, so "+91 98450 12345" finds it too.
  */
 export function searchTerms(q: string): string[] {
   const term = q.replace(/[,()*%\\:"']/g, " ").replace(/\s+/g, " ").trim();
   if (!term) return [];
   const digits = term.replace(/\D/g, "");
   const phoneLike = /^[\d\s+\-/]+$/.test(term) && digits.length >= 4;
-  return phoneLike && digits !== term ? [term, digits] : [term];
+  if (!phoneLike) return [term];
+  // "+91 98450 12345" and "098450 12345" also find a number saved as 9845012345.
+  const mobile = toMobileDigits(digits);
+  return [...new Set([term, digits, mobile])];
 }
