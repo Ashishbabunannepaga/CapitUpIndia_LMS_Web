@@ -48,20 +48,20 @@ test("a new lead takes pasted +91 numbers, a rupee amount with Rs. and /-, and a
   await page.getByLabel("Client or company name").fill("Paste Kaveri Mills");
   await page.locator("#lead_source").selectOption("Referral");
   await page.locator("#policy_product").selectOption({ index: 1 });
-  await page.locator("#poc_name").fill("Priya");
+  await page.locator("#poc_name").fill("Meera");
   const phone = page.locator("#poc_contact_number");
   await phone.fill("+91 98765 43210");
   await expect(phone).toHaveValue("9876543210");
   await page.locator("#poc2_contact_number").fill("098765 43211");
   await expect(page.locator("#poc2_contact_number")).toHaveValue("9876543211");
-  await page.locator("#poc_email_id").fill("Priya@Kaveri.IN");
+  await page.locator("#poc_email_id").fill("Meera@PasteMills.IN");
   await page.locator("#premium_inr").fill("Rs. 1,25,000/-");
   await page.locator("#renewal_date").fill("2031-03-15");
   await page.getByRole("button", { name: "Save lead" }).click();
   await expect(page.getByText("Lead saved.")).toBeVisible();
 
   const row = await lead("Paste Kaveri Mills");
-  expect(row).toMatchObject({ poc_contact_number: "9876543210", poc2_contact_number: "9876543211", poc_email_id: "priya@kaveri.in", premium_inr: 125000 });
+  expect(row).toMatchObject({ poc_contact_number: "9876543210", poc2_contact_number: "9876543211", poc_email_id: "meera@pastemills.in", premium_inr: 125000 });
 });
 
 test("searching the leads list with +91 finds a number saved as 10 digits", async ({ page }) => {
